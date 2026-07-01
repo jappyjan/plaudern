@@ -76,16 +76,35 @@ pnpm nx serve api                           # http://localhost:3000/api
 curl http://localhost:3000/api/health
 ```
 
-### Hardware-free end-to-end test (Path A)
+### Test tiers
 
-The full pipeline (init → upload → commit → transcription) is covered by an
-in-process e2e test using sqlite + an in-memory store + inline stub
-transcription — no Docker, no Plaud device:
+Two complementary levels, both hardware-free:
 
-```bash
-pnpm nx test api          # 6 e2e cases incl. the full audio→transcript flow
-pnpm nx run-many -t test  # all projects
-```
+1. **Unit / fast e2e** — in-process, sqlite + in-memory store + inline stub
+   transcription. No Docker, milliseconds. Covers the full init → upload →
+   commit → transcription flow:
+   ```bash
+   pnpm nx test api            # 6 cases incl. the full audio→transcript flow
+   pnpm nx run-many -t test    # all projects
+   ```
+
+2. **Integration (Testcontainers)** — spins up **real Postgres + MinIO + Redis**
+   in throwaway containers, runs the **real migration**, does a **real presigned
+   S3 PUT**, and processes transcription through **real BullMQ**. Requires only a
+   working Docker daemon — no manual services:
+   ```bash
+   pnpm nx run api:test-integration
+   ```
+
+### CI/CD
+
+- **CI** (`.github/workflows/ci.yml`, every push/PR): typecheck → unit tests →
+  **Testcontainers integration** (Docker is available on GitHub runners, so the
+  entire stack is verified with zero setup) → production build. A non-blocking
+  mobile-typecheck job runs informationally.
+- **CD** (`.github/workflows/cd.yml`, push to `main` / `v*` tags): builds the API
+  via the multi-stage `apps/api/Dockerfile` (tsc + tsc-alias → compiled JS) and
+  pushes the image to **GHCR** (`ghcr.io/<owner>/plaudern/api`).
 
 To drive it manually against the real stack, use the seeded API key:
 

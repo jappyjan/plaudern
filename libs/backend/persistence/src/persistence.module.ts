@@ -8,6 +8,7 @@ import {
   SourcePayloadEntity,
   UserEntity,
 } from './entities';
+import { InitialSchema1720000000000 } from './migrations/1720000000000-InitialSchema';
 
 export const ALL_ENTITIES = [
   UserEntity,
@@ -16,6 +17,10 @@ export const ALL_ENTITIES = [
   SourcePayloadEntity,
   ExtractedPayloadEntity,
 ];
+
+// Referenced as classes (not a glob) so migrations load identically under
+// ts-jest, tsx, and compiled node.
+export const ALL_MIGRATIONS = [InitialSchema1720000000000];
 
 /**
  * Wires TypeORM. Defaults to Postgres from env; when `DATABASE_DRIVER=sqlite`
@@ -43,7 +48,7 @@ export const ALL_ENTITIES = [
           entities: ALL_ENTITIES,
           synchronize: config.get<string>('DATABASE_SYNCHRONIZE') === 'true',
           migrationsRun: config.get<string>('DATABASE_SYNCHRONIZE') !== 'true',
-          migrations: [__dirname + '/migrations/*.{ts,js}'],
+          migrations: ALL_MIGRATIONS,
         };
       },
     }),

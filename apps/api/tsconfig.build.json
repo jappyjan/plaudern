@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "rootDir": "../..",
+    "outDir": "../../dist/server",
+    "declaration": false,
+    "sourceMap": false,
+    "noEmit": false,
+    "types": ["node"]
+  },
+  "include": [
+    "src/**/*.ts",
+    "../../libs/contracts/src/**/*.ts",
+    "../../libs/backend/**/src/**/*.ts"
+  ],
+  "exclude": [
+    "../../libs/**/*.spec.ts",
+    "../../libs/**/*.test.ts",
+    "src/**/*.spec.ts",
+    "src/**/*.e2e-spec.ts",
+    "src/**/*.integration-spec.ts",
+    "src/testing/**"
+  ]
+}

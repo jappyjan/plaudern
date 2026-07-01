@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PNPM_VERSION: '10.33.0'
+  NODE_VERSION: '22'
+
+jobs:
+  backend:
+    name: Backend (typecheck, unit, integration, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm nx run api:typecheck
+
+      - name: Unit tests (fast, infra-free)
+        run: pnpm nx run-many -t test --projects=contracts,api
+
+      # Docker is available on ubuntu-latest, so Testcontainers spins up real
+      # Postgres + MinIO + Redis — the full stack verified with zero manual setup.
+      - name: Integration tests (Testcontainers)
+        run: pnpm nx run api:test-integration
+
+      - name: Build (production compile)
+        run: pnpm nx build api
+
+  mobile:
+    name: Mobile (typecheck, informational)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck mobile
+        run: pnpm nx run mobile:typecheck

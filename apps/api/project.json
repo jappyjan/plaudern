@@ -14,7 +14,11 @@
     "build": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "tsc -p apps/api/tsconfig.json --outDir dist/apps/api"
+        "commands": [
+          "tsc -p apps/api/tsconfig.build.json",
+          "tsc-alias -p apps/api/tsconfig.build.json"
+        ],
+        "parallel": false
       }
     },
     "typecheck": {
@@ -27,6 +31,12 @@
       "executor": "nx:run-commands",
       "options": {
         "command": "jest --config apps/api/jest.config.js"
+      }
+    },
+    "test-integration": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "jest --runInBand --config apps/api/jest.integration.config.js"
       }
     },
     "migrate": {
