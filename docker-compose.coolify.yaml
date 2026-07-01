@@ -27,7 +27,9 @@ services:
       # Internal endpoint for server-side S3 ops...
       - S3_ENDPOINT=http://minio:9000
       # ...public endpoint baked into presigned URLs handed to clients.
-      - S3_PUBLIC_ENDPOINT=${SERVICE_FQDN_MINIO_9000}
+      # SERVICE_URL_* includes the scheme and proxy-routed port (80/443);
+      # SERVICE_FQDN_*_9000 resolves to host:9000 which isn't publicly routed.
+      - S3_PUBLIC_ENDPOINT=${SERVICE_URL_MINIO}
       - S3_REGION=us-east-1
       - S3_BUCKET=plaudern-inbox
       - S3_ACCESS_KEY=${SERVICE_USER_MINIO}
@@ -36,6 +38,9 @@ services:
       - QUEUE_DRIVER=bull
       - REDIS_URL=redis://:${SERVICE_PASSWORD_REDIS}@redis:6379
       # Transcription: set OPENAI_API_KEY and switch provider to `openai` in the UI.
+      # No shell access on Coolify: print a dev device key to the logs on
+      # first boot (idempotent). Read it via the deployment/container logs.
+      - SEED_ON_BOOT=${SEED_ON_BOOT:-true}
       - TRANSCRIPTION_PROVIDER=${TRANSCRIPTION_PROVIDER:-stub}
       - TRANSCRIPTION_MODEL=${TRANSCRIPTION_MODEL:-whisper-1}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
@@ -78,14 +83,18 @@ services:
       - SERVICE_FQDN_MINIOCONSOLE_9001
       - MINIO_ROOT_USER=${SERVICE_USER_MINIO}
       - MINIO_ROOT_PASSWORD=${SERVICE_PASSWORD_MINIO}
-      - MINIO_SERVER_URL=${SERVICE_FQDN_MINIO_9000}
-      - MINIO_BROWSER_REDIRECT_URL=${SERVICE_FQDN_MINIOCONSOLE_9001}
+      - MINIO_SERVER_URL=${SERVICE_URL_MINIO}
+      - MINIO_BROWSER_REDIRECT_URL=${SERVICE_URL_MINIOCONSOLE}
       - MINIO_API_CORS_ALLOW_ORIGIN=*
     volumes:
       - miniodata:/data
 
   minio-init:
     image: minio/mc:latest
+    # Explicit: Coolify injects `unless-stopped` on services without a restart
+    # policy, which makes this one-shot container restart forever and the
+    # api's service_completed_successfully condition hang the whole deploy.
+    restart: 'no'
     depends_on:
       minio:
         condition: service_started
