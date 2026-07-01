@@ -50,6 +50,10 @@ export class AuthService {
     return { device, apiKey };
   }
 
+  async hasDevices(userId: string): Promise<boolean> {
+    return (await this.devices.count({ where: { userId } })) > 0;
+  }
+
   async findDeviceByApiKey(apiKey: string): Promise<DeviceEntity | null> {
     return this.devices.findOne({
       where: { apiKeyHash: AuthService.hashApiKey(apiKey) },

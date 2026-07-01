@@ -38,6 +38,9 @@ services:
       - QUEUE_DRIVER=bull
       - REDIS_URL=redis://:${SERVICE_PASSWORD_REDIS}@redis:6379
       # Transcription: set OPENAI_API_KEY and switch provider to `openai` in the UI.
+      # No shell access on Coolify: print a dev device key to the logs on
+      # first boot (idempotent). Read it via the deployment/container logs.
+      - SEED_ON_BOOT=${SEED_ON_BOOT:-true}
       - TRANSCRIPTION_PROVIDER=${TRANSCRIPTION_PROVIDER:-stub}
       - TRANSCRIPTION_MODEL=${TRANSCRIPTION_MODEL:-whisper-1}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
