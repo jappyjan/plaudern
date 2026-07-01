@@ -9,6 +9,13 @@
     "strict": true,
     "noEmit": true
   },
-  "include": ["app/**/*", "src/**/*", "modules/**/*", "app.config.ts", ".expo/types/**/*.ts"],
+  "include": [
+    "app/**/*",
+    "src/**/*",
+    "modules/**/*",
+    "app.config.ts",
+    "uniwind-env.d.ts",
+    ".expo/types/**/*.ts"
+  ],
   "exclude": ["node_modules"]
 }

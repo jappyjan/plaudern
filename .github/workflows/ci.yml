@@ -47,9 +47,8 @@ jobs:
         run: pnpm nx build api
 
   mobile:
-    name: Mobile (typecheck, informational)
+    name: Mobile (typecheck)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

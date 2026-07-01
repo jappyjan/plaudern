@@ -100,8 +100,8 @@ Two complementary levels, both hardware-free:
 
 - **CI** (`.github/workflows/ci.yml`, every push/PR): typecheck → unit tests →
   **Testcontainers integration** (Docker is available on GitHub runners, so the
-  entire stack is verified with zero setup) → production build. A non-blocking
-  mobile-typecheck job runs informationally.
+  entire stack is verified with zero setup) → production build. A parallel job
+  typechecks the mobile app.
 - **CD** (`.github/workflows/cd.yml`, push to `main` / `v*` tags): builds the API
   via the multi-stage `apps/api/Dockerfile` (tsc + tsc-alias → compiled JS) and
   pushes the image to **GHCR** (`ghcr.io/<owner>/plaudern/api`).

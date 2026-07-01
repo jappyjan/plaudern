@@ -1,4 +1,6 @@
-import * as FileSystem from 'expo-file-system';
+// SDK 56 moved the classic upload API (uploadAsync / FileSystemUploadType) to
+// the `/legacy` entry; the new File API doesn't cover presigned binary PUT yet.
+import * as FileSystem from 'expo-file-system/legacy';
 import type { UploadFn } from '@plaudern/mobile-api-client';
 
 /**

@@ -11,7 +11,6 @@ const config: ExpoConfig = {
   scheme: 'plaudern',
   version: '0.1.0',
   orientation: 'portrait',
-  newArchEnabled: true,
   ios: {
     bundleIdentifier: 'ai.plaudern.app',
     supportsTablet: false,
