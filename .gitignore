@@ -1,0 +1,37 @@
+# dependencies
+node_modules
+.pnp
+.pnp.js
+
+# nx
+.nx/cache
+.nx/workspace-data
+tmp
+dist
+out-tsc
+build
+
+# env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# native / expo
+apps/mobile/ios
+apps/mobile/android
+apps/mobile/.expo
+*.xcworkspace
+*.xcuserstate
+Pods
+
+# logs / os
+*.log
+npm-debug.log*
+.DS_Store
+coverage
+
+# editor
+.idea
+.vscode/*
+!.vscode/extensions.json

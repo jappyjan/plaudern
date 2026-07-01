@@ -1,0 +1,38 @@
+{
+  "name": "plaudern",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Modular AI note-taking platform. Milestone 1: immutable Inbox + Plaud audio injection.",
+  "license": "UNLICENSED",
+  "scripts": {
+    "api:serve": "nx serve api",
+    "api:build": "nx build api",
+    "api:migrate": "nx run api:migrate",
+    "mobile:start": "nx start mobile",
+    "test": "nx run-many -t test",
+    "lint": "nx run-many -t lint",
+    "typecheck": "nx run-many -t typecheck",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down"
+  },
+  "workspaces": [
+    "apps/*",
+    "libs/*",
+    "libs/backend/*",
+    "libs/mobile/*"
+  ],
+  "devDependencies": {
+    "@nx/js": "23.0.1",
+    "@types/jest": "30.0.0",
+    "@types/node": "22.10.2",
+    "jest": "30.4.2",
+    "nx": "23.0.1",
+    "ts-jest": "29.4.11",
+    "tsx": "4.20.0",
+    "typescript": "5.7.3"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "pnpm": {
+    "onlyBuiltDependencies": ["better-sqlite3", "esbuild", "nx", "unrs-resolver", "msgpackr-extract"]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@plaudern/mobile-api-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@plaudern/contracts": "workspace:*"
+  }
+}

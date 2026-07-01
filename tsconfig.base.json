@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "composite": false,
+    "declaration": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "importHelpers": false,
+    "lib": ["ES2022"],
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "ES2022",
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "strictPropertyInitialization": false,
+    "sourceMap": true,
+    "baseUrl": ".",
+    "paths": {
+      "@plaudern/contracts": ["libs/contracts/src/index.ts"],
+      "@plaudern/persistence": ["libs/backend/persistence/src/index.ts"],
+      "@plaudern/storage": ["libs/backend/storage/src/index.ts"],
+      "@plaudern/inbox": ["libs/backend/inbox/src/index.ts"],
+      "@plaudern/ingestion": ["libs/backend/ingestion/src/index.ts"],
+      "@plaudern/transcription": ["libs/backend/transcription/src/index.ts"],
+      "@plaudern/auth": ["libs/backend/auth/src/index.ts"],
+      "@plaudern/mobile-api-client": ["libs/mobile/api-client/src/index.ts"],
+      "@plaudern/mobile-ui": ["libs/mobile/ui/src/index.ts"]
+    }
+  },
+  "exclude": ["node_modules", "tmp"]
+}
