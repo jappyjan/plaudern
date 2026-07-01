@@ -1,19 +1,12 @@
 // Metro config for the Expo app inside the Nx monorepo (plan §1/§7).
-// Two wrappers are layered:
-//   - withNxMetro: lets Metro resolve workspace libs (@plaudern/*) and watch the repo
-//   - withUniwind: compiles Tailwind v4 (via Uniwind) — HeroUI Native's styling engine
+// Expo's default config auto-detects the pnpm workspace (watchFolders +
+// nodeModulesPaths cover the @plaudern/* libs); withUniwind compiles
+// Tailwind v4 (via Uniwind) — HeroUI Native's styling engine.
+// ponytail: dropped withNxMetro — @nx/expo was never installed and Expo's
+// monorepo detection already does its job; re-add if lib resolution breaks.
 const { getDefaultConfig } = require('expo/metro-config');
-const { withNxMetro } = require('@nx/expo');
-const { withUniwind } = require('uniwind/metro');
+const { withUniwindConfig } = require('uniwind/metro');
 
-const projectRoot = __dirname;
-const config = getDefaultConfig(projectRoot);
+const config = getDefaultConfig(__dirname);
 
-module.exports = withUniwind(
-  withNxMetro(config, {
-    debug: false,
-    extensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
-    watchFolders: [],
-  }),
-  { input: './global.css' },
-);
+module.exports = withUniwindConfig(config, { cssEntryFile: './global.css' });
