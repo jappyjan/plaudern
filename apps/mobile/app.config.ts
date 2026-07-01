@@ -14,6 +14,10 @@ const config: ExpoConfig = {
   ios: {
     bundleIdentifier: 'ai.plaudern.app',
     supportsTablet: false,
+    infoPlist: {
+      // ponytail: API + MinIO are plain HTTP (sslip.io); drop this once they get a real domain + TLS
+      NSAppTransportSecurity: { NSAllowsArbitraryLoads: true },
+    },
   },
   android: {
     // Required for `expo prebuild -p android`, which CI uses to produce an
