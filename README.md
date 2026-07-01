@@ -117,6 +117,20 @@ Two complementary levels, both hardware-free:
 - **CD** (`.github/workflows/cd.yml`, push to `main` / `v*` tags): builds the API
   via the multi-stage `apps/api/Dockerfile` (tsc + tsc-alias → compiled JS) and
   pushes the image to **GHCR** (`ghcr.io/<owner>/plaudern/api`).
+- **Mobile build** (`.github/workflows/mobile-build.yml`, push to `main` / `v*`
+  tags, or manual `Run workflow`): `expo prebuild` generates the native projects
+  and builds the app binaries, published as **workflow artifacts**:
+  - **Android** — an installable release `.apk`, built end-to-end on
+    `ubuntu-latest` (the Android SDK ships with the runner). Signed with the
+    generated debug keystore, so no secrets are needed; swap in a real keystore
+    via secrets for a Play Store upload.
+  - **iOS** — an unsigned **iOS Simulator** build (`.app`, zipped), built on
+    `macos-latest`. A signed device `.ipa` needs an Apple Developer account +
+    certificates/provisioning (add via secrets and archive with `-sdk iphoneos`).
+
+  Native builds are heavy — especially macOS minutes — so they run on
+  `main`/tags and on demand, not on every PR (CI keeps the fast mobile
+  typecheck for PRs). Download the binaries from a run's **Artifacts** section.
 
 ## Deploy to Coolify
 

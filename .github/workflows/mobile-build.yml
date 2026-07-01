@@ -1,0 +1,141 @@
+name: Mobile build
+
+# Builds the native mobile apps and publishes the binaries as workflow
+# artifacts (downloadable from each run's "Artifacts" section).
+#
+#   - Android: a real, installable APK, built end-to-end on a Linux runner
+#     (the Android SDK ships with ubuntu-latest — no external accounts).
+#   - iOS: an unsigned iOS Simulator build (.app), built on a macOS runner.
+#     A signed device .ipa needs an Apple Developer account + certificates,
+#     which aren't self-contained in CI; see the note in the ios job below.
+#
+# Runs on pushes to main and version tags (alongside the CD image build) and
+# on demand via "Run workflow". Native builds are heavy (especially macOS
+# minutes), so they intentionally do NOT run on every PR — CI keeps the fast
+# mobile typecheck for that.
+
+on:
+  push:
+    branches: ['main']
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: mobile-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PNPM_VERSION: '10.33.0'
+  NODE_VERSION: '22'
+
+jobs:
+  android:
+    name: Android (APK)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Generate the native android/ project from app.config.ts. Deps are
+      # already installed via pnpm, so --no-install skips the redundant step.
+      - name: Prebuild (generate android project)
+        run: pnpm nx run mobile:prebuild-android
+
+      # assembleRelease. The Expo template signs the release build with the
+      # generated debug keystore, so the APK is installable without any signing
+      # secrets. For a Play Store upload, wire a real keystore via secrets.
+      - name: Build release APK
+        working-directory: apps/mobile/android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: plaudern-android-apk
+          path: apps/mobile/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+  ios:
+    name: iOS (Simulator .app)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Generate the native ios/ project. --no-install skips CocoaPods here so
+      # we can run pod install explicitly in the next step.
+      - name: Prebuild (generate iOS project)
+        run: pnpm nx run mobile:prebuild-ios
+
+      - name: Install CocoaPods
+        working-directory: apps/mobile/ios
+        run: pod install
+
+      # Unsigned Simulator build — no Apple Developer account or provisioning
+      # profile required. Produces a .app that runs in the iOS Simulator.
+      # To ship a signed device .ipa, add certificates/provisioning via secrets
+      # and archive with `-sdk iphoneos` + an ExportOptions.plist instead.
+      - name: Build (iOS Simulator, unsigned)
+        working-directory: apps/mobile/ios
+        run: |
+          # Expo sanitizes the app name into the project/scheme name; detect it
+          # rather than hardcoding so a rename can't silently break the build.
+          WORKSPACE=$(ls -d *.xcworkspace | head -1)
+          SCHEME=$(basename "$WORKSPACE" .xcworkspace)
+          echo "Building workspace=$WORKSPACE scheme=$SCHEME"
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Package .app
+        working-directory: apps/mobile/ios
+        run: |
+          APP_DIR="build/Build/Products/Release-iphonesimulator"
+          APP=$(ls -d "$APP_DIR"/*.app | head -1)
+          echo "Packaging $APP"
+          cd "$(dirname "$APP")"
+          zip -ry "$GITHUB_WORKSPACE/plaudern-ios-simulator.zip" "$(basename "$APP")"
+
+      - name: Upload iOS app
+        uses: actions/upload-artifact@v4
+        with:
+          name: plaudern-ios-simulator
+          path: plaudern-ios-simulator.zip
+          if-no-files-found: error

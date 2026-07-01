@@ -15,6 +15,12 @@ const config: ExpoConfig = {
     bundleIdentifier: 'ai.plaudern.app',
     supportsTablet: false,
   },
+  android: {
+    // Required for `expo prebuild -p android`, which CI uses to produce an
+    // installable APK. The Plaud native module is iOS-only, so on Android the
+    // app transparently falls back to the JS simulator (modules/plaud-sdk).
+    package: 'ai.plaudern.app',
+  },
   plugins: [
     'expo-router',
     'expo-secure-store',
