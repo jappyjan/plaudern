@@ -13,6 +13,14 @@
       "executor": "nx:run-commands",
       "options": { "command": "expo prebuild --platform ios", "cwd": "apps/mobile" }
     },
+    "prebuild-ios": {
+      "executor": "nx:run-commands",
+      "options": { "command": "expo prebuild --platform ios --no-install", "cwd": "apps/mobile" }
+    },
+    "prebuild-android": {
+      "executor": "nx:run-commands",
+      "options": { "command": "expo prebuild --platform android --no-install", "cwd": "apps/mobile" }
+    },
     "run-ios": {
       "executor": "nx:run-commands",
       "options": { "command": "expo run:ios", "cwd": "apps/mobile" }
