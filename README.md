@@ -60,21 +60,33 @@ See `plan` details in the PR description or the architecture notes.
 
 ## Backend — run & verify
 
+**Whole stack in Docker** (API + Postgres + MinIO + Redis). Migrations run
+automatically on boot:
+
+```bash
+docker compose up -d --build
+curl http://localhost:3000/api/health
+# seed a device API key:
+docker compose exec api node dist/server/apps/api/src/seed.js
+```
+
+**Infra in Docker, API from source** (fast iteration):
+
 ```bash
 pnpm install
-
-# 1. Local infra (Postgres + MinIO + Redis)
-docker compose up -d
-
-# 2. Configure + run the API
-cp apps/api/.env.example apps/api/.env      # defaults target the compose services
+docker compose up -d postgres minio minio-init redis   # infra only
+cp apps/api/.env.example apps/api/.env
 pnpm nx run api:migrate                     # apply DB schema
 pnpm nx run api:seed                        # prints a device API key (x-device-key)
 pnpm nx serve api                           # http://localhost:3000/api
-
-# 3. Health check
-curl http://localhost:3000/api/health
 ```
+
+> **Presigned URLs & `S3_PUBLIC_ENDPOINT`:** the API signs upload/download URLs
+> against `S3_PUBLIC_ENDPOINT` (falling back to `S3_ENDPOINT`). Server-side S3
+> calls use the internal `S3_ENDPOINT` (`http://minio:9000`), but the URL handed
+> to a client must be reachable from *that client*. To upload from a phone or
+> simulator, set `S3_PUBLIC_ENDPOINT` to your machine's LAN IP, e.g.
+> `S3_PUBLIC_ENDPOINT=http://192.168.1.100:9000 docker compose up -d`.
 
 ### Test tiers
 
@@ -105,6 +117,23 @@ Two complementary levels, both hardware-free:
 - **CD** (`.github/workflows/cd.yml`, push to `main` / `v*` tags): builds the API
   via the multi-stage `apps/api/Dockerfile` (tsc + tsc-alias → compiled JS) and
   pushes the image to **GHCR** (`ghcr.io/<owner>/plaudern/api`).
+
+## Deploy to Coolify
+
+`docker-compose.coolify.yaml` is a self-contained stack (API + Postgres + MinIO +
+Redis) using Coolify's magic environment variables:
+
+- `SERVICE_FQDN_API_3000` / `SERVICE_FQDN_MINIO_9000` — Coolify provisions a
+  domain + TLS and routes it to the container port. The API's presigned URLs are
+  signed against the public MinIO FQDN, so uploads work from any client.
+- `SERVICE_USER_*` / `SERVICE_PASSWORD_*` — Postgres, MinIO, and Redis
+  credentials are generated and persisted automatically on first deploy.
+
+Steps: create a **Docker Compose** resource in Coolify pointing at this repo, set
+the compose file to `docker-compose.coolify.yaml`, and (optionally) set
+`OPENAI_API_KEY` + `TRANSCRIPTION_PROVIDER=openai` in the UI to enable real
+transcription. Deploy — migrations run on boot. Only the API and MinIO get public
+domains; Postgres and Redis stay on the internal network.
 
 To drive it manually against the real stack, use the seeded API key:
 

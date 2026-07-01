@@ -1,0 +1,114 @@
+# Plaudern — Coolify deployment compose.
+#
+# Uses Coolify "magic" environment variables:
+#   SERVICE_FQDN_<SVC>_<PORT>  -> Coolify generates a domain + routes it through
+#                                 its proxy to that container port. Referencing
+#                                 ${SERVICE_FQDN_<SVC>_<PORT>} yields the URL.
+#   SERVICE_USER_<ID> /
+#   SERVICE_PASSWORD_<ID>      -> Coolify generates & persists a random value the
+#                                 first time it's referenced.
+# Plain ${VARS} (e.g. OPENAI_API_KEY) are surfaced in the Coolify UI to fill in.
+#
+# Only `api` and `minio` are exposed; postgres/redis stay on the internal network.
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      # Public URL for the API (Coolify provisions TLS + domain).
+      - SERVICE_FQDN_API_3000
+      - PORT=3000
+      - DATABASE_DRIVER=postgres
+      - DATABASE_URL=postgres://${SERVICE_USER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/plaudern
+      - DATABASE_SYNCHRONIZE=false
+      - STORAGE_DRIVER=s3
+      # Internal endpoint for server-side S3 ops...
+      - S3_ENDPOINT=http://minio:9000
+      # ...public endpoint baked into presigned URLs handed to clients.
+      - S3_PUBLIC_ENDPOINT=${SERVICE_FQDN_MINIO_9000}
+      - S3_REGION=us-east-1
+      - S3_BUCKET=plaudern-inbox
+      - S3_ACCESS_KEY=${SERVICE_USER_MINIO}
+      - S3_SECRET_KEY=${SERVICE_PASSWORD_MINIO}
+      - S3_FORCE_PATH_STYLE=true
+      - QUEUE_DRIVER=bull
+      - REDIS_URL=redis://:${SERVICE_PASSWORD_REDIS}@redis:6379
+      # Transcription: set OPENAI_API_KEY and switch provider to `openai` in the UI.
+      - TRANSCRIPTION_PROVIDER=${TRANSCRIPTION_PROVIDER:-stub}
+      - TRANSCRIPTION_MODEL=${TRANSCRIPTION_MODEL:-whisper-1}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${SERVICE_USER_POSTGRES}
+      - POSTGRES_PASSWORD=${SERVICE_PASSWORD_POSTGRES}
+      - POSTGRES_DB=plaudern
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${SERVICE_USER_POSTGRES} -d plaudern']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      # Public S3 API endpoint (used for presigned uploads/downloads).
+      - SERVICE_FQDN_MINIO_9000
+      # Optional: expose the MinIO console on its own domain.
+      - SERVICE_FQDN_MINIOCONSOLE_9001
+      - MINIO_ROOT_USER=${SERVICE_USER_MINIO}
+      - MINIO_ROOT_PASSWORD=${SERVICE_PASSWORD_MINIO}
+      - MINIO_SERVER_URL=${SERVICE_FQDN_MINIO_9000}
+      - MINIO_BROWSER_REDIRECT_URL=${SERVICE_FQDN_MINIOCONSOLE_9001}
+      - MINIO_API_CORS_ALLOW_ORIGIN=*
+    volumes:
+      - miniodata:/data
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 ${SERVICE_USER_MINIO} ${SERVICE_PASSWORD_MINIO}; do sleep 1; done;
+      mc mb --ignore-existing local/plaudern-inbox;
+      echo 'minio bucket ready';
+      "
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --requirepass ${SERVICE_PASSWORD_REDIS}
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', '-a', '${SERVICE_PASSWORD_REDIS}', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  pgdata:
+  miniodata:
+  redisdata:

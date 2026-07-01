@@ -1,6 +1,47 @@
-# Local infra for the Inbox backend (plan §6).
-# Postgres = metadata, MinIO = S3-compatible blob store, Redis = BullMQ queue.
+# Full local stack for the Plaudern API (plan §6): Postgres (metadata),
+# MinIO (S3-compatible blobs), Redis (BullMQ), and the API itself.
+#
+#   docker compose up -d --build
+#
+# Run only the infra (and the API via `nx serve api`) with:
+#   docker compose up -d postgres minio minio-init redis
 services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_DRIVER: postgres
+      DATABASE_URL: postgres://plaudern:plaudern@postgres:5432/plaudern
+      DATABASE_SYNCHRONIZE: 'false'
+      STORAGE_DRIVER: s3
+      # Internal endpoint for server-side S3 ops.
+      S3_ENDPOINT: http://minio:9000
+      # Endpoint baked into presigned URLs handed to clients. Override with your
+      # LAN IP (e.g. http://192.168.1.100:9000) to upload from a phone/simulator.
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:9000}
+      S3_REGION: us-east-1
+      S3_BUCKET: plaudern-inbox
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_FORCE_PATH_STYLE: 'true'
+      QUEUE_DRIVER: bull
+      REDIS_URL: redis://redis:6379
+      TRANSCRIPTION_PROVIDER: ${TRANSCRIPTION_PROVIDER:-stub}
+      TRANSCRIPTION_MODEL: ${TRANSCRIPTION_MODEL:-whisper-1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      PORT: 3000
+    ports:
+      - '3000:3000'
+
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
@@ -25,19 +66,15 @@ services:
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
+      # Allow presigned-PUT from browsers/RN clients.
+      MINIO_API_CORS_ALLOW_ORIGIN: '*'
     ports:
       - '9000:9000'
       - '9001:9001'
     volumes:
       - miniodata:/data
-    healthcheck:
-      test: ['CMD', 'mc', 'ready', 'local']
-      interval: 5s
-      timeout: 5s
-      retries: 10
 
-  # Creates the bucket and applies a permissive dev CORS policy so the
-  # React Native client can PUT to presigned URLs (plan §6, §7).
+  # Creates the inbox bucket, then exits. Its retry loop is what gates readiness.
   minio-init:
     image: minio/mc:latest
     depends_on:
@@ -47,7 +84,6 @@ services:
       /bin/sh -c "
       until mc alias set local http://minio:9000 minioadmin minioadmin; do sleep 1; done;
       mc mb --ignore-existing local/plaudern-inbox;
-      mc anonymous set download local/plaudern-inbox || true;
       echo 'minio bucket ready';
       "
 

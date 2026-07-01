@@ -17,7 +17,14 @@ import { ObjectHead, StorageService } from './storage.service';
 @Injectable()
 export class S3StorageService extends StorageService {
   private readonly logger = new Logger(S3StorageService.name);
+  /** Internal client for server-side ops (head/get/put), uses S3_ENDPOINT. */
   private readonly client: S3Client;
+  /**
+   * Client used only to sign URLs. Uses S3_PUBLIC_ENDPOINT so the URLs handed
+   * to external clients (the mobile app) are reachable from outside the docker
+   * network — the internal S3_ENDPOINT (e.g. http://minio:9000) is not.
+   */
+  private readonly presignClient: S3Client;
   private readonly bucket: string;
   private readonly presignTtl: number;
 
@@ -25,15 +32,21 @@ export class S3StorageService extends StorageService {
     super();
     this.bucket = config.get<string>('S3_BUCKET', 'plaudern-inbox');
     this.presignTtl = Number(config.get<string>('S3_PRESIGN_TTL', '900'));
-    this.client = new S3Client({
-      region: config.get<string>('S3_REGION', 'us-east-1'),
-      endpoint: config.get<string>('S3_ENDPOINT'),
-      forcePathStyle: config.get<string>('S3_FORCE_PATH_STYLE', 'true') === 'true',
-      credentials: {
-        accessKeyId: config.get<string>('S3_ACCESS_KEY', 'minioadmin'),
-        secretAccessKey: config.get<string>('S3_SECRET_KEY', 'minioadmin'),
-      },
-    });
+
+    const region = config.get<string>('S3_REGION', 'us-east-1');
+    const forcePathStyle = config.get<string>('S3_FORCE_PATH_STYLE', 'true') === 'true';
+    const credentials = {
+      accessKeyId: config.get<string>('S3_ACCESS_KEY', 'minioadmin'),
+      secretAccessKey: config.get<string>('S3_SECRET_KEY', 'minioadmin'),
+    };
+    const endpoint = config.get<string>('S3_ENDPOINT');
+    const publicEndpoint = config.get<string>('S3_PUBLIC_ENDPOINT') ?? endpoint;
+
+    this.client = new S3Client({ region, endpoint, forcePathStyle, credentials });
+    this.presignClient =
+      publicEndpoint === endpoint
+        ? this.client
+        : new S3Client({ region, endpoint: publicEndpoint, forcePathStyle, credentials });
   }
 
   async createPresignedPutUrl(storageKey: string, contentType: string): Promise<string> {
@@ -42,12 +55,12 @@ export class S3StorageService extends StorageService {
       Key: storageKey,
       ContentType: contentType,
     });
-    return getSignedUrl(this.client, command, { expiresIn: this.presignTtl });
+    return getSignedUrl(this.presignClient, command, { expiresIn: this.presignTtl });
   }
 
   async createPresignedGetUrl(storageKey: string): Promise<string> {
     const command = new GetObjectCommand({ Bucket: this.bucket, Key: storageKey });
-    return getSignedUrl(this.client, command, { expiresIn: this.presignTtl });
+    return getSignedUrl(this.presignClient, command, { expiresIn: this.presignTtl });
   }
 
   async putObject(
