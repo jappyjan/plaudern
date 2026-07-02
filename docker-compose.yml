@@ -48,11 +48,11 @@ services:
       TRANSCRIPTION_PROVIDER: ${TRANSCRIPTION_PROVIDER:-stub}
       TRANSCRIPTION_MODEL: ${TRANSCRIPTION_MODEL:-whisper-1}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      # Encrypts the Plaud password stored in Postgres — override in production.
-      PLAUD_SETTINGS_SECRET: ${PLAUD_SETTINGS_SECRET:-change-me}
+      # General-purpose key encrypting secrets stored in Postgres (e.g. the
+      # Plaud password) — override in production.
+      APP_ENCRYPTION_SECRET: ${APP_ENCRYPTION_SECRET:-change-me}
       PLAUD_POLL_INTERVAL_MS: ${PLAUD_POLL_INTERVAL_MS:-300000}
-      # Calendar feeds: PLAUD_SETTINGS_SECRET also encrypts the feed URLs
-      # (set CALENDAR_SETTINGS_SECRET to use a dedicated secret).
+      # Calendar feeds: APP_ENCRYPTION_SECRET also encrypts the feed URLs.
       CALENDAR_POLL_INTERVAL_MS: ${CALENDAR_POLL_INTERVAL_MS:-900000}
       PORT: 3000
     ports:

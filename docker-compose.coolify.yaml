@@ -55,8 +55,9 @@ services:
       - TRANSCRIPTION_PROVIDER=${TRANSCRIPTION_PROVIDER:-stub}
       - TRANSCRIPTION_MODEL=${TRANSCRIPTION_MODEL:-whisper-1}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      # Plaud cloud sync: Coolify generates & persists the encryption secret.
-      - PLAUD_SETTINGS_SECRET=${SERVICE_PASSWORD_PLAUDSETTINGS}
+      # General-purpose encryption key for secrets stored in the database
+      # (e.g. the Plaud password): Coolify generates & persists it.
+      - APP_ENCRYPTION_SECRET=${SERVICE_PASSWORD_APPENCRYPTION}
       - PLAUD_POLL_INTERVAL_MS=${PLAUD_POLL_INTERVAL_MS:-300000}
       # Calendar feeds: the same secret encrypts subscribed feed URLs.
       - CALENDAR_POLL_INTERVAL_MS=${CALENDAR_POLL_INTERVAL_MS:-900000}

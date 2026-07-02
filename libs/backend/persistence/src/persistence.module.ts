@@ -5,6 +5,7 @@ import {
   CalendarEventEntity,
   CalendarFeedEntity,
   ExtractedPayloadEntity,
+  GeocodeCacheEntity,
   InboxItemEntity,
   PlaudSettingsEntity,
   RecordingEventLinkEntity,
@@ -13,13 +14,15 @@ import {
 import { InitialSchema1720000000000 } from './migrations/1720000000000-InitialSchema';
 import { DropAuthTables1720000000001 } from './migrations/1720000000001-DropAuthTables';
 import { CreatePlaudSettings1720000000002 } from './migrations/1720000000002-CreatePlaudSettings';
-import { CreateCalendarTables1720000000003 } from './migrations/1720000000003-CreateCalendarTables';
+import { GeocodeCache1720000000003 } from './migrations/1720000000003-GeocodeCache';
+import { CreateCalendarTables1720000000004 } from './migrations/1720000000004-CreateCalendarTables';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
   SourcePayloadEntity,
   ExtractedPayloadEntity,
   PlaudSettingsEntity,
+  GeocodeCacheEntity,
   CalendarFeedEntity,
   CalendarEventEntity,
   RecordingEventLinkEntity,
@@ -31,7 +34,8 @@ export const ALL_MIGRATIONS = [
   InitialSchema1720000000000,
   DropAuthTables1720000000001,
   CreatePlaudSettings1720000000002,
-  CreateCalendarTables1720000000003,
+  GeocodeCache1720000000003,
+  CreateCalendarTables1720000000004,
 ];
 
 /**

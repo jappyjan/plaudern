@@ -74,6 +74,9 @@ importers:
       '@plaudern/contracts':
         specifier: workspace:*
         version: link:../../libs/contracts
+      '@plaudern/geocoding':
+        specifier: workspace:*
+        version: link:../../libs/backend/geocoding
       '@plaudern/inbox':
         specifier: workspace:*
         version: link:../../libs/backend/inbox
@@ -215,6 +218,27 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3))
 
+  libs/backend/geocoding:
+    dependencies:
+      '@nestjs/common':
+        specifier: ^11.0.0
+        version: 11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/config':
+        specifier: ^4.0.0
+        version: 4.0.4(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(rxjs@7.8.2)
+      '@nestjs/typeorm':
+        specifier: ^11.0.0
+        version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/contracts':
+        specifier: workspace:*
+        version: link:../../contracts
+      '@plaudern/persistence':
+        specifier: workspace:*
+        version: link:../persistence
+      typeorm:
+        specifier: ^1.0.0
+        version: 1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3))
+
   libs/backend/inbox:
     dependencies:
       '@nestjs/common':
@@ -232,6 +256,9 @@ importers:
       '@plaudern/storage':
         specifier: workspace:*
         version: link:../storage
+      rxjs:
+        specifier: ^7.8.0
+        version: 7.8.2
       typeorm:
         specifier: ^1.0.0
         version: 1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3))
@@ -337,6 +364,9 @@ importers:
       '@plaudern/inbox':
         specifier: workspace:*
         version: link:../inbox
+      '@plaudern/persistence':
+        specifier: workspace:*
+        version: link:../persistence
       '@plaudern/storage':
         specifier: workspace:*
         version: link:../storage

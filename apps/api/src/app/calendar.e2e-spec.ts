@@ -7,7 +7,7 @@ process.env.DATABASE_URL = ':memory:';
 process.env.STORAGE_DRIVER = 'memory';
 process.env.QUEUE_DRIVER = 'inline';
 process.env.TRANSCRIPTION_PROVIDER = 'stub';
-process.env.PLAUD_SETTINGS_SECRET = 'test-secret';
+process.env.APP_ENCRYPTION_SECRET = 'test-secret';
 process.env.PLAUD_POLL_INTERVAL_MS = '0'; // no background pollers in tests
 process.env.CALENDAR_POLL_INTERVAL_MS = '0';
 

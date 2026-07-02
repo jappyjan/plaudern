@@ -6,6 +6,7 @@ import {
   calendarFeedTestResponseSchema,
   calendarRecordingsResponseSchema,
   calendarSyncNowResponseSchema,
+  geocodeResponseSchema,
   inboxItemSchema,
   inboxListResponseSchema,
   ingestInitResponseSchema,
@@ -22,6 +23,7 @@ import {
   type CalendarRecordingsResponse,
   type CalendarSyncNowResponse,
   type CreateCalendarFeedRequest,
+  type GeocodeResponse,
   type IngestInitRequest,
   type IngestInitResponse,
   type InboxItemDto,
@@ -78,6 +80,19 @@ export async function getItem(id: string): Promise<InboxItemDto> {
 export async function getSourceUrl(id: string): Promise<string | null> {
   const body = (await requestJson(`/inbox/${id}/source-url`)) as { url: string | null };
   return body.url;
+}
+
+/** Enqueue a fresh transcription attempt; returns the refreshed item. */
+export async function retryTranscription(id: string): Promise<InboxItemDto> {
+  return inboxItemSchema.parse(
+    await requestJson(`/inbox/${id}/transcription/retry`, { method: 'POST' }),
+  );
+}
+
+/** Reverse-geocode coordinates to a place (label/city null when unavailable). */
+export async function getPlaceName(lat: number, lon: number): Promise<GeocodeResponse> {
+  const query = new URLSearchParams({ lat: String(lat), lon: String(lon) });
+  return geocodeResponseSchema.parse(await requestJson(`/geocode?${query}`));
 }
 
 export async function ingestInit(req: IngestInitRequest): Promise<IngestInitResponse> {

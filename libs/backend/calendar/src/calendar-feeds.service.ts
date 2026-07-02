@@ -99,7 +99,7 @@ export class CalendarFeedsService {
       return decryptSecret(feed.urlEncrypted, this.requireSecret());
     } catch {
       throw new Error(
-        'stored feed URL cannot be decrypted (settings secret missing or changed) — re-enter the feed URL in settings',
+        'stored feed URL cannot be decrypted (APP_ENCRYPTION_SECRET missing or changed) — re-enter the feed URL in settings',
       );
     }
   }
@@ -135,12 +135,10 @@ export class CalendarFeedsService {
   }
 
   private requireSecret(): string {
-    const secret =
-      this.config.get<string>('CALENDAR_SETTINGS_SECRET', '') ||
-      this.config.get<string>('PLAUD_SETTINGS_SECRET', '');
+    const secret = this.config.get<string>('APP_ENCRYPTION_SECRET', '');
     if (!secret) {
       throw new BadRequestException(
-        'CALENDAR_SETTINGS_SECRET (or PLAUD_SETTINGS_SECRET) is not configured on the server — set it to enable calendar feed storage',
+        'APP_ENCRYPTION_SECRET is not configured on the server — set it to enable calendar feed storage',
       );
     }
     return secret;

@@ -24,7 +24,6 @@ describe('CalendarFeedsService', () => {
   let dataSource: DataSource;
   let service: CalendarFeedsService;
   let secretValue: string | undefined;
-  let calendarSecretValue: string | undefined;
 
   beforeEach(async () => {
     dataSource = new DataSource({
@@ -34,12 +33,10 @@ describe('CalendarFeedsService', () => {
       synchronize: true,
     });
     await dataSource.initialize();
-    secretValue = 'plaud-secret';
-    calendarSecretValue = undefined;
+    secretValue = 'app-secret';
     const config = {
       get: (key: string, fallback = '') => {
-        if (key === 'CALENDAR_SETTINGS_SECRET') return calendarSecretValue ?? fallback;
-        if (key === 'PLAUD_SETTINGS_SECRET') return secretValue ?? fallback;
+        if (key === 'APP_ENCRYPTION_SECRET') return secretValue ?? fallback;
         return fallback;
       },
     } as unknown as ConfigService;
@@ -60,24 +57,13 @@ describe('CalendarFeedsService', () => {
     expect(feed.urlEncrypted).not.toContain('secret-token');
     expect(feed.urlMasked).toBe('example.com/…/cal.ics');
     expect(feed.urlHash).toMatch(/^[0-9a-f]{64}$/);
-    // Decrypts back to the normalized https URL.
-    expect(decryptSecret(feed.urlEncrypted, 'plaud-secret')).toBe(
+    // Decrypts back to the normalized https URL with APP_ENCRYPTION_SECRET.
+    expect(decryptSecret(feed.urlEncrypted, 'app-secret')).toBe(
       'https://example.com/secret-token/cal.ics',
     );
     // DTO never exposes the URL.
     const dto = service.toDto(feed);
     expect(JSON.stringify(dto)).not.toContain('secret-token');
-  });
-
-  it('prefers CALENDAR_SETTINGS_SECRET over the plaud secret', async () => {
-    calendarSecretValue = 'calendar-secret';
-    const feed = await service.create({
-      name: 'Work',
-      url: 'https://example.com/cal.ics',
-      enabled: true,
-    });
-    expect(decryptSecret(feed.urlEncrypted, 'calendar-secret')).toBe('https://example.com/cal.ics');
-    expect(() => decryptSecret(feed.urlEncrypted, 'plaud-secret')).toThrow();
   });
 
   it('rejects when no secret is configured', async () => {
@@ -105,7 +91,7 @@ describe('CalendarFeedsService', () => {
     const updated = await service.update(feed.id, { url: 'https://example.com/other.ics' });
     expect(updated.lastSyncStatus).toBeNull();
     expect(updated.lastSyncEventCount).toBeNull();
-    expect(decryptSecret(updated.urlEncrypted, 'plaud-secret')).toBe(
+    expect(decryptSecret(updated.urlEncrypted, 'app-secret')).toBe(
       'https://example.com/other.ics',
     );
   });

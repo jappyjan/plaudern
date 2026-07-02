@@ -2,6 +2,7 @@ import { Card, CardBody, Chip } from '@heroui/react';
 import type { InboxItemDto, SourceType } from '@plaudern/contracts';
 import { useNavigate } from 'react-router-dom';
 import { formatDateTime, formatDuration } from '../lib/format';
+import { usePlaceName } from '../hooks/usePlaceName';
 import { AudioIcon, FileIcon, LocationIcon, MicIcon, TextIcon } from './icons';
 import { TranscriptionChip } from './TranscriptionChip';
 
@@ -30,25 +31,32 @@ export function InboxItemCard({ item }: { item: InboxItemDto }) {
   const navigate = useNavigate();
   const tags = item.metadata?.tags as Record<string, unknown> | undefined;
   const duration = typeof tags?.durationSeconds === 'number' ? tags.durationSeconds : null;
-  const hasLocation = Boolean(item.metadata?.location);
+  const location = item.metadata?.location as { lat: number; lon: number } | undefined;
+  const { city } = usePlaceName(location);
   const recordedViaMic = item.metadata?.capturedVia === 'browser-recording';
 
   return (
     <Card isPressable onPress={() => navigate(`/items/${item.id}`)} className="w-full">
-      <CardBody className="flex flex-row items-center gap-3 py-3">
-        <SourceIcon sourceType={item.sourceType} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{itemTitle(item)}</p>
-          <p className="text-xs text-default-500">{formatDateTime(item.occurredAt)}</p>
+      <CardBody className="gap-1 py-2.5">
+        {/* Main line: the title gets the full row width. */}
+        <div className="flex items-center gap-2">
+          <SourceIcon sourceType={item.sourceType} />
+          <p className="min-w-0 flex-1 truncate text-sm font-medium">{itemTitle(item)}</p>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        {/* Meta line: date, duration and tags, aligned under the title. */}
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 pl-7 text-xs text-default-500">
+          <span className="whitespace-nowrap">{formatDateTime(item.occurredAt)}</span>
           {duration !== null && (
-            <span className="text-xs tabular-nums text-default-500">{formatDuration(duration)}</span>
+            <span className="tabular-nums">{formatDuration(duration)}</span>
           )}
-          {recordedViaMic && <MicIcon className="h-4 w-4 text-default-400" />}
-          {hasLocation && (
-            <Chip size="sm" variant="flat" startContent={<LocationIcon className="h-3.5 w-3.5" />}>
-              GPS
+          {recordedViaMic && <MicIcon className="h-3.5 w-3.5 shrink-0 text-default-400" />}
+          {location && (
+            <Chip
+              size="sm"
+              variant="flat"
+              startContent={<LocationIcon className="h-3.5 w-3.5" />}
+            >
+              <span className="max-w-32 truncate">{city ?? 'GPS'}</span>
             </Chip>
           )}
           <TranscriptionChip item={item} />

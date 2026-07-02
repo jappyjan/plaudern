@@ -25,6 +25,7 @@
       "@plaudern/ingestion": ["libs/backend/ingestion/src/index.ts"],
       "@plaudern/transcription": ["libs/backend/transcription/src/index.ts"],
       "@plaudern/plaud-sync": ["libs/backend/plaud-sync/src/index.ts"],
+      "@plaudern/geocoding": ["libs/backend/geocoding/src/index.ts"],
       "@plaudern/calendar": ["libs/backend/calendar/src/index.ts"]
     }
   },

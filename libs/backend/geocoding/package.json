@@ -1,5 +1,5 @@
 {
-  "name": "@plaudern/transcription",
+  "name": "@plaudern/geocoding",
   "version": "0.1.0",
   "private": true,
   "type": "commonjs",
@@ -7,13 +7,12 @@
   "types": "./src/index.ts",
   "dependencies": {
     "@plaudern/contracts": "workspace:*",
-    "@plaudern/inbox": "workspace:*",
-    "@plaudern/persistence": "workspace:*",
-    "@plaudern/storage": "workspace:*",
-    "bullmq": "^5.0.0"
+    "@plaudern/persistence": "workspace:*"
   },
   "peerDependencies": {
     "@nestjs/common": "^11.0.0",
-    "@nestjs/config": "^4.0.0"
+    "@nestjs/config": "^4.0.0",
+    "@nestjs/typeorm": "^11.0.0",
+    "typeorm": "^1.0.0"
   }
 }
