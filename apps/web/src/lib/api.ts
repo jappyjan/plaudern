@@ -1,14 +1,31 @@
 import {
+  calendarEventDetailSchema,
+  calendarEventsResponseSchema,
+  calendarFeedSchema,
+  calendarFeedsResponseSchema,
+  calendarFeedTestResponseSchema,
+  calendarRecordingsResponseSchema,
+  calendarSyncNowResponseSchema,
   geocodeResponseSchema,
   inboxItemSchema,
   inboxListResponseSchema,
   ingestInitResponseSchema,
+  itemEventsResponseSchema,
+  linkResponseSchema,
   plaudSettingsSchema,
   plaudSyncNowResponseSchema,
   plaudTestConnectionResponseSchema,
   speakerTranscriptSchema,
   voiceProfileDetailSchema,
   voiceProfileListResponseSchema,
+  type CalendarEventDetailDto,
+  type CalendarEventsResponse,
+  type CalendarFeedDto,
+  type CalendarFeedsResponse,
+  type CalendarFeedTestResponse,
+  type CalendarRecordingsResponse,
+  type CalendarSyncNowResponse,
+  type CreateCalendarFeedRequest,
   type GeocodeResponse,
   type IngestInitRequest,
   type IngestInitResponse,
@@ -18,7 +35,10 @@ import {
   type PlaudSyncNowResponse,
   type PlaudTestConnectionRequest,
   type PlaudTestConnectionResponse,
+  type ItemEventsResponse,
+  type LinkResponse,
   type SpeakerTranscriptDto,
+  type UpdateCalendarFeedRequest,
   type UpdatePlaudSettingsRequest,
   type UpdateVoiceProfileRequest,
   type VoiceProfileDetailDto,
@@ -166,6 +186,80 @@ export async function mergeSpeakers(
       body: JSON.stringify({ sourceProfileId }),
     }),
   );
+}
+
+export async function listCalendarFeeds(): Promise<CalendarFeedsResponse> {
+  return calendarFeedsResponseSchema.parse(await requestJson('/calendar/feeds'));
+}
+
+export async function createCalendarFeed(req: CreateCalendarFeedRequest): Promise<CalendarFeedDto> {
+  return calendarFeedSchema.parse(
+    await requestJson('/calendar/feeds', { method: 'POST', body: JSON.stringify(req) }),
+  );
+}
+
+export async function updateCalendarFeed(
+  id: string,
+  req: UpdateCalendarFeedRequest,
+): Promise<CalendarFeedDto> {
+  return calendarFeedSchema.parse(
+    await requestJson(`/calendar/feeds/${id}`, { method: 'PUT', body: JSON.stringify(req) }),
+  );
+}
+
+export async function deleteCalendarFeed(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/calendar/feeds/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new ApiError(res.status, `DELETE /calendar/feeds/${id} failed (${res.status})`);
+}
+
+export async function testCalendarFeed(url: string): Promise<CalendarFeedTestResponse> {
+  return calendarFeedTestResponseSchema.parse(
+    await requestJson('/calendar/feeds/test', { method: 'POST', body: JSON.stringify({ url }) }),
+  );
+}
+
+export async function triggerCalendarSync(): Promise<CalendarSyncNowResponse> {
+  return calendarSyncNowResponseSchema.parse(
+    await requestJson('/calendar/sync', { method: 'POST' }),
+  );
+}
+
+export async function listCalendarEvents(from: string, to: string): Promise<CalendarEventsResponse> {
+  const query = new URLSearchParams({ from, to });
+  return calendarEventsResponseSchema.parse(await requestJson(`/calendar/events?${query}`));
+}
+
+export async function getCalendarEvent(id: string): Promise<CalendarEventDetailDto> {
+  return calendarEventDetailSchema.parse(await requestJson(`/calendar/events/${id}`));
+}
+
+export async function listCalendarRecordings(
+  from: string,
+  to: string,
+): Promise<CalendarRecordingsResponse> {
+  const query = new URLSearchParams({ from, to });
+  return calendarRecordingsResponseSchema.parse(await requestJson(`/calendar/recordings?${query}`));
+}
+
+export async function listItemEvents(inboxItemId: string): Promise<ItemEventsResponse> {
+  return itemEventsResponseSchema.parse(await requestJson(`/calendar/items/${inboxItemId}/events`));
+}
+
+export async function createCalendarLink(
+  inboxItemId: string,
+  eventId: string,
+): Promise<LinkResponse> {
+  return linkResponseSchema.parse(
+    await requestJson('/calendar/links', {
+      method: 'POST',
+      body: JSON.stringify({ inboxItemId, eventId }),
+    }),
+  );
+}
+
+export async function deleteCalendarLink(inboxItemId: string, eventId: string): Promise<void> {
+  const res = await fetch(`${BASE}/calendar/links/${inboxItemId}/${eventId}`, { method: 'DELETE' });
+  if (!res.ok) throw new ApiError(res.status, `DELETE /calendar/links failed (${res.status})`);
 }
 
 /**

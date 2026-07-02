@@ -6,3 +6,6 @@ export * from './plaud-settings.entity';
 export * from './voice-profile.entity';
 export * from './speaker-occurrence.entity';
 export * from './geocode-cache.entity';
+export * from './calendar-feed.entity';
+export * from './calendar-event.entity';
+export * from './recording-event-link.entity';

@@ -52,6 +52,8 @@ services:
       # Plaud password) — override in production.
       APP_ENCRYPTION_SECRET: ${APP_ENCRYPTION_SECRET:-change-me}
       PLAUD_POLL_INTERVAL_MS: ${PLAUD_POLL_INTERVAL_MS:-300000}
+      # Calendar feeds: APP_ENCRYPTION_SECRET also encrypts the feed URLs.
+      CALENDAR_POLL_INTERVAL_MS: ${CALENDAR_POLL_INTERVAL_MS:-900000}
       # --- Speaker identification (pyannote sidecar) ---
       # stub = deterministic offline speakers; pyannote = real sidecar; off = disabled
       SPEAKER_ID_PROVIDER: ${SPEAKER_ID_PROVIDER:-stub}

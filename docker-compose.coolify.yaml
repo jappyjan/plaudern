@@ -59,6 +59,8 @@ services:
       # (e.g. the Plaud password): Coolify generates & persists it.
       - APP_ENCRYPTION_SECRET=${SERVICE_PASSWORD_APPENCRYPTION}
       - PLAUD_POLL_INTERVAL_MS=${PLAUD_POLL_INTERVAL_MS:-300000}
+      # Calendar feeds: the same secret encrypts subscribed feed URLs.
+      - CALENDAR_POLL_INTERVAL_MS=${CALENDAR_POLL_INTERVAL_MS:-900000}
       # Speaker identification: set HF_TOKEN on the speaker-id service and
       # switch the provider to `pyannote` to enable it (see apps/speaker-id-ml/README.md).
       - SPEAKER_ID_PROVIDER=${SPEAKER_ID_PROVIDER:-stub}
