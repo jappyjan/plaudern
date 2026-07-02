@@ -1,5 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Card, CardBody, CardHeader, Chip, Spinner } from '@heroui/react';
+import {
+  Accordion,
+  AccordionItem,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  Chip,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  Spinner,
+} from '@heroui/react';
 import type { CalendarEventDto, InboxItemDto } from '@plaudern/contracts';
 import { Link, useParams } from 'react-router-dom';
 import {
@@ -13,6 +27,7 @@ import { useInboxEvents } from '../hooks/useInboxEvents';
 import { usePlaceName } from '../hooks/usePlaceName';
 import { latestTranscription, TranscriptionChip } from '../components/TranscriptionChip';
 import { LinkEventModal } from '../components/calendar/LinkEventModal';
+import { CollapsibleText } from '../components/CollapsibleText';
 import { BackIcon, CalendarIcon, LinkIcon, LocationIcon, UnlinkIcon } from '../components/icons';
 import { formatBytes, formatDate, formatDateTime, formatTimeRange } from '../lib/format';
 import type { GeoLocation } from '../lib/geolocation';
@@ -28,6 +43,7 @@ export function ItemDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
+  const [confirmRerunOpen, setConfirmRerunOpen] = useState(false);
   const [linkedEvents, setLinkedEvents] = useState<CalendarEventDto[] | null>(null);
   const [linkPickerOpen, setLinkPickerOpen] = useState(false);
 
@@ -36,6 +52,20 @@ export function ItemDetailPage() {
     getItem(id)
       .then(setItem)
       .catch(() => undefined);
+  }, [id]);
+
+  const retry = useCallback(async () => {
+    if (!id) return;
+    setRetrying(true);
+    setRetryError(null);
+    try {
+      setItem(await retryTranscription(id));
+      setConfirmRerunOpen(false);
+    } catch (cause) {
+      setRetryError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setRetrying(false);
+    }
   }, [id]);
 
   const refreshEvents = useCallback(async () => {
@@ -156,7 +186,10 @@ export function ItemDetailPage() {
             </div>
           )}
           {transcription?.status === 'succeeded' && (
-            <p className="whitespace-pre-wrap text-sm">{transcription.content}</p>
+            <CollapsibleText
+              text={transcription.content ?? ''}
+              className="whitespace-pre-wrap text-sm"
+            />
           )}
           {transcription?.status === 'failed' && (
             <div className="flex flex-col gap-2">
@@ -167,18 +200,7 @@ export function ItemDetailPage() {
                 variant="flat"
                 className="self-start"
                 isLoading={retrying}
-                onPress={async () => {
-                  if (!id) return;
-                  setRetrying(true);
-                  setRetryError(null);
-                  try {
-                    setItem(await retryTranscription(id));
-                  } catch (cause) {
-                    setRetryError(cause instanceof Error ? cause.message : String(cause));
-                  } finally {
-                    setRetrying(false);
-                  }
-                }}
+                onPress={retry}
               >
                 Retry transcription
               </Button>
@@ -305,6 +327,61 @@ export function ItemDetailPage() {
           )}
         </CardBody>
       </Card>
+
+      {transcription?.status === 'succeeded' && (
+        <>
+          <Accordion isCompact>
+            <AccordionItem
+              key="advanced"
+              aria-label="Advanced"
+              title={<span className="text-sm font-semibold">Advanced</span>}
+            >
+              <div className="flex flex-col gap-2 rounded-medium border border-danger-200 bg-danger-50 p-3">
+                <p className="text-sm text-danger">
+                  Re-running transcription will replace the current transcript.
+                </p>
+                <Button
+                  size="sm"
+                  color="danger"
+                  variant="flat"
+                  className="self-start"
+                  onPress={() => {
+                    setRetryError(null);
+                    setConfirmRerunOpen(true);
+                  }}
+                >
+                  Re-run transcription
+                </Button>
+              </div>
+            </AccordionItem>
+          </Accordion>
+
+          <Modal isOpen={confirmRerunOpen} onClose={() => !retrying && setConfirmRerunOpen(false)}>
+            <ModalContent>
+              <ModalHeader>Re-run transcription?</ModalHeader>
+              <ModalBody>
+                <p className="text-sm">
+                  The existing transcript will be overwritten by the new result. This cannot be
+                  undone.
+                </p>
+                {retryError && <p className="text-xs text-danger">{retryError}</p>}
+              </ModalBody>
+              <ModalFooter>
+                <Button
+                  variant="light"
+                  isDisabled={retrying}
+                  onPress={() => setConfirmRerunOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button color="danger" isLoading={retrying} onPress={retry}>
+                  Overwrite and re-run
+                </Button>
+              </ModalFooter>
+            </ModalContent>
+          </Modal>
+        </>
+      )}
     </div>
   );
 }
