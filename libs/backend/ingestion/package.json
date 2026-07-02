@@ -10,8 +10,7 @@
     "@plaudern/persistence": "workspace:*",
     "@plaudern/inbox": "workspace:*",
     "@plaudern/storage": "workspace:*",
-    "@plaudern/transcription": "workspace:*",
-    "@plaudern/auth": "workspace:*"
+    "@plaudern/transcription": "workspace:*"
   },
   "peerDependencies": {
     "@nestjs/common": "^11.0.0"

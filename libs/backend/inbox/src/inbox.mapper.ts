@@ -47,6 +47,7 @@ export function toInboxItemDto(entity: InboxItemEntity): InboxItemDto {
     sourceType: entity.sourceType,
     occurredAt: iso(entity.occurredAt)!,
     ingestedAt: iso(entity.ingestedAt)!,
+    metadata: entity.metadata ?? null,
     source: entity.source ? toSourcePayloadDto(entity.source) : null,
     extractions: (entity.extractions ?? [])
       .slice()

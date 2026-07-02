@@ -46,8 +46,8 @@ jobs:
       - name: Build (production compile)
         run: pnpm nx build api
 
-  mobile:
-    name: Mobile (typecheck)
+  web:
+    name: Web (typecheck, build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -60,5 +60,7 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Typecheck mobile
-        run: pnpm nx run mobile:typecheck
+      - name: Typecheck web
+        run: pnpm nx run web:typecheck
+      - name: Build web
+        run: pnpm nx build web

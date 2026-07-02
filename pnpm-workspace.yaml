@@ -2,4 +2,3 @@ packages:
   - 'apps/*'
   - 'libs/*'
   - 'libs/backend/*'
-  - 'libs/mobile/*'

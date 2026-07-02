@@ -2,14 +2,13 @@ import 'reflect-metadata';
 import { INestApplication, VersioningType } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { AuthService } from '@plaudern/auth';
 import type { InboxItemDto } from '@plaudern/contracts';
 import { startInfra, type Infra } from '../testing/containers';
 
 /**
  * Full-stack integration test (plan §6). Unlike the fast Path A e2e (sqlite +
  * in-memory store + inline queue), this runs against REAL Postgres, MinIO, and
- * Redis in throwaway containers: it exercises the actual migration, real
+ * Redis in throwaway containers: it exercises the actual migrations, real
  * presigned S3 PUT/HEAD, and asynchronous BullMQ transcription end to end.
  */
 jest.setTimeout(180_000);
@@ -17,14 +16,13 @@ jest.setTimeout(180_000);
 describe('Ingestion pipeline (integration, real Postgres + MinIO + Redis)', () => {
   let infra: Infra;
   let app: INestApplication;
-  let apiKey: string;
 
   beforeAll(async () => {
     infra = await startInfra();
 
     process.env.DATABASE_DRIVER = 'postgres';
     process.env.DATABASE_URL = infra.databaseUrl;
-    process.env.DATABASE_SYNCHRONIZE = 'false'; // run the real migration
+    process.env.DATABASE_SYNCHRONIZE = 'false'; // run the real migrations
     process.env.STORAGE_DRIVER = 's3';
     process.env.S3_ENDPOINT = infra.s3Endpoint;
     process.env.S3_BUCKET = infra.bucket;
@@ -42,10 +40,6 @@ describe('Ingestion pipeline (integration, real Postgres + MinIO + Redis)', () =
     app.setGlobalPrefix('api');
     app.enableVersioning({ type: VersioningType.URI });
     await app.init();
-
-    const auth = app.get(AuthService);
-    const user = await auth.ensureUser('integration@plaudern.local');
-    apiKey = (await auth.registerDevice(user.id, 'generic')).apiKey;
   });
 
   afterAll(async () => {
@@ -53,10 +47,12 @@ describe('Ingestion pipeline (integration, real Postgres + MinIO + Redis)', () =
     await infra?.stop();
   });
 
-  const authHeader = () => ({ 'x-device-key': apiKey });
-
-  it('runs the migration and answers health', async () => {
+  it('runs the migrations and answers health', async () => {
     await request(app.getHttpServer()).get('/api/health').expect(200);
+  });
+
+  it('serves the inbox without any authentication', async () => {
+    await request(app.getHttpServer()).get('/api/v1/inbox').expect(200);
   });
 
   it('ingests audio through real presigned upload + async transcription', async () => {
@@ -64,7 +60,6 @@ describe('Ingestion pipeline (integration, real Postgres + MinIO + Redis)', () =
 
     const init = await request(app.getHttpServer())
       .post('/api/v1/ingest/init')
-      .set(authHeader())
       .send({
         sourceType: 'audio',
         contentType: 'audio/mpeg',
@@ -85,13 +80,12 @@ describe('Ingestion pipeline (integration, real Postgres + MinIO + Redis)', () =
 
     const commit = await request(app.getHttpServer())
       .post(`/api/v1/ingest/${init.body.inboxItemId}/commit`)
-      .set(authHeader())
       .expect(201);
     expect(commit.body.source.uploadStatus).toBe('committed');
     expect(commit.body.source.byteSize).toBe(audio.byteLength);
 
     // BullMQ processes asynchronously — poll until the transcript lands.
-    const item = await waitForTranscription(app, init.body.inboxItemId, authHeader());
+    const item = await waitForTranscription(app, init.body.inboxItemId);
     const transcript = item.extractions.find((e) => e.kind === 'transcription');
     expect(transcript?.status).toBe('succeeded');
     expect(transcript?.content).toContain('stub transcription');
@@ -100,7 +94,6 @@ describe('Ingestion pipeline (integration, real Postgres + MinIO + Redis)', () =
   it('persists an immutable text item across a real DB round-trip', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/v1/ingest/text')
-      .set(authHeader())
       .send({
         text: 'integration text note',
         occurredAt: '2026-07-01T10:00:00.000Z',
@@ -111,7 +104,6 @@ describe('Ingestion pipeline (integration, real Postgres + MinIO + Redis)', () =
 
     const list = await request(app.getHttpServer())
       .get('/api/v1/inbox?limit=10')
-      .set(authHeader())
       .expect(200);
     expect(list.body.items.length).toBeGreaterThanOrEqual(2);
   });
@@ -120,13 +112,12 @@ describe('Ingestion pipeline (integration, real Postgres + MinIO + Redis)', () =
 async function waitForTranscription(
   app: INestApplication,
   id: string,
-  headers: Record<string, string>,
   timeoutMs = 30_000,
 ): Promise<InboxItemDto> {
   const deadline = Date.now() + timeoutMs;
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const res = await request(app.getHttpServer()).get(`/api/v1/inbox/${id}`).set(headers);
+    const res = await request(app.getHttpServer()).get(`/api/v1/inbox/${id}`);
     const item = res.body as InboxItemDto;
     const t = item.extractions?.find((e) => e.kind === 'transcription');
     if (t && (t.status === 'succeeded' || t.status === 'failed')) return item;

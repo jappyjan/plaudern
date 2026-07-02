@@ -6,34 +6,34 @@ source type, a raw **source payload** (audio/text/file), and optional
 **extracted payloads** (transcription, OCR, …). Items are append-only and never
 edited; higher-level features (auto-organization, note creation) are built on top.
 
-This repository implements **Milestone 1**: the immutable inbox + async
-transcription, plus an iOS app that pulls audio off a **Plaud** device and pushes
-it into the inbox.
+This repository implements the immutable inbox + async transcription, plus a
+**web app** for capturing recordings: upload audio files or record directly in
+the browser. Web first — a mobile app comes later.
 
-> Guiding principle: **Plaud is just one source adapter.** The ingestion core,
-> storage, and transcription know nothing about Plaud, so the whole slice is
-> verifiable without hardware via a generic audio-upload path.
+> Guiding principle: **every input is just a source adapter.** The ingestion
+> core, storage, and transcription know nothing about where audio comes from,
+> so the whole slice is verifiable via a generic audio-upload path.
+
+> ⚠️ **No auth.** Plaudern is designed to be self-hosted **per user** and the
+> API/web app are completely unprotected. If you expose them beyond localhost,
+> put your own access control in front (reverse-proxy basic auth, Tailscale,
+> VPN, …).
 
 ## Monorepo layout (Nx + pnpm)
 
 ```
 apps/
   api/           NestJS backend — the Inbox + ingestion + transcription
-  mobile/        Expo (React Native) iOS app; HeroUI Native UI
-    modules/plaud-sdk/   Expo native module + config plugin wrapping Plaud's XCFrameworks
+  web/           Vite + React SPA (HeroUI + Tailwind) — upload & record UI
 libs/
-  contracts/     Shared zod DTOs/types (@plaudern/contracts) — the backend↔app seam
+  contracts/     Shared zod DTOs/types (@plaudern/contracts) — the backend↔frontend seam
   backend/
     persistence/ TypeORM entities + migrations
     storage/     S3/MinIO abstraction (+ in-memory fake for tests)
     inbox/        Immutable inbox aggregate + read API
     ingestion/    Source-adapter registry + presigned upload API
     transcription/ Queue (BullMQ / inline) + provider interface (Whisper / stub)
-    auth/         Device API-key auth
-  mobile/
-    api-client/  Typed Inbox client (shares @plaudern/contracts)
-    ui/          Shared RN components on HeroUI Native
-docker-compose.yml   Postgres + MinIO + Redis for local dev
+docker-compose.yml   Postgres + MinIO + Redis (+ api + web) for local dev
 ```
 
 ## Architecture
@@ -50,58 +50,80 @@ docker-compose.yml   Postgres + MinIO + Redis for local dev
   (BullMQ + Redis in prod, inline in tests) that streams the blob and writes back
   the transcript via a pluggable `TranscriptionProvider` (OpenAI Whisper, or a
   local stub for CI).
-
-See `plan` details in the PR description or the architecture notes.
+- **Capture metadata travels with the item**: `occurredAt` (when it was
+  recorded) plus a free-form `metadata` field (GPS location, recording device,
+  file tags) set at ingest time — the envelope is immutable, so metadata is
+  extracted client-side *before* `init`. Uploaded files get their metadata from
+  their own embedded tags (ID3 / MP4-QuickTime atoms / Vorbis comments);
+  in-browser recordings use the recording start time, the browser geolocation
+  (if granted), and the user agent.
 
 ## Prerequisites
 
 - Node 22, pnpm 10, Docker (for local infra)
-- Xcode + an iOS device/simulator for the app (a **dev build**, not Expo Go)
 
-## Backend — run & verify
+## Run & verify
 
-**Whole stack in Docker** (API + Postgres + MinIO + Redis). Migrations run
+**Whole stack in Docker** (web + API + Postgres + MinIO + Redis). Migrations run
 automatically on boot:
 
 ```bash
 docker compose up -d --build
+open http://localhost:8080          # web app (nginx, proxies /api to the api)
 curl http://localhost:3000/api/health
-# seed a device API key:
-docker compose exec api node dist/server/apps/api/src/seed.js
 ```
 
-**Infra in Docker, API from source** (fast iteration):
+**Infra in Docker, api + web from source** (fast iteration):
 
 ```bash
 pnpm install
 docker compose up -d postgres minio minio-init redis   # infra only
 cp apps/api/.env.example apps/api/.env
 pnpm nx run api:migrate                     # apply DB schema
-pnpm nx run api:seed                        # prints a device API key (x-device-key)
 pnpm nx serve api                           # http://localhost:3000/api
+pnpm nx serve web                           # http://localhost:5173 (proxies /api)
 ```
 
 > **Presigned URLs & `S3_PUBLIC_ENDPOINT`:** the API signs upload/download URLs
 > against `S3_PUBLIC_ENDPOINT` (falling back to `S3_ENDPOINT`). Server-side S3
 > calls use the internal `S3_ENDPOINT` (`http://minio:9000`), but the URL handed
-> to a client must be reachable from *that client*. To upload from a phone or
-> simulator, set `S3_PUBLIC_ENDPOINT` to your machine's LAN IP, e.g.
+> to a client must be reachable from *that client*. To upload from another
+> device, set `S3_PUBLIC_ENDPOINT` to your machine's LAN IP, e.g.
 > `S3_PUBLIC_ENDPOINT=http://192.168.1.100:9000 docker compose up -d`.
+
+> **Microphone & HTTPS:** in-browser recording (`getUserMedia`) requires a
+> secure context. `http://localhost` works; a plain-http LAN IP does not — use
+> HTTPS (or a tunnel) to record from other devices. File upload works anywhere.
+
+## Web app
+
+- **Upload**: pick audio files; recording time, GPS location, recording device,
+  and common tags are extracted from the file's embedded metadata
+  (`music-metadata` in the browser) and stored on the inbox item. Falls back to
+  the file's modification time when untagged. The browser's own location is
+  deliberately *not* attached to uploads.
+- **Record**: in-browser `MediaRecorder` (webm/opus on Chrome/Firefox, mp4 on
+  Safari). `occurredAt` = recording start; browser geolocation (if you grant
+  it) and user agent land in `metadata`.
+- **Inbox**: newest-first list with transcription status; item detail plays the
+  audio via a presigned URL, polls the transcription until it lands, and shows
+  the capture metadata (time, location with an OpenStreetMap link, device,
+  tags).
 
 ### Test tiers
 
-Two complementary levels, both hardware-free:
+Two complementary levels:
 
 1. **Unit / fast e2e** — in-process, sqlite + in-memory store + inline stub
    transcription. No Docker, milliseconds. Covers the full init → upload →
    commit → transcription flow:
    ```bash
-   pnpm nx test api            # 6 cases incl. the full audio→transcript flow
+   pnpm nx test api            # incl. the full audio→transcript flow
    pnpm nx run-many -t test    # all projects
    ```
 
 2. **Integration (Testcontainers)** — spins up **real Postgres + MinIO + Redis**
-   in throwaway containers, runs the **real migration**, does a **real presigned
+   in throwaway containers, runs the **real migrations**, does a **real presigned
    S3 PUT**, and processes transcription through **real BullMQ**. Requires only a
    working Docker daemon — no manual services:
    ```bash
@@ -110,79 +132,46 @@ Two complementary levels, both hardware-free:
 
 ### CI/CD
 
-- **CI** (`.github/workflows/ci.yml`, every push/PR): typecheck → unit tests →
-  **Testcontainers integration** (Docker is available on GitHub runners, so the
-  entire stack is verified with zero setup) → production build. A parallel job
-  typechecks the mobile app.
-- **CD** (`.github/workflows/cd.yml`, push to `main` / `v*` tags): builds the API
-  via the multi-stage `apps/api/Dockerfile` (tsc + tsc-alias → compiled JS) and
-  pushes the image to **GHCR** (`ghcr.io/<owner>/plaudern/api`).
-- **Mobile build** (`.github/workflows/mobile-build.yml`, push to `main` / `v*`
-  tags, or manual `Run workflow`): `expo prebuild` generates the native projects
-  and builds the app binaries, published as **workflow artifacts**:
-  - **Android** — an installable release `.apk`, built end-to-end on
-    `ubuntu-latest` (the Android SDK ships with the runner). Signed with the
-    generated debug keystore, so no secrets are needed; swap in a real keystore
-    via secrets for a Play Store upload.
-  - **iOS** — an unsigned **iOS Simulator** build (`.app`, zipped), built on
-    `macos-latest`. A signed device `.ipa` needs an Apple Developer account +
-    certificates/provisioning (add via secrets and archive with `-sdk iphoneos`).
-
-  Native builds are heavy — especially macOS minutes — so they run on
-  `main`/tags and on demand, not on every PR (CI keeps the fast mobile
-  typecheck for PRs). Download the binaries from a run's **Artifacts** section.
+- **CI** (`.github/workflows/ci.yml`, every push/PR): backend job — typecheck →
+  unit tests → **Testcontainers integration** (Docker is available on GitHub
+  runners, so the entire stack is verified with zero setup) → production build.
+  A parallel job typechecks and builds the web app.
+- **CD** (`.github/workflows/cd.yml`, push to `main` / `v*` tags): builds the
+  `api` and `web` images from their multi-stage Dockerfiles and pushes them to
+  **GHCR** (`ghcr.io/<owner>/plaudern/{api,web}`).
 
 ## Deploy to Coolify
 
-`docker-compose.coolify.yaml` is a self-contained stack (API + Postgres + MinIO +
-Redis) using Coolify's magic environment variables:
+`docker-compose.coolify.yaml` is a self-contained stack (web + API + Postgres +
+MinIO + Redis) using Coolify's magic environment variables:
 
-- `SERVICE_FQDN_API_3000` / `SERVICE_FQDN_MINIO_9000` — Coolify provisions a
-  domain + TLS and routes it to the container port. The API's presigned URLs are
-  signed against the public MinIO FQDN, so uploads work from any client.
+- `SERVICE_FQDN_WEB_80` / `SERVICE_FQDN_API_3000` / `SERVICE_FQDN_MINIO_9000` —
+  Coolify provisions a domain + TLS and routes it to the container port. The
+  API's presigned URLs are signed against the public MinIO FQDN, so uploads
+  work from any client, and the web domain serves the SPA (its nginx proxies
+  `/api` internally).
 - `SERVICE_USER_*` / `SERVICE_PASSWORD_*` — Postgres, MinIO, and Redis
   credentials are generated and persisted automatically on first deploy.
 
 Steps: create a **Docker Compose** resource in Coolify pointing at this repo, set
 the compose file to `docker-compose.coolify.yaml`, and (optionally) set
 `OPENAI_API_KEY` + `TRANSCRIPTION_PROVIDER=openai` in the UI to enable real
-transcription. Deploy — migrations run on boot. Only the API and MinIO get public
-domains; Postgres and Redis stay on the internal network.
+transcription. Deploy — migrations run on boot. Remember: **no auth** — restrict
+access to the exposed domains yourself.
 
-To drive it manually against the real stack, use the seeded API key:
+To drive the API manually:
 
 ```bash
-KEY=<apiKey from seed>
 # init
-curl -sX POST localhost:3000/api/v1/ingest/init -H "x-device-key: $KEY" \
+curl -sX POST localhost:3000/api/v1/ingest/init \
   -H 'content-type: application/json' -d '{
     "sourceType":"audio","contentType":"audio/mpeg","byteSize":12345,
-    "occurredAt":"2026-07-01T09:30:00.000Z","idempotencyKey":"demo-1"}'
+    "occurredAt":"2026-07-01T09:30:00.000Z","idempotencyKey":"demo-1",
+    "metadata":{"location":{"lat":52.52,"lon":13.405}}}'
 # PUT the file to the returned uploadUrl, then:
-curl -sX POST localhost:3000/api/v1/ingest/<inboxItemId>/commit -H "x-device-key: $KEY"
-curl -s localhost:3000/api/v1/inbox -H "x-device-key: $KEY"
+curl -sX POST localhost:3000/api/v1/ingest/<inboxItemId>/commit
+curl -s localhost:3000/api/v1/inbox
 ```
-
-## Mobile app
-
-```bash
-cp apps/mobile/.env.example apps/mobile/.env   # set EXPO_PUBLIC_API_URL to a LAN host
-pnpm nx run mobile:prebuild                     # generates the iOS project (needs the native module)
-pnpm nx run mobile:run-ios                      # dev build on device/simulator
-```
-
-- **Dev upload screen** (`app/dev/upload.tsx`): pick a local audio file and ingest
-  it through the identical init/upload/commit path — the hardware-free demo (Path B).
-- **Plaud path** (`pair.tsx` → `device/recordings.tsx`): export a recording via
-  the native SDK and push it to the inbox (Path C, requires a paired device).
-
-### Plaud native module
-
-`apps/mobile/modules/plaud-sdk` is an Expo native module (Swift) + config plugin.
-To enable it you need Plaud dev-console credentials and the Plaud XCFrameworks
-(`PlaudBleSDK`, `PlaudDeviceBasicSDK`, `PlaudWiFiSDK`) linked via the podspec.
-Until then the app runs against a JS simulator that returns sample devices, and
-the dev-upload path remains fully functional.
 
 ## Configuration reference
 

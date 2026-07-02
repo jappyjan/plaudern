@@ -50,6 +50,8 @@ export const inboxItemSchema = z.object({
   sourceType: sourceTypeSchema,
   occurredAt: z.string().datetime(),
   ingestedAt: z.string().datetime(),
+  /** Free-form capture metadata (GPS location, recording device, file tags, ...). */
+  metadata: z.record(z.string(), z.unknown()).nullable(),
   source: sourcePayloadSchema.nullable(),
   extractions: z.array(extractedPayloadSchema),
 });

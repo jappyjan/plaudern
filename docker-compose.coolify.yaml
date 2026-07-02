@@ -9,8 +9,22 @@
 #                                 first time it's referenced.
 # Plain ${VARS} (e.g. OPENAI_API_KEY) are surfaced in the Coolify UI to fill in.
 #
-# Only `api` and `minio` are exposed; postgres/redis stay on the internal network.
+# Only `web`, `api` and `minio` are exposed; postgres/redis stay on the internal
+# network. NOTE: there is no auth — put your own access control (basic auth,
+# Tailscale, VPN) in front of the exposed domains.
 services:
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    environment:
+      # Public URL for the web app (Coolify provisions TLS + domain).
+      # nginx inside the container proxies /api to the api service.
+      - SERVICE_FQDN_WEB_80
+    depends_on:
+      - api
+
   api:
     build:
       context: .
@@ -38,9 +52,6 @@ services:
       - QUEUE_DRIVER=bull
       - REDIS_URL=redis://:${SERVICE_PASSWORD_REDIS}@redis:6379
       # Transcription: set OPENAI_API_KEY and switch provider to `openai` in the UI.
-      # No shell access on Coolify: print a dev device key to the logs on
-      # first boot (idempotent). Read it via the deployment/container logs.
-      - SEED_ON_BOOT=${SEED_ON_BOOT:-true}
       - TRANSCRIPTION_PROVIDER=${TRANSCRIPTION_PROVIDER:-stub}
       - TRANSCRIPTION_MODEL=${TRANSCRIPTION_MODEL:-whisper-1}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
