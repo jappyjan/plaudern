@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Param, Post } from '@nestjs/common';
 import {
   ingestInitRequestSchema,
   ingestTextRequestSchema,
@@ -6,7 +6,6 @@ import {
   type IngestTextRequest,
   type InboxItemDto,
 } from '@plaudern/contracts';
-import { CurrentDevice, DeviceAuthGuard, type DeviceContext } from '@plaudern/auth';
 import { IngestionService } from './ingestion.service';
 
 /**
@@ -15,33 +14,23 @@ import { IngestionService } from './ingestion.service';
  * behaviour per source lives in the adapters (plan §2).
  */
 @Controller({ path: 'ingest', version: '1' })
-@UseGuards(DeviceAuthGuard)
 export class IngestionController {
   constructor(private readonly ingestion: IngestionService) {}
 
   @Post('init')
-  async init(
-    @CurrentDevice() device: DeviceContext,
-    @Body() body: unknown,
-  ): Promise<IngestInitResponse> {
+  async init(@Body() body: unknown): Promise<IngestInitResponse> {
     const req = ingestInitRequestSchema.parse(body);
-    return this.ingestion.init(device, req);
+    return this.ingestion.init(req);
   }
 
   @Post(':id/commit')
-  async commit(
-    @CurrentDevice() device: DeviceContext,
-    @Param('id') id: string,
-  ): Promise<InboxItemDto> {
-    return this.ingestion.commit(device, id);
+  async commit(@Param('id') id: string): Promise<InboxItemDto> {
+    return this.ingestion.commit(id);
   }
 
   @Post('text')
-  async text(
-    @CurrentDevice() device: DeviceContext,
-    @Body() body: unknown,
-  ): Promise<InboxItemDto> {
+  async text(@Body() body: unknown): Promise<InboxItemDto> {
     const req: IngestTextRequest = ingestTextRequestSchema.parse(body);
-    return this.ingestion.ingestText(device, req);
+    return this.ingestion.ingestText(req);
   }
 }

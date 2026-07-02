@@ -17,14 +17,6 @@ build
 .env.*.local
 !.env.example
 
-# native / expo
-apps/mobile/ios
-apps/mobile/android
-apps/mobile/.expo
-*.xcworkspace
-*.xcuserstate
-Pods
-
 # logs / os
 *.log
 npm-debug.log*

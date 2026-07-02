@@ -8,7 +8,8 @@
     "api:serve": "nx serve api",
     "api:build": "nx build api",
     "api:migrate": "nx run api:migrate",
-    "mobile:start": "nx start mobile",
+    "web:serve": "nx serve web",
+    "web:build": "nx build web",
     "test": "nx run-many -t test",
     "lint": "nx run-many -t lint",
     "typecheck": "nx run-many -t typecheck",
@@ -18,8 +19,7 @@
   "workspaces": [
     "apps/*",
     "libs/*",
-    "libs/backend/*",
-    "libs/mobile/*"
+    "libs/backend/*"
   ],
   "devDependencies": {
     "@nx/js": "23.0.1",
@@ -28,12 +28,20 @@
     "jest": "30.4.2",
     "nx": "23.0.1",
     "ts-jest": "29.4.11",
+    "ts-node": "^10.9.2",
     "tsc-alias": "1.8.16",
-    "tsx": "4.20.0",
+    "tsconfig-paths": "^4.2.0",
+    "tsx": "4.22.4",
     "typescript": "5.7.3"
   },
   "packageManager": "pnpm@10.33.0",
   "pnpm": {
-    "onlyBuiltDependencies": ["better-sqlite3", "esbuild", "nx", "unrs-resolver", "msgpackr-extract"]
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild",
+      "nx",
+      "unrs-resolver",
+      "msgpackr-extract"
+    ]
   }
 }

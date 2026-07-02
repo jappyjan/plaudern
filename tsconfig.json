@@ -1,0 +1,8 @@
+{
+  // Discovered by tsx (`nx serve api`) from the repo root so ALL workspace TS
+  // (apps + libs) compiles with experimentalDecorators — the per-project
+  // tsconfigs only `include` their own sources and thus don't cover the libs
+  // when running from the root. tsc builds/typechecks keep using the explicit
+  // per-project configs (-p).
+  "extends": "./tsconfig.base.json"
+}

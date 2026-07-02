@@ -8,8 +8,7 @@
   "dependencies": {
     "@plaudern/contracts": "workspace:*",
     "@plaudern/persistence": "workspace:*",
-    "@plaudern/storage": "workspace:*",
-    "@plaudern/auth": "workspace:*"
+    "@plaudern/storage": "workspace:*"
   },
   "peerDependencies": {
     "@nestjs/common": "^11.0.0",

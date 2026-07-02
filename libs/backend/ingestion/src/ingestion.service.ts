@@ -5,7 +5,7 @@ import type {
   IngestTextRequest,
   InboxItemDto,
 } from '@plaudern/contracts';
-import type { DeviceContext } from '@plaudern/auth';
+import { DEFAULT_USER_ID } from '@plaudern/persistence';
 import { InboxService, toInboxItemDto } from '@plaudern/inbox';
 import { StorageService } from '@plaudern/storage';
 import { AdapterRegistry, SOURCE_ADAPTERS, type SourceAdapter } from './source-adapter';
@@ -29,11 +29,11 @@ export class IngestionService {
     this.registry = new AdapterRegistry(adapters);
   }
 
-  async init(device: DeviceContext, req: IngestInitRequest): Promise<IngestInitResponse> {
+  async init(req: IngestInitRequest): Promise<IngestInitResponse> {
     const adapter = this.registry.get(req.sourceType);
     adapter.validateInit(req);
 
-    const existing = await this.inbox.findByIdempotencyKey(device.userId, req.idempotencyKey);
+    const existing = await this.inbox.findByIdempotencyKey(DEFAULT_USER_ID, req.idempotencyKey);
     if (existing?.source) {
       const uploadUrl = await this.storage.createPresignedPutUrl(
         existing.source.storageKey,
@@ -48,13 +48,13 @@ export class IngestionService {
     }
 
     const storageKey = buildSourceStorageKey(
-      device.userId,
+      DEFAULT_USER_ID,
       req.contentType,
       req.originalFilename,
     );
     const item = await this.inbox.createPendingItem({
-      userId: device.userId,
-      deviceId: device.deviceId,
+      userId: DEFAULT_USER_ID,
+      deviceId: null,
       sourceType: req.sourceType,
       occurredAt: req.occurredAt,
       idempotencyKey: req.idempotencyKey,
@@ -70,8 +70,8 @@ export class IngestionService {
     return { inboxItemId: item.id, storageKey, uploadUrl, alreadyCommitted: false };
   }
 
-  async commit(device: DeviceContext, inboxItemId: string): Promise<InboxItemDto> {
-    const item = await this.inbox.getItem(device.userId, inboxItemId);
+  async commit(inboxItemId: string): Promise<InboxItemDto> {
+    const item = await this.inbox.getItem(DEFAULT_USER_ID, inboxItemId);
     if (!item.source) throw new BadRequestException('item has no source payload');
 
     if (item.source.uploadStatus === 'committed') {
@@ -85,23 +85,23 @@ export class IngestionService {
 
     await this.inbox.markSourceCommitted(inboxItemId, head.byteSize);
 
-    const committed = await this.inbox.getItem(device.userId, inboxItemId);
+    const committed = await this.inbox.getItem(DEFAULT_USER_ID, inboxItemId);
     await this.registry.get(committed.sourceType).onCommitted(committed);
 
-    const finalItem = await this.inbox.getItem(device.userId, inboxItemId);
+    const finalItem = await this.inbox.getItem(DEFAULT_USER_ID, inboxItemId);
     return toInboxItemDto(finalItem);
   }
 
-  async ingestText(device: DeviceContext, req: IngestTextRequest): Promise<InboxItemDto> {
-    const existing = await this.inbox.findByIdempotencyKey(device.userId, req.idempotencyKey);
-    if (existing) return toInboxItemDto(await this.inbox.getItem(device.userId, existing.id));
+  async ingestText(req: IngestTextRequest): Promise<InboxItemDto> {
+    const existing = await this.inbox.findByIdempotencyKey(DEFAULT_USER_ID, req.idempotencyKey);
+    if (existing) return toInboxItemDto(await this.inbox.getItem(DEFAULT_USER_ID, existing.id));
 
-    const storageKey = buildSourceStorageKey(device.userId, 'text/plain');
+    const storageKey = buildSourceStorageKey(DEFAULT_USER_ID, 'text/plain');
     await this.storage.putObject(storageKey, req.text, 'text/plain');
 
     const item = await this.inbox.createCommittedItem({
-      userId: device.userId,
-      deviceId: device.deviceId,
+      userId: DEFAULT_USER_ID,
+      deviceId: null,
       sourceType: 'text',
       occurredAt: req.occurredAt,
       idempotencyKey: req.idempotencyKey,
@@ -112,6 +112,6 @@ export class IngestionService {
     });
 
     await this.registry.get('text').onCommitted(item);
-    return toInboxItemDto(await this.inbox.getItem(device.userId, item.id));
+    return toInboxItemDto(await this.inbox.getItem(DEFAULT_USER_ID, item.id));
   }
 }

@@ -8,7 +8,7 @@
     "serve": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "tsx watch apps/api/src/main.ts"
+        "command": "node --watch -r ts-node/register/transpile-only -r tsconfig-paths/register apps/api/src/main.ts"
       }
     },
     "build": {
@@ -43,12 +43,6 @@
       "executor": "nx:run-commands",
       "options": {
         "command": "tsx node_modules/typeorm/cli.js migration:run -d libs/backend/persistence/src/data-source.ts"
-      }
-    },
-    "seed": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "tsx apps/api/src/seed.ts"
       }
     }
   }

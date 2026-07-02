@@ -3,9 +3,6 @@ dist
 .nx
 .git
 .github
-**/.expo
-apps/mobile/ios
-apps/mobile/android
 coverage
 *.log
 **/.env
