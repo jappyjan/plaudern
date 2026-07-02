@@ -62,6 +62,9 @@ importers:
       '@nestjs/platform-express':
         specifier: 11.1.27
         version: 11.1.27(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)
+      '@nestjs/schedule':
+        specifier: 6.1.1
+        version: 6.1.1(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)
       '@nestjs/typeorm':
         specifier: 11.0.3
         version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
@@ -77,6 +80,9 @@ importers:
       '@plaudern/persistence':
         specifier: workspace:*
         version: link:../../libs/backend/persistence
+      '@plaudern/plaud-sync':
+        specifier: workspace:*
+        version: link:../../libs/backend/plaud-sync
       '@plaudern/storage':
         specifier: workspace:*
         version: link:../../libs/backend/storage
@@ -238,6 +244,36 @@ importers:
       reflect-metadata:
         specifier: ^0.2.0
         version: 0.2.2
+      typeorm:
+        specifier: ^1.0.0
+        version: 1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3))
+
+  libs/backend/plaud-sync:
+    dependencies:
+      '@nestjs/common':
+        specifier: ^11.0.0
+        version: 11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/config':
+        specifier: ^4.0.0
+        version: 4.0.4(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(rxjs@7.8.2)
+      '@nestjs/schedule':
+        specifier: ^6.0.0
+        version: 6.1.1(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)
+      '@nestjs/typeorm':
+        specifier: ^11.0.0
+        version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/contracts':
+        specifier: workspace:*
+        version: link:../../contracts
+      '@plaudern/inbox':
+        specifier: workspace:*
+        version: link:../inbox
+      '@plaudern/ingestion':
+        specifier: workspace:*
+        version: link:../ingestion
+      '@plaudern/persistence':
+        specifier: workspace:*
+        version: link:../persistence
       typeorm:
         specifier: ^1.0.0
         version: 1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3))
@@ -2258,6 +2294,12 @@ packages:
       '@nestjs/common': ^11.0.0
       '@nestjs/core': ^11.0.0
 
+  '@nestjs/schedule@6.1.1':
+    resolution: {integrity: sha512-kQl1RRgi02GJ0uaUGCrXHCcwISsCsJDciCKe38ykJZgnAeeoeVWs8luWtBo4AqAAXm4nS5K8RlV0smHUJ4+2FA==}
+    peerDependencies:
+      '@nestjs/common': ^10.0.0 || ^11.0.0
+      '@nestjs/core': ^10.0.0 || ^11.0.0
+
   '@nestjs/testing@11.1.27':
     resolution: {integrity: sha512-I35po13UHZZeGenLWJ3QYwh77RsLau5RcFKWBZ4waVHeARpwjtC7v7n7lGh98swLQdGmZgTnbvKaZ0B5dsUIKA==}
     peerDependencies:
@@ -3720,6 +3762,9 @@ packages:
   '@types/jest@30.0.0':
     resolution: {integrity: sha512-XTYugzhuwqWjws0CVz8QpM36+T+Dz5mTEBKhNs/esGLnCIlGdRy+Dq78NRjd7ls7r8BC8ZRMOrKlkO1hU0JOwA==}
 
+  '@types/luxon@3.7.2':
+    resolution: {integrity: sha512-gW+Oib+vUtGJBtNC8V9Reww0oIpusw+4m81uncg9REGZAJfqOQHfo/nkabnc7w0QReXyPqjrbWMJk6NuAkiX3Q==}
+
   '@types/methods@1.1.4':
     resolution: {integrity: sha512-ymXWVrDiCxTBE3+RIrrP533E70eA+9qu7zdWoHuOmGujkYtzf4HQF96b8nwHLqhuf4ykX61IGRIB38CC6/sImQ==}
 
@@ -4425,6 +4470,10 @@ packages:
   cron-parser@4.9.0:
     resolution: {integrity: sha512-p0SaNjrHOnQeR8/VnfGbmg9te2kfyYSQ7Sc/j/6DtPL3JQvKxmjO9TSjNFpujqV3vEYYBvNNvXSxzyksBWAx1Q==}
     engines: {node: '>=12.0.0'}
+
+  cron@4.4.0:
+    resolution: {integrity: sha512-fkdfq+b+AHI4cKdhZlppHveI/mgz2qpiYxcm+t5E5TsxX7QrLS1VE0+7GENEk9z0EeGPcpSciGv6ez24duWhwQ==}
+    engines: {node: '>=18.x'}
 
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
@@ -9612,6 +9661,12 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@nestjs/schedule@6.1.1(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)':
+    dependencies:
+      '@nestjs/common': 11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/core': 11.1.27(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      cron: 4.4.0
+
   '@nestjs/testing@11.1.27(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(@nestjs/platform-express@11.1.27)':
     dependencies:
       '@nestjs/common': 11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -11593,6 +11648,8 @@ snapshots:
       expect: 30.4.1
       pretty-format: 30.4.1
 
+  '@types/luxon@3.7.2': {}
+
   '@types/methods@1.1.4': {}
 
   '@types/node@18.19.130':
@@ -12284,6 +12341,11 @@ snapshots:
 
   cron-parser@4.9.0:
     dependencies:
+      luxon: 3.7.2
+
+  cron@4.4.0:
+    dependencies:
+      '@types/luxon': 3.7.2
       luxon: 3.7.2
 
   cross-spawn@7.0.6:

@@ -1,14 +1,13 @@
 // Map the @plaudern/* aliases straight to lib source so Jest transpiles them
 // with ts-jest instead of choking on TS inside node_modules symlinks.
-const wsRoot = '<rootDir>/../..';
+const wsRoot = '<rootDir>/../../..';
 
 /** @type {import('jest').Config} */
 module.exports = {
-  displayName: 'api',
+  displayName: 'plaud-sync',
   testEnvironment: 'node',
   rootDir: '.',
-  testMatch: ['**/*.spec.ts', '**/*.e2e-spec.ts'],
-  testPathIgnorePatterns: ['\\.integration-spec\\.ts$'],
+  testMatch: ['**/*.spec.ts'],
   moduleFileExtensions: ['ts', 'js', 'json'],
   moduleNameMapper: {
     '^@plaudern/contracts$': `${wsRoot}/libs/contracts/src/index.ts`,
@@ -17,10 +16,8 @@ module.exports = {
     '^@plaudern/inbox$': `${wsRoot}/libs/backend/inbox/src/index.ts`,
     '^@plaudern/ingestion$': `${wsRoot}/libs/backend/ingestion/src/index.ts`,
     '^@plaudern/transcription$': `${wsRoot}/libs/backend/transcription/src/index.ts`,
-    '^@plaudern/plaud-sync$': `${wsRoot}/libs/backend/plaud-sync/src/index.ts`,
   },
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.spec.json' }],
   },
-  testTimeout: 30000,
 };

@@ -4,6 +4,7 @@ import type {
   IngestInitResponse,
   IngestTextRequest,
   InboxItemDto,
+  SourceType,
 } from '@plaudern/contracts';
 import { DEFAULT_USER_ID } from '@plaudern/persistence';
 import { InboxService, toInboxItemDto } from '@plaudern/inbox';
@@ -114,4 +115,48 @@ export class IngestionService {
     await this.registry.get('text').onCommitted(item);
     return toInboxItemDto(await this.inbox.getItem(DEFAULT_USER_ID, item.id));
   }
+
+  /**
+   * Server-side single-shot ingestion for blobs the backend already holds
+   * (e.g. recordings pulled from the Plaud cloud) — no presigned round-trip.
+   */
+  async ingestBlob(params: IngestBlobParams): Promise<InboxItemDto> {
+    const adapter = this.registry.get(params.sourceType);
+
+    const existing = await this.inbox.findByIdempotencyKey(DEFAULT_USER_ID, params.idempotencyKey);
+    if (existing) return toInboxItemDto(await this.inbox.getItem(DEFAULT_USER_ID, existing.id));
+
+    const storageKey = buildSourceStorageKey(
+      DEFAULT_USER_ID,
+      params.contentType,
+      params.originalFilename ?? undefined,
+    );
+    await this.storage.putObject(storageKey, params.body, params.contentType);
+
+    const item = await this.inbox.createCommittedItem({
+      userId: DEFAULT_USER_ID,
+      deviceId: null,
+      sourceType: params.sourceType,
+      occurredAt: params.occurredAt,
+      idempotencyKey: params.idempotencyKey,
+      storageKey,
+      contentType: params.contentType,
+      byteSize: params.body.byteLength,
+      originalFilename: params.originalFilename ?? null,
+      metadata: params.metadata ?? null,
+    });
+
+    await adapter.onCommitted(await this.inbox.getItem(DEFAULT_USER_ID, item.id));
+    return toInboxItemDto(await this.inbox.getItem(DEFAULT_USER_ID, item.id));
+  }
+}
+
+export interface IngestBlobParams {
+  sourceType: SourceType;
+  body: Buffer | Uint8Array;
+  contentType: string;
+  occurredAt: string;
+  idempotencyKey: string;
+  originalFilename?: string | null;
+  metadata?: Record<string, unknown> | null;
 }

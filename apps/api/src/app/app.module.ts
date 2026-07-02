@@ -5,6 +5,7 @@ import { StorageModule } from '@plaudern/storage';
 import { InboxModule } from '@plaudern/inbox';
 import { TranscriptionModule } from '@plaudern/transcription';
 import { IngestionModule } from '@plaudern/ingestion';
+import { PlaudSyncModule } from '@plaudern/plaud-sync';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -15,6 +16,7 @@ import { HealthController } from './health.controller';
     InboxModule,
     TranscriptionModule,
     IngestionModule,
+    PlaudSyncModule,
   ],
   controllers: [HealthController],
 })
