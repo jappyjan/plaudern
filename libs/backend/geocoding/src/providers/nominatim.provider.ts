@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { GeocodingProvider } from '../geocoding.provider';
+import type { GeocodingProvider, ReverseGeocodeResult } from '../geocoding.provider';
 
 interface NominatimAddress {
   road?: string;
@@ -31,7 +31,7 @@ export class NominatimProvider implements GeocodingProvider {
   readonly id = 'nominatim';
 
   private readonly logger = new Logger(NominatimProvider.name);
-  private readonly inFlight = new Map<string, Promise<string | null>>();
+  private readonly inFlight = new Map<string, Promise<ReverseGeocodeResult | null>>();
   private chain: Promise<void> = Promise.resolve();
   private lastRequestAt = 0;
 
@@ -40,12 +40,12 @@ export class NominatimProvider implements GeocodingProvider {
     private readonly userAgent: string,
   ) {}
 
-  reverse(lat: number, lon: number): Promise<string | null> {
+  reverse(lat: number, lon: number): Promise<ReverseGeocodeResult | null> {
     const key = `${lat},${lon}`;
     const existing = this.inFlight.get(key);
     if (existing) return existing;
 
-    const pending = this.throttled(() => this.fetchLabel(lat, lon)).finally(() =>
+    const pending = this.throttled(() => this.fetchPlace(lat, lon)).finally(() =>
       this.inFlight.delete(key),
     );
     this.inFlight.set(key, pending);
@@ -67,7 +67,7 @@ export class NominatimProvider implements GeocodingProvider {
     return run;
   }
 
-  private async fetchLabel(lat: number, lon: number): Promise<string | null> {
+  private async fetchPlace(lat: number, lon: number): Promise<ReverseGeocodeResult | null> {
     const url = new URL('/reverse', this.baseUrl);
     url.searchParams.set('format', 'jsonv2');
     url.searchParams.set('lat', String(lat));
@@ -83,23 +83,26 @@ export class NominatimProvider implements GeocodingProvider {
       return null;
     }
     const body = (await res.json()) as NominatimResponse;
-    return composeLabel(body);
+    return composePlace(body);
   }
 }
 
-/** Short "street, city, country"-style label from a Nominatim response. */
-export function composeLabel(body: NominatimResponse): string | null {
+/** Short "street, city, country"-style label + bare city from a Nominatim response. */
+export function composePlace(body: NominatimResponse): ReverseGeocodeResult | null {
   const address = body.address;
+  const city =
+    address?.city ?? address?.town ?? address?.village ?? address?.municipality ?? null;
   if (address) {
     const parts = [
       address.road ?? address.neighbourhood ?? address.suburb,
-      address.city ?? address.town ?? address.village ?? address.municipality,
+      city ?? undefined,
       address.country,
     ].filter((p): p is string => Boolean(p));
-    if (parts.length > 0) return parts.join(', ');
+    if (parts.length > 0) return { label: parts.join(', '), city };
   }
   if (body.display_name) {
-    return body.display_name.split(',').slice(0, 3).map((s) => s.trim()).join(', ');
+    const label = body.display_name.split(',').slice(0, 3).map((s) => s.trim()).join(', ');
+    return { label, city };
   }
   return null;
 }

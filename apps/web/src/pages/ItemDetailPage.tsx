@@ -31,7 +31,7 @@ export function ItemDetailPage() {
 
   // Extracted before the early returns below because usePlaceName is a hook.
   const location = item?.metadata?.location as (GeoLocation & { alt?: number }) | undefined;
-  const placeName = usePlaceName(location);
+  const { label: placeName } = usePlaceName(location);
 
   // Live transcription progress via SSE (polling below is only a fallback).
   useInboxEvents({

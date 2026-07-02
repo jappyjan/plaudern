@@ -20,6 +20,10 @@ export class GeocodeCacheEntity {
   @Column({ type: 'text', nullable: true })
   label!: string | null;
 
+  /** Bare settlement name (city/town/village) for compact display. */
+  @Column({ type: 'varchar', nullable: true })
+  city!: string | null;
+
   @Column({ type: 'varchar' })
   provider!: string;
 

@@ -6,6 +6,7 @@ import {
   plaudSettingsSchema,
   plaudSyncNowResponseSchema,
   plaudTestConnectionResponseSchema,
+  type GeocodeResponse,
   type IngestInitRequest,
   type IngestInitResponse,
   type InboxItemDto,
@@ -68,10 +69,10 @@ export async function retryTranscription(id: string): Promise<InboxItemDto> {
   );
 }
 
-/** Reverse-geocode coordinates to a place label (null when unavailable). */
-export async function getPlaceName(lat: number, lon: number): Promise<string | null> {
+/** Reverse-geocode coordinates to a place (label/city null when unavailable). */
+export async function getPlaceName(lat: number, lon: number): Promise<GeocodeResponse> {
   const query = new URLSearchParams({ lat: String(lat), lon: String(lon) });
-  return geocodeResponseSchema.parse(await requestJson(`/geocode?${query}`)).label;
+  return geocodeResponseSchema.parse(await requestJson(`/geocode?${query}`));
 }
 
 export async function ingestInit(req: IngestInitRequest): Promise<IngestInitResponse> {

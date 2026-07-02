@@ -11,6 +11,7 @@ export class GeocodeCache1720000000003 implements MigrationInterface {
         "lat" double precision NOT NULL,
         "lon" double precision NOT NULL,
         "label" text,
+        "city" character varying,
         "provider" character varying NOT NULL,
         "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
         CONSTRAINT "PK_geocode_cache" PRIMARY KEY ("key")

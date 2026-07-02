@@ -14,7 +14,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { GeocodeCacheEntity } from '@plaudern/persistence';
-import { composeLabel, NominatimProvider } from '@plaudern/geocoding';
+import { composePlace, NominatimProvider } from '@plaudern/geocoding';
 import { AppModule } from './app.module';
 
 async function createApp(): Promise<INestApplication> {
@@ -42,6 +42,7 @@ describe('Geocoding (e2e, Path A, stub provider)', () => {
       .get('/api/v1/geocode?lat=52.52&lon=13.405')
       .expect(200);
     expect(first.body.label).toBe('Stub City (52.5200, 13.4050)');
+    expect(first.body.city).toBe('Stub City');
 
     const second = await request(app.getHttpServer())
       .get('/api/v1/geocode?lat=52.52&lon=13.405')
@@ -80,24 +81,25 @@ describe('Geocoding (e2e, Path A, GEOCODER=off)', () => {
     const res = await request(app.getHttpServer())
       .get('/api/v1/geocode?lat=52.52&lon=13.405')
       .expect(200);
-    expect(res.body).toEqual({ label: null });
+    expect(res.body).toEqual({ label: null, city: null });
   });
 });
 
 describe('NominatimProvider (unit)', () => {
-  it('composes a short label from address parts', () => {
+  it('composes a short label and bare city from address parts', () => {
     expect(
-      composeLabel({
+      composePlace({
         address: { road: 'Unter den Linden', city: 'Berlin', country: 'Germany' },
       }),
-    ).toBe('Unter den Linden, Berlin, Germany');
+    ).toEqual({ label: 'Unter den Linden, Berlin, Germany', city: 'Berlin' });
     expect(
-      composeLabel({ address: { suburb: 'Mitte', town: 'Kleinstadt' } }),
-    ).toBe('Mitte, Kleinstadt');
-    expect(
-      composeLabel({ display_name: 'A, B, C, D, E' }),
-    ).toBe('A, B, C');
-    expect(composeLabel({})).toBeNull();
+      composePlace({ address: { suburb: 'Mitte', town: 'Kleinstadt' } }),
+    ).toEqual({ label: 'Mitte, Kleinstadt', city: 'Kleinstadt' });
+    expect(composePlace({ display_name: 'A, B, C, D, E' })).toEqual({
+      label: 'A, B, C',
+      city: null,
+    });
+    expect(composePlace({})).toBeNull();
   });
 
   it('deduplicates concurrent lookups for the same coordinates', async () => {
@@ -116,9 +118,10 @@ describe('NominatimProvider (unit)', () => {
         provider.reverse(52.52, 13.405),
         provider.reverse(52.52, 13.405),
       ]);
-      expect(a).toBe('Berlin, Germany');
-      expect(b).toBe('Berlin, Germany');
-      expect(c).toBe('Berlin, Germany');
+      const expected = { label: 'Berlin, Germany', city: 'Berlin' };
+      expect(a).toEqual(expected);
+      expect(b).toEqual(expected);
+      expect(c).toEqual(expected);
       expect(fetchMock).toHaveBeenCalledTimes(1);
       const [url, init] = fetchMock.mock.calls[0] as unknown as [URL, RequestInit];
       expect(String(url)).toContain('lat=52.52');

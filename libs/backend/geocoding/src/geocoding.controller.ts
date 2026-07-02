@@ -12,6 +12,6 @@ export class GeocodingController {
     const parsed = geocodeQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException('invalid lat/lon');
     const { lat, lon } = parsed.data;
-    return { label: await this.geocoding.resolve(lat, lon) };
+    return this.geocoding.resolve(lat, lon);
   }
 }
