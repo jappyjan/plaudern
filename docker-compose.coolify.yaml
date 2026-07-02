@@ -58,6 +58,8 @@ services:
       # Plaud cloud sync: Coolify generates & persists the encryption secret.
       - PLAUD_SETTINGS_SECRET=${SERVICE_PASSWORD_PLAUDSETTINGS}
       - PLAUD_POLL_INTERVAL_MS=${PLAUD_POLL_INTERVAL_MS:-300000}
+      # Calendar feeds: the same secret encrypts subscribed feed URLs.
+      - CALENDAR_POLL_INTERVAL_MS=${CALENDAR_POLL_INTERVAL_MS:-900000}
     depends_on:
       postgres:
         condition: service_healthy

@@ -109,6 +109,15 @@ pnpm nx serve web                           # http://localhost:5173 (proxies /ap
   audio via a presigned URL, polls the transcription until it lands, and shows
   the capture metadata (time, location with an OpenStreetMap link, device,
   tags).
+- **Calendar**: subscribe to iCal/ICS feed URLs (Google Calendar's "secret
+  address", Outlook, iCloud, …) in settings — the URL is a secret and is
+  stored AES-encrypted. A month view shows events and recordings per day;
+  recordings that happened during an event are **auto-linked** to it
+  (`occurredAt` + duration overlap, re-evaluated on every feed sync). Clicking
+  an event lists its recordings; an item's detail page lists its events. Links
+  can also be added/removed manually — a manual unlink is remembered and never
+  resurrected by a later sync. Feeds refresh every 15 min
+  (`CALENDAR_POLL_INTERVAL_MS`), window: ±90 days.
 
 ### Test tiers
 

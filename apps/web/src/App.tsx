@@ -4,7 +4,8 @@ import { Link, Route, Routes } from 'react-router-dom';
 import { InboxPage } from './pages/InboxPage';
 import { ItemDetailPage } from './pages/ItemDetailPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { GearIcon, MoonIcon, SunIcon } from './components/icons';
+import { CalendarPage } from './pages/CalendarPage';
+import { CalendarIcon, GearIcon, MoonIcon, SunIcon } from './components/icons';
 
 type Theme = 'light' | 'dark';
 
@@ -41,6 +42,16 @@ export function App() {
             </Button>
             <Button
               as={Link}
+              to="/calendar"
+              isIconOnly
+              variant="light"
+              size="sm"
+              aria-label="Calendar"
+            >
+              <CalendarIcon className="h-5 w-5" />
+            </Button>
+            <Button
+              as={Link}
               to="/settings"
               isIconOnly
               variant="light"
@@ -55,6 +66,7 @@ export function App() {
           <Routes>
             <Route path="/" element={<InboxPage />} />
             <Route path="/items/:id" element={<ItemDetailPage />} />
+            <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </main>

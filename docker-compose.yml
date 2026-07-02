@@ -51,6 +51,9 @@ services:
       # Encrypts the Plaud password stored in Postgres — override in production.
       PLAUD_SETTINGS_SECRET: ${PLAUD_SETTINGS_SECRET:-change-me}
       PLAUD_POLL_INTERVAL_MS: ${PLAUD_POLL_INTERVAL_MS:-300000}
+      # Calendar feeds: PLAUD_SETTINGS_SECRET also encrypts the feed URLs
+      # (set CALENDAR_SETTINGS_SECRET to use a dedicated secret).
+      CALENDAR_POLL_INTERVAL_MS: ${CALENDAR_POLL_INTERVAL_MS:-900000}
       PORT: 3000
     ports:
       - '3000:3000'

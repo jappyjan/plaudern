@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button, Card, CardBody, CardHeader, Chip, Spinner } from '@heroui/react';
-import type { InboxItemDto } from '@plaudern/contracts';
+import type { CalendarEventDto, InboxItemDto } from '@plaudern/contracts';
 import { Link, useParams } from 'react-router-dom';
-import { getItem, getSourceUrl } from '../lib/api';
+import { deleteCalendarLink, getItem, getSourceUrl, listItemEvents } from '../lib/api';
 import { latestTranscription, TranscriptionChip } from '../components/TranscriptionChip';
-import { BackIcon, LocationIcon } from '../components/icons';
-import { formatBytes, formatDateTime } from '../lib/format';
+import { LinkEventModal } from '../components/calendar/LinkEventModal';
+import { BackIcon, CalendarIcon, LinkIcon, LocationIcon, UnlinkIcon } from '../components/icons';
+import { formatBytes, formatDate, formatDateTime, formatTimeRange } from '../lib/format';
 import type { GeoLocation } from '../lib/geolocation';
 
 const POLL_INTERVAL_MS = 3000;
@@ -15,6 +16,32 @@ export function ItemDetailPage() {
   const [item, setItem] = useState<InboxItemDto | null>(null);
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [linkedEvents, setLinkedEvents] = useState<CalendarEventDto[] | null>(null);
+  const [linkPickerOpen, setLinkPickerOpen] = useState(false);
+
+  const refreshEvents = useCallback(async () => {
+    if (!id) return;
+    try {
+      setLinkedEvents((await listItemEvents(id)).events);
+    } catch {
+      // Calendar module errors must not break the item page.
+      setLinkedEvents([]);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void refreshEvents();
+  }, [refreshEvents]);
+
+  const unlinkEvent = async (eventId: string) => {
+    if (!id) return;
+    try {
+      await deleteCalendarLink(id, eventId);
+      await refreshEvents();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -106,6 +133,66 @@ export function ItemDetailPage() {
           )}
         </CardBody>
       </Card>
+
+      <Card>
+        <CardHeader className="flex items-center justify-between pb-0">
+          <h2 className="text-sm font-semibold">Calendar events</h2>
+          <Button
+            size="sm"
+            variant="flat"
+            startContent={<LinkIcon className="h-3.5 w-3.5" />}
+            onPress={() => setLinkPickerOpen(true)}
+          >
+            Link to event
+          </Button>
+        </CardHeader>
+        <CardBody className="gap-2 text-sm">
+          {linkedEvents === null && (
+            <div className="flex items-center gap-2 text-default-500">
+              <Spinner size="sm" /> Loading…
+            </div>
+          )}
+          {linkedEvents?.length === 0 && (
+            <p className="text-default-500">No linked calendar events.</p>
+          )}
+          {linkedEvents?.map((event) => (
+            <div key={event.id} className="flex items-center gap-3 rounded-medium bg-default-50 p-2">
+              <CalendarIcon className="h-4 w-4 shrink-0 text-primary" />
+              <Link
+                to={`/calendar?event=${event.id}`}
+                className="min-w-0 flex-1 text-primary"
+              >
+                <span className="block truncate">{event.title ?? '(untitled event)'}</span>
+                <span className="block text-xs text-default-500">
+                  {event.isAllDay
+                    ? `All day · ${formatDate(event.startAt)}`
+                    : `${formatDate(event.startAt)} · ${formatTimeRange(event.startAt, event.endAt)}`}
+                  {' · '}
+                  {event.feedName}
+                </span>
+              </Link>
+              <Button
+                isIconOnly
+                size="sm"
+                variant="light"
+                aria-label="Unlink event"
+                onPress={() => void unlinkEvent(event.id)}
+              >
+                <UnlinkIcon className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+        </CardBody>
+      </Card>
+
+      <LinkEventModal
+        isOpen={linkPickerOpen}
+        inboxItemId={item.id}
+        occurredAt={item.occurredAt}
+        alreadyLinkedIds={(linkedEvents ?? []).map((event) => event.id)}
+        onClose={() => setLinkPickerOpen(false)}
+        onLinked={() => void refreshEvents()}
+      />
 
       <Card>
         <CardHeader className="pb-0">

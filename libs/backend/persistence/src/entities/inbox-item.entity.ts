@@ -18,6 +18,7 @@ import { ExtractedPayloadEntity } from './extracted-payload.entity';
  */
 @Entity({ name: 'inbox_items' })
 @Index(['userId', 'ingestedAt'])
+@Index(['userId', 'occurredAt'])
 @Index(['userId', 'idempotencyKey'], { unique: true })
 export class InboxItemEntity {
   @PrimaryGeneratedColumn('uuid')
