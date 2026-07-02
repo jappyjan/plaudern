@@ -7,7 +7,6 @@ export * from './speaker-transcript.service';
 export * from './voice-profiles.service';
 export * from './speakers.controller';
 export * from './speaker-id.module';
-export * from './providers/local-stub.provider';
 export * from './providers/pyannote-http.provider';
 export * from './queues/inline.queue';
 export * from './queues/bull.queue';

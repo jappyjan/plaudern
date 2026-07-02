@@ -1,7 +1,10 @@
 import { Readable } from 'node:stream';
 
 export interface TranscriptionInput {
-  stream: Readable;
+  /** Presigned internal GET URL; server-network providers download it themselves. */
+  audioUrl: string;
+  /** Lazily opens the source stream, for providers that upload the bytes (OpenAI). */
+  openStream: () => Promise<Readable>;
   contentType: string;
   filename?: string;
   languageHint?: string;
@@ -15,8 +18,9 @@ export interface TranscriptionResult {
 }
 
 /**
- * Pluggable transcription backend (plan §5). Concrete impls: OpenAI Whisper for
- * real use, a local stub for CI/offline. Selected via env at module init.
+ * Pluggable transcription backend (plan §5). Concrete impls: the self-hosted
+ * whisper sidecar (default) or the OpenAI Whisper API. Selected via env at
+ * module init; tests override the DI token with fakes.
  */
 export interface TranscriptionProvider {
   readonly id: string;

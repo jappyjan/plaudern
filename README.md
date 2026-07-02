@@ -26,7 +26,7 @@ the browser. Web first — a mobile app comes later.
 apps/
   api/           NestJS backend — the Inbox + ingestion + transcription
   web/           Vite + React SPA (HeroUI + Tailwind) — upload & record UI
-  speaker-id-ml/ Python sidecar (FastAPI + pyannote) — diarization + voice embeddings
+  speaker-id-ml/ Python ML sidecar (FastAPI) — pyannote diarization + faster-whisper transcription
 libs/
   contracts/     Shared zod DTOs/types (@plaudern/contracts) — the backend↔frontend seam
   backend/
@@ -34,7 +34,7 @@ libs/
     storage/     S3/MinIO abstraction (+ in-memory fake for tests)
     inbox/        Inbox aggregate + read/delete API
     ingestion/    Source-adapter registry + presigned upload API
-    transcription/ Queue (BullMQ / inline) + provider interface (Whisper / stub)
+    transcription/ Queue (BullMQ / inline) + provider interface (sidecar whisper / OpenAI)
     speaker-id/   Diarization queue + voice-profile matching + contact book API
 docker-compose.yml   Postgres + MinIO + Redis (+ api + web + speaker-id) for local dev
 ```
@@ -52,19 +52,22 @@ docker-compose.yml   Postgres + MinIO + Redis (+ api + web + speaker-id) for loc
 - **Modular sources**: an `AdapterRegistry` keyed by source type (`audio`,
   `text`, `file`, `plaud`). Adding an input = adding one adapter.
 - **Async transcription**: on commit, audio-bearing sources enqueue a job
-  (BullMQ + Redis in prod, inline in tests) that streams the blob and writes back
-  the transcript via a pluggable `TranscriptionProvider` (OpenAI Whisper, or a
-  local stub for CI).
+  (BullMQ + Redis in prod, inline in tests) that writes back the transcript via
+  a pluggable `TranscriptionProvider` — the self-hosted faster-whisper in the
+  `apps/speaker-id-ml` sidecar by default, or the OpenAI Whisper API
+  (`TRANSCRIPTION_PROVIDER=openai`). Tests override the provider with jest
+  fakes.
 - **Speaker identification**: alongside transcription, audio enqueues a
   diarization job against a pluggable `DiarizationProvider` (the self-hosted
-  pyannote sidecar in `apps/speaker-id-ml`, or a stub for CI). Detected voices
+  pyannote sidecar in `apps/speaker-id-ml`). Detected voices
   are matched by embedding similarity to persistent **voice profiles**, so the
   same person is recognized across recordings; unknown voices land in a review
   queue in the web app's contact book (`/contacts`), where they can be named,
   confirmed, or merged. The transcript view renders speaker-attributed segments
-  by aligning Whisper `verbose_json` timestamps with the diarization at read
+  by aligning transcript segment timestamps with the diarization at read
   time. The pyannote models are gated on Hugging Face — see
-  `apps/speaker-id-ml/README.md` for the one-time `HF_TOKEN` setup.
+  `apps/speaker-id-ml/README.md` for the one-time `HUGGING_FACE_TOKEN` setup (required
+  for a default deploy).
 - **Capture metadata travels with the item**: `occurredAt` (when it was
   recorded) plus a free-form `metadata` field (GPS location, recording device,
   file tags) set at ingest time — the envelope is immutable, so metadata is
@@ -79,11 +82,13 @@ docker-compose.yml   Postgres + MinIO + Redis (+ api + web + speaker-id) for loc
 
 ## Run & verify
 
-**Whole stack in Docker** (web + API + Postgres + MinIO + Redis). Migrations run
-automatically on boot:
+**Whole stack in Docker** (web + API + ML sidecar + Postgres + MinIO + Redis).
+Migrations run automatically on boot. Set `HUGGING_FACE_TOKEN` first (see
+`apps/speaker-id-ml/README.md`) — the sidecar handles transcription and
+diarization by default and downloads ~1.5 GB of models on first start:
 
 ```bash
-docker compose up -d --build
+HUGGING_FACE_TOKEN=hf_... docker compose up -d --build
 open http://localhost:8080          # web app (nginx, proxies /api to the api)
 curl http://localhost:3000/api/health
 ```
@@ -92,7 +97,7 @@ curl http://localhost:3000/api/health
 
 ```bash
 pnpm install
-docker compose up -d postgres minio minio-init redis   # infra only
+HUGGING_FACE_TOKEN=hf_... docker compose up -d postgres minio minio-init redis speaker-id   # infra + ML sidecar
 cp apps/api/.env.example apps/api/.env
 pnpm nx run api:migrate                     # apply DB schema
 pnpm nx serve api                           # http://localhost:3000/api
@@ -138,9 +143,9 @@ pnpm nx serve web                           # http://localhost:5173 (proxies /ap
 
 Two complementary levels:
 
-1. **Unit / fast e2e** — in-process, sqlite + in-memory store + inline stub
-   transcription. No Docker, milliseconds. Covers the full init → upload →
-   commit → transcription flow:
+1. **Unit / fast e2e** — in-process, sqlite + in-memory store + inline queues
+   with jest-faked transcription/diarization providers. No Docker,
+   milliseconds. Covers the full init → upload → commit → transcription flow:
    ```bash
    pnpm nx test api            # incl. the full audio→transcript flow
    pnpm nx run-many -t test    # all projects
@@ -161,8 +166,8 @@ Two complementary levels:
   runners, so the entire stack is verified with zero setup) → production build.
   A parallel job typechecks and builds the web app.
 - **CD** (`.github/workflows/cd.yml`, push to `main` / `v*` tags): builds the
-  `api` and `web` images from their multi-stage Dockerfiles and pushes them to
-  **GHCR** (`ghcr.io/<owner>/plaudern/{api,web}`).
+  `api`, `web`, and `speaker-id-ml` images from their Dockerfiles and pushes
+  them to **GHCR** (`ghcr.io/<owner>/plaudern/{api,web,speaker-id-ml}`).
 
 ## Deploy to Coolify
 
@@ -177,11 +182,15 @@ MinIO + Redis) using Coolify's magic environment variables:
 - `SERVICE_USER_*` / `SERVICE_PASSWORD_*` — Postgres, MinIO, and Redis
   credentials are generated and persisted automatically on first deploy.
 
-Steps: create a **Docker Compose** resource in Coolify pointing at this repo, set
-the compose file to `docker-compose.coolify.yaml`, and (optionally) set
-`OPENAI_API_KEY` + `TRANSCRIPTION_PROVIDER=openai` in the UI to enable real
-transcription. Deploy — migrations run on boot. Remember: **no auth** — restrict
-access to the exposed domains yourself.
+Steps: create a **Docker Compose** resource in Coolify pointing at this repo,
+set the compose file to `docker-compose.coolify.yaml`, and set `HUGGING_FACE_TOKEN` in
+the UI (**required** — the ML sidecar handles transcription and diarization by
+default; see `apps/speaker-id-ml/README.md` for the one-time token setup).
+Optionally set `OPENAI_API_KEY` + `TRANSCRIPTION_PROVIDER=openai` to use the
+OpenAI Whisper API for transcription instead — providers are fixed at container
+boot, so changing them means editing the env vars and redeploying. Deploy —
+migrations run on boot. Remember: **no auth** — restrict access to the exposed
+domains yourself.
 
 To drive the API manually:
 
@@ -201,4 +210,5 @@ curl -s localhost:3000/api/v1/inbox
 
 Backend env: `apps/api/.env.example` (DB, S3/MinIO, Redis, transcription
 provider). Key switches: `DATABASE_DRIVER` (postgres|sqlite), `STORAGE_DRIVER`
-(s3|memory), `QUEUE_DRIVER` (bull|inline), `TRANSCRIPTION_PROVIDER` (stub|openai).
+(s3|memory), `QUEUE_DRIVER` (bull|inline), `TRANSCRIPTION_PROVIDER`
+(sidecar|openai), `SPEAKER_ID_PROVIDER` (pyannote|off).

@@ -19,9 +19,9 @@ export interface DiarizationResult {
 }
 
 /**
- * Pluggable diarization backend. Concrete impls: the pyannote sidecar over
- * HTTP for real use, a local stub for CI/offline. Selected via env at module
- * init, mirroring the transcription provider pattern.
+ * Pluggable diarization backend. Concrete impl: the pyannote sidecar over
+ * HTTP. Selected via env at module init, mirroring the transcription provider
+ * pattern; tests override the DI token with fakes.
  */
 export interface DiarizationProvider {
   readonly id: string;

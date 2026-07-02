@@ -6,7 +6,6 @@ process.env.DATABASE_DRIVER = 'sqlite';
 process.env.DATABASE_URL = ':memory:';
 process.env.STORAGE_DRIVER = 'memory';
 process.env.QUEUE_DRIVER = 'inline';
-process.env.TRANSCRIPTION_PROVIDER = 'stub';
 process.env.APP_ENCRYPTION_SECRET = 'test-secret';
 process.env.PLAUD_POLL_INTERVAL_MS = '0'; // no background pollers in tests
 process.env.CALENDAR_POLL_INTERVAL_MS = '0';
@@ -15,6 +14,12 @@ import { INestApplication, VersioningType } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { CALENDAR_FETCH } from '@plaudern/calendar';
+import { TRANSCRIPTION_PROVIDER } from '@plaudern/transcription';
+import { DIARIZATION_PROVIDER } from '@plaudern/speaker-id';
+import {
+  FakeDiarizationProvider,
+  FakeTranscriptionProvider,
+} from '../testing/fake-providers';
 import { AppModule } from './app.module';
 
 const FEED_URL = 'https://calendar.example.com/private-token-123/basic.ics';
@@ -67,6 +72,10 @@ describe('Calendar feeds + linking (e2e)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(CALENDAR_FETCH)
       .useValue(fakeFetch)
+      .overrideProvider(TRANSCRIPTION_PROVIDER)
+      .useValue(new FakeTranscriptionProvider())
+      .overrideProvider(DIARIZATION_PROVIDER)
+      .useValue(new FakeDiarizationProvider())
       .compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api');

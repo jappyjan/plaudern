@@ -30,7 +30,8 @@ export class OpenAiWhisperProvider implements TranscriptionProvider {
       throw new Error('OPENAI_API_KEY is not configured');
     }
     const chunks: Buffer[] = [];
-    for await (const chunk of input.stream) {
+    const stream = await input.openStream();
+    for await (const chunk of stream) {
       chunks.push(chunk as Buffer);
     }
     const buffer = Buffer.concat(chunks);

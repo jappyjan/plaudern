@@ -6,7 +6,6 @@ process.env.DATABASE_DRIVER = 'sqlite';
 process.env.DATABASE_URL = ':memory:';
 process.env.STORAGE_DRIVER = 'memory';
 process.env.QUEUE_DRIVER = 'inline';
-process.env.TRANSCRIPTION_PROVIDER = 'stub';
 process.env.GEOCODER = 'stub';
 
 import * as http from 'node:http';
@@ -16,6 +15,12 @@ import request from 'supertest';
 import type { InboxEvent } from '@plaudern/contracts';
 import { InMemoryStorageService, StorageService } from '@plaudern/storage';
 import { InboxEventsService } from '@plaudern/inbox';
+import { TRANSCRIPTION_PROVIDER } from '@plaudern/transcription';
+import { DIARIZATION_PROVIDER } from '@plaudern/speaker-id';
+import {
+  FakeDiarizationProvider,
+  FakeTranscriptionProvider,
+} from '../testing/fake-providers';
 import { AppModule } from './app.module';
 
 describe('Inbox events (e2e, Path A)', () => {
@@ -24,7 +29,12 @@ describe('Inbox events (e2e, Path A)', () => {
   let events: InboxEventsService;
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(TRANSCRIPTION_PROVIDER)
+      .useValue(new FakeTranscriptionProvider())
+      .overrideProvider(DIARIZATION_PROVIDER)
+      .useValue(new FakeDiarizationProvider())
+      .compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api');
     app.enableVersioning({ type: VersioningType.URI });
@@ -61,8 +71,9 @@ describe('Inbox events (e2e, Path A)', () => {
 
     const itemId = init.body.inboxItemId;
     const types = seen.filter((e) => 'itemId' in e && e.itemId === itemId);
-    // Audio commit runs transcription AND diarization (both inline+stub), so
-    // each contributes a full queued -> processing -> succeeded lifecycle.
+    // Audio commit runs transcription AND diarization (both inline, with fake
+    // providers), so each contributes a full queued -> processing -> succeeded
+    // lifecycle.
     expect(types.map((e) => e.type)).toEqual([
       'item.committed',
       'extraction.updated',

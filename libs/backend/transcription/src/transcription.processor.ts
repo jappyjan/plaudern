@@ -8,9 +8,9 @@ import {
 import type { TranscriptionJob } from './transcription.job';
 
 /**
- * Executes a single transcription job: stream the source blob from storage,
- * run the provider, and write the result back onto the append-only extraction
- * row (plan §5). Shared by the inline and BullMQ queues.
+ * Executes a single transcription job: presign the source blob, run the
+ * provider, and write the result back onto the append-only extraction row
+ * (plan §5). Shared by the inline and BullMQ queues.
  */
 @Injectable()
 export class TranscriptionProcessor {
@@ -26,9 +26,12 @@ export class TranscriptionProcessor {
   async process(job: TranscriptionJob): Promise<void> {
     await this.inbox.setExtractionStatus(job.extractionId, 'processing');
     try {
-      const stream = await this.storage.getObjectStream(job.storageKey);
+      // Presign at run time (not enqueue time) so queue retries never hold an
+      // expired URL; providers that upload bytes open the stream lazily.
+      const audioUrl = await this.storage.createInternalPresignedGetUrl(job.storageKey);
       const result = await this.provider.transcribe({
-        stream,
+        audioUrl,
+        openStream: () => this.storage.getObjectStream(job.storageKey),
         contentType: job.contentType,
         filename: job.filename,
         languageHint: job.languageHint,

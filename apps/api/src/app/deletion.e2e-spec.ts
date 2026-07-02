@@ -6,7 +6,6 @@ process.env.DATABASE_DRIVER = 'sqlite';
 process.env.DATABASE_URL = ':memory:';
 process.env.STORAGE_DRIVER = 'memory';
 process.env.QUEUE_DRIVER = 'inline';
-process.env.TRANSCRIPTION_PROVIDER = 'stub';
 process.env.GEOCODER = 'stub';
 
 import { INestApplication, VersioningType } from '@nestjs/common';
@@ -16,6 +15,12 @@ import type { InboxEvent } from '@plaudern/contracts';
 import { DEFAULT_USER_ID } from '@plaudern/persistence';
 import { InMemoryStorageService, StorageService } from '@plaudern/storage';
 import { InboxEventsService, InboxService } from '@plaudern/inbox';
+import { TRANSCRIPTION_PROVIDER } from '@plaudern/transcription';
+import { DIARIZATION_PROVIDER } from '@plaudern/speaker-id';
+import {
+  FakeDiarizationProvider,
+  FakeTranscriptionProvider,
+} from '../testing/fake-providers';
 import { AppModule } from './app.module';
 
 describe('Inbox item deletion (e2e, Path A)', () => {
@@ -25,7 +30,12 @@ describe('Inbox item deletion (e2e, Path A)', () => {
   let events: InboxEventsService;
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(TRANSCRIPTION_PROVIDER)
+      .useValue(new FakeTranscriptionProvider())
+      .overrideProvider(DIARIZATION_PROVIDER)
+      .useValue(new FakeDiarizationProvider())
+      .compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api');
     app.enableVersioning({ type: VersioningType.URI });

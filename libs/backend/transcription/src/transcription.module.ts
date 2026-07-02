@@ -7,7 +7,7 @@ import {
   type TranscriptionProvider,
 } from './transcription.provider';
 import { TRANSCRIPTION_QUEUE } from './transcription.job';
-import { LocalStubProvider } from './providers/local-stub.provider';
+import { SidecarTranscriptionProvider } from './providers/sidecar.provider';
 import { OpenAiWhisperProvider } from './providers/openai-whisper.provider';
 import { TranscriptionProcessor } from './transcription.processor';
 import { TranscriptionService } from './transcription.service';
@@ -36,17 +36,35 @@ function redisConnection(config: ConfigService): ConnectionOptions {
 @Module({
   imports: [ConfigModule, InboxModule],
   providers: [
-    LocalStubProvider,
+    SidecarTranscriptionProvider,
     OpenAiWhisperProvider,
     {
       provide: TRANSCRIPTION_PROVIDER,
-      inject: [ConfigService, LocalStubProvider, OpenAiWhisperProvider],
+      inject: [ConfigService, SidecarTranscriptionProvider, OpenAiWhisperProvider],
       useFactory: (
         config: ConfigService,
-        stub: LocalStubProvider,
+        sidecar: SidecarTranscriptionProvider,
         openai: OpenAiWhisperProvider,
-      ): TranscriptionProvider =>
-        config.get<string>('TRANSCRIPTION_PROVIDER', 'stub') === 'openai' ? openai : stub,
+      ): TranscriptionProvider => {
+        const selected = config.get<string>('TRANSCRIPTION_PROVIDER', 'sidecar');
+        switch (selected) {
+          case 'sidecar':
+            return sidecar;
+          case 'openai':
+            if (!config.get<string>('OPENAI_API_KEY')) {
+              throw new Error('TRANSCRIPTION_PROVIDER=openai requires OPENAI_API_KEY');
+            }
+            return openai;
+          case 'stub':
+            throw new Error(
+              "TRANSCRIPTION_PROVIDER=stub was removed; use 'sidecar' (default, apps/speaker-id-ml) or 'openai'",
+            );
+          default:
+            throw new Error(
+              `unknown TRANSCRIPTION_PROVIDER '${selected}' (expected 'sidecar' or 'openai')`,
+            );
+        }
+      },
     },
     TranscriptionProcessor,
     {

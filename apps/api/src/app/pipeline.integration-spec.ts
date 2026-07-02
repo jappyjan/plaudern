@@ -3,7 +3,13 @@ import { INestApplication, VersioningType } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import type { InboxItemDto } from '@plaudern/contracts';
+import { TRANSCRIPTION_PROVIDER } from '@plaudern/transcription';
+import { DIARIZATION_PROVIDER } from '@plaudern/speaker-id';
 import { startInfra, type Infra } from '../testing/containers';
+import {
+  FakeDiarizationProvider,
+  FakeTranscriptionProvider,
+} from '../testing/fake-providers';
 
 /**
  * Full-stack integration test (plan §6). Unlike the fast Path A e2e (sqlite +
@@ -31,13 +37,16 @@ describe('Ingestion pipeline (integration, real Postgres + MinIO + Redis)', () =
     process.env.S3_FORCE_PATH_STYLE = 'true';
     process.env.QUEUE_DRIVER = 'bull';
     process.env.REDIS_URL = infra.redisUrl;
-    process.env.TRANSCRIPTION_PROVIDER = 'stub';
-    process.env.SPEAKER_ID_PROVIDER = 'stub';
     process.env.GEOCODER = 'stub';
 
     const moduleRef = await Test.createTestingModule({
       imports: [(await import('./app.module')).AppModule],
-    }).compile();
+    })
+      .overrideProvider(TRANSCRIPTION_PROVIDER)
+      .useValue(new FakeTranscriptionProvider())
+      .overrideProvider(DIARIZATION_PROVIDER)
+      .useValue(new FakeDiarizationProvider())
+      .compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api');
     app.enableVersioning({ type: VersioningType.URI });
@@ -90,7 +99,7 @@ describe('Ingestion pipeline (integration, real Postgres + MinIO + Redis)', () =
     const item = await waitForExtraction(app, init.body.inboxItemId, 'transcription');
     const transcript = item.extractions.find((e) => e.kind === 'transcription');
     expect(transcript?.status).toBe('succeeded');
-    expect(transcript?.content).toContain('stub transcription');
+    expect(transcript?.content).toContain('test transcription');
 
     // Diarization runs on its own queue against the real speaker tables.
     const diarized = await waitForExtraction(app, init.body.inboxItemId, 'diarization');
