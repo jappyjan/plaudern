@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   ExtractedPayloadEntity,
+  GeocodeCacheEntity,
   InboxItemEntity,
   PlaudSettingsEntity,
   SourcePayloadEntity,
@@ -10,12 +11,14 @@ import {
 import { InitialSchema1720000000000 } from './migrations/1720000000000-InitialSchema';
 import { DropAuthTables1720000000001 } from './migrations/1720000000001-DropAuthTables';
 import { CreatePlaudSettings1720000000002 } from './migrations/1720000000002-CreatePlaudSettings';
+import { GeocodeCache1720000000003 } from './migrations/1720000000003-GeocodeCache';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
   SourcePayloadEntity,
   ExtractedPayloadEntity,
   PlaudSettingsEntity,
+  GeocodeCacheEntity,
 ];
 
 // Referenced as classes (not a glob) so migrations load identically under
@@ -24,6 +27,7 @@ export const ALL_MIGRATIONS = [
   InitialSchema1720000000000,
   DropAuthTables1720000000001,
   CreatePlaudSettings1720000000002,
+  GeocodeCache1720000000003,
 ];
 
 /**

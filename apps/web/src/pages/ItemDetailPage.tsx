@@ -1,20 +1,45 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button, Card, CardBody, CardHeader, Chip, Spinner } from '@heroui/react';
 import type { InboxItemDto } from '@plaudern/contracts';
 import { Link, useParams } from 'react-router-dom';
-import { getItem, getSourceUrl } from '../lib/api';
+import { getItem, getSourceUrl, retryTranscription } from '../lib/api';
+import { useInboxEvents } from '../hooks/useInboxEvents';
+import { usePlaceName } from '../hooks/usePlaceName';
 import { latestTranscription, TranscriptionChip } from '../components/TranscriptionChip';
 import { BackIcon, LocationIcon } from '../components/icons';
 import { formatBytes, formatDateTime } from '../lib/format';
 import type { GeoLocation } from '../lib/geolocation';
 
-const POLL_INTERVAL_MS = 3000;
+// SSE delivers updates instantly; polling is only a fallback for proxies
+// that break the event stream, so it can be slow.
+const POLL_INTERVAL_MS = 10_000;
 
 export function ItemDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [item, setItem] = useState<InboxItemDto | null>(null);
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+
+  const refetch = useCallback(() => {
+    if (!id) return;
+    getItem(id)
+      .then(setItem)
+      .catch(() => undefined);
+  }, [id]);
+
+  // Extracted before the early returns below because usePlaceName is a hook.
+  const location = item?.metadata?.location as (GeoLocation & { alt?: number }) | undefined;
+  const placeName = usePlaceName(location);
+
+  // Live transcription progress via SSE (polling below is only a fallback).
+  useInboxEvents({
+    onEvent: (event) => {
+      if (event.type !== 'heartbeat' && event.itemId === id) refetch();
+    },
+    onReconnect: refetch,
+  });
 
   useEffect(() => {
     if (!id) return;
@@ -67,7 +92,6 @@ export function ItemDetailPage() {
   }
 
   const transcription = latestTranscription(item);
-  const location = item.metadata?.location as (GeoLocation & { alt?: number }) | undefined;
   const device = item.metadata?.device as Record<string, string> | undefined;
   const tags = item.metadata?.tags as Record<string, unknown> | undefined;
 
@@ -102,7 +126,31 @@ export function ItemDetailPage() {
             <p className="whitespace-pre-wrap text-sm">{transcription.content}</p>
           )}
           {transcription?.status === 'failed' && (
-            <p className="text-sm text-danger">{transcription.error ?? 'Transcription failed.'}</p>
+            <div className="flex flex-col gap-2">
+              <p className="text-sm text-danger">{transcription.error ?? 'Transcription failed.'}</p>
+              <Button
+                size="sm"
+                color="primary"
+                variant="flat"
+                className="self-start"
+                isLoading={retrying}
+                onPress={async () => {
+                  if (!id) return;
+                  setRetrying(true);
+                  setRetryError(null);
+                  try {
+                    setItem(await retryTranscription(id));
+                  } catch (cause) {
+                    setRetryError(cause instanceof Error ? cause.message : String(cause));
+                  } finally {
+                    setRetrying(false);
+                  }
+                }}
+              >
+                Retry transcription
+              </Button>
+              {retryError && <p className="text-xs text-danger">{retryError}</p>}
+            </div>
           )}
         </CardBody>
       </Card>
@@ -132,15 +180,23 @@ export function ItemDetailPage() {
           {location && (
             <div className="flex items-start justify-between gap-4">
               <span className="text-default-500">Location</span>
-              <a
-                href={`https://www.openstreetmap.org/?mlat=${location.lat}&mlon=${location.lon}#map=16/${location.lat}/${location.lon}`}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1 text-primary"
-              >
-                <LocationIcon className="h-4 w-4" />
-                {location.lat.toFixed(5)}, {location.lon.toFixed(5)}
-              </a>
+              <div className="flex flex-col items-end">
+                <a
+                  href={`https://www.openstreetmap.org/?mlat=${location.lat}&mlon=${location.lon}#map=16/${location.lat}/${location.lon}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1 text-right text-primary"
+                  title={`${location.lat.toFixed(5)}, ${location.lon.toFixed(5)}`}
+                >
+                  <LocationIcon className="h-4 w-4 shrink-0" />
+                  {placeName ?? `${location.lat.toFixed(5)}, ${location.lon.toFixed(5)}`}
+                </a>
+                {placeName && (
+                  <span className="text-xs text-default-400">
+                    {location.lat.toFixed(5)}, {location.lon.toFixed(5)}
+                  </span>
+                )}
+              </div>
             </div>
           )}
           {tags && Object.keys(tags).length > 0 && (

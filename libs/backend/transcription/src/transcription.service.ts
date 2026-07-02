@@ -1,5 +1,11 @@
-import { Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
 import { InboxService } from '@plaudern/inbox';
+import { DEFAULT_USER_ID } from '@plaudern/persistence';
 import {
   TRANSCRIPTION_PROVIDER,
   type TranscriptionProvider,
@@ -42,5 +48,33 @@ export class TranscriptionService {
       languageHint: params.languageHint,
     });
     return extraction.id;
+  }
+
+  /**
+   * Re-run transcription for an item. Extractions are append-only, so a retry
+   * simply enqueues a fresh row; older attempts stay visible in the history.
+   */
+  async retryTranscription(inboxItemId: string): Promise<string> {
+    const item = await this.inbox.getItem(DEFAULT_USER_ID, inboxItemId);
+    const source = item.source;
+    if (
+      !source ||
+      source.uploadStatus !== 'committed' ||
+      !source.contentType.startsWith('audio/')
+    ) {
+      throw new BadRequestException('item has no committed audio source to transcribe');
+    }
+    const latest = item.extractions
+      .filter((e) => e.kind === 'transcription')
+      .slice()
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+    if (latest && (latest.status === 'queued' || latest.status === 'processing')) {
+      throw new ConflictException('a transcription is already in progress');
+    }
+    return this.enqueueTranscription(item.id, {
+      storageKey: source.storageKey,
+      contentType: source.contentType,
+      filename: source.originalFilename ?? undefined,
+    });
   }
 }

@@ -7,6 +7,8 @@ import {
 } from '@plaudern/persistence';
 import { InboxService } from './inbox.service';
 import { InboxController } from './inbox.controller';
+import { InboxEventsService } from './inbox-events.service';
+import { InboxEventsController } from './inbox-events.controller';
 
 @Module({
   imports: [
@@ -16,8 +18,8 @@ import { InboxController } from './inbox.controller';
       ExtractedPayloadEntity,
     ]),
   ],
-  providers: [InboxService],
-  controllers: [InboxController],
-  exports: [InboxService],
+  providers: [InboxService, InboxEventsService],
+  controllers: [InboxController, InboxEventsController],
+  exports: [InboxService, InboxEventsService],
 })
 export class InboxModule {}

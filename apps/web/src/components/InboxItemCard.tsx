@@ -2,8 +2,17 @@ import { Card, CardBody, Chip } from '@heroui/react';
 import type { InboxItemDto, SourceType } from '@plaudern/contracts';
 import { useNavigate } from 'react-router-dom';
 import { formatDateTime, formatDuration } from '../lib/format';
+import { usePlaceName } from '../hooks/usePlaceName';
 import { AudioIcon, FileIcon, LocationIcon, MicIcon, TextIcon } from './icons';
 import { TranscriptionChip } from './TranscriptionChip';
+
+const MAX_PLACE_CHIP_CHARS = 24;
+
+function truncatePlace(label: string): string {
+  return label.length > MAX_PLACE_CHIP_CHARS
+    ? `${label.slice(0, MAX_PLACE_CHIP_CHARS - 1)}…`
+    : label;
+}
 
 function SourceIcon({ sourceType }: { sourceType: SourceType }) {
   const className = 'h-5 w-5 shrink-0 text-default-500';
@@ -30,7 +39,8 @@ export function InboxItemCard({ item }: { item: InboxItemDto }) {
   const navigate = useNavigate();
   const tags = item.metadata?.tags as Record<string, unknown> | undefined;
   const duration = typeof tags?.durationSeconds === 'number' ? tags.durationSeconds : null;
-  const hasLocation = Boolean(item.metadata?.location);
+  const location = item.metadata?.location as { lat: number; lon: number } | undefined;
+  const placeName = usePlaceName(location);
   const recordedViaMic = item.metadata?.capturedVia === 'browser-recording';
 
   return (
@@ -46,9 +56,9 @@ export function InboxItemCard({ item }: { item: InboxItemDto }) {
             <span className="text-xs tabular-nums text-default-500">{formatDuration(duration)}</span>
           )}
           {recordedViaMic && <MicIcon className="h-4 w-4 text-default-400" />}
-          {hasLocation && (
+          {location && (
             <Chip size="sm" variant="flat" startContent={<LocationIcon className="h-3.5 w-3.5" />}>
-              GPS
+              {placeName ? truncatePlace(placeName) : 'GPS'}
             </Chip>
           )}
           <TranscriptionChip item={item} />
