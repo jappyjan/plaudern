@@ -17,10 +17,10 @@ The pyannote models are free but **gated**. Before first start:
 2. While logged in, accept the user conditions of BOTH models:
    - <https://huggingface.co/pyannote/speaker-diarization-3.1>
    - <https://huggingface.co/pyannote/segmentation-3.0>
-3. Export the token as `HF_TOKEN` (e.g. in the repo's `.env` used by
+3. Export the token as `HUGGING_FACE_TOKEN` (e.g. in the repo's `.env` used by
    docker compose).
 
-The whisper models are ungated — `HF_TOKEN` is only needed for pyannote.
+The whisper models are ungated — `HUGGING_FACE_TOKEN` is only needed for pyannote.
 
 The models (~1 GB pyannote + ~0.5 GB whisper `small`) download on first start
 into the `hfcache` volume; later starts are offline. `/health` returns 503
@@ -32,14 +32,14 @@ Via the repo's docker compose (recommended — both transcription and
 diarization use this sidecar by default):
 
 ```sh
-HF_TOKEN=hf_... docker compose up -d --build speaker-id api
+HUGGING_FACE_TOKEN=hf_... docker compose up -d --build speaker-id api
 ```
 
 Standalone for development:
 
 ```sh
 pip install -r requirements.txt
-HF_TOKEN=hf_... uvicorn main:app --port 8000
+HUGGING_FACE_TOKEN=hf_... uvicorn main:app --port 8000
 ```
 
 ## API
@@ -80,7 +80,7 @@ product.
 
 | Var | Default | Purpose |
 | --- | --- | --- |
-| `HF_TOKEN` | — | Hugging Face token with accepted pyannote terms (required) |
+| `HUGGING_FACE_TOKEN` | — | Hugging Face token with accepted pyannote terms (required) |
 | `SPEAKER_ID_TOKEN` | — | Shared bearer token; requests are rejected without it when set |
 | `SPEAKER_ID_MODEL` | `pyannote/speaker-diarization-3.1` | Diarization pipeline to load |
 | `WHISPER_MODEL` | `small` | faster-whisper model (`tiny`/`base`/`small`/`medium`/`large-v3` or an HF repo id) |

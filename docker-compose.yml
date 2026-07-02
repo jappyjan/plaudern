@@ -6,7 +6,7 @@
 # Run only the infra (and api/web via `nx serve api` / `nx serve web`) with:
 #   docker compose up -d postgres minio minio-init redis speaker-id
 # (speaker-id is the ML sidecar the api uses for transcription and diarization
-# by default — see apps/speaker-id-ml/README.md for the required HF_TOKEN.)
+# by default — see apps/speaker-id-ml/README.md for the required HUGGING_FACE_TOKEN.)
 services:
   web:
     build:
@@ -72,14 +72,14 @@ services:
 
   # ML sidecar: speaker diarization + voice embeddings (pyannote) and
   # transcription (faster-whisper). The pyannote models are gated on Hugging
-  # Face: set HF_TOKEN and accept the model terms first — see
+  # Face: set HUGGING_FACE_TOKEN and accept the model terms first — see
   # apps/speaker-id-ml/README.md. Downloads ~1.5 GB into hfcache on first start.
   speaker-id:
     build:
       context: apps/speaker-id-ml
     restart: unless-stopped
     environment:
-      HF_TOKEN: ${HF_TOKEN:-}
+      HUGGING_FACE_TOKEN: ${HUGGING_FACE_TOKEN:-}
       SPEAKER_ID_TOKEN: ${SPEAKER_ID_TOKEN:-change-me}
       WHISPER_MODEL: ${WHISPER_MODEL:-small}
     volumes:

@@ -7,7 +7,7 @@ L2-normalized embedding per speaker cluster, used by the backend for
 cross-recording voice matching) or transcribes it (text plus timestamped
 segments).
 
-Requires HF_TOKEN with accepted terms for the gated models
+Requires HUGGING_FACE_TOKEN with accepted terms for the gated models
 pyannote/speaker-diarization-3.1 and pyannote/segmentation-3.0. The whisper
 models are ungated.
 """
@@ -24,7 +24,7 @@ from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 MODEL_NAME = os.environ.get("SPEAKER_ID_MODEL", "pyannote/speaker-diarization-3.1")
-HF_TOKEN = os.environ.get("HF_TOKEN", "")
+HUGGING_FACE_TOKEN = os.environ.get("HUGGING_FACE_TOKEN", "")
 AUTH_TOKEN = os.environ.get("SPEAKER_ID_TOKEN", "")
 DOWNLOAD_TIMEOUT_S = float(os.environ.get("SPEAKER_ID_DOWNLOAD_TIMEOUT_S", "300"))
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "small")
@@ -65,10 +65,10 @@ def load_pipeline() -> None:
     from pyannote.audio import Pipeline
 
     logger.info("loading %s (first run downloads the model)...", MODEL_NAME)
-    pipeline = Pipeline.from_pretrained(MODEL_NAME, use_auth_token=HF_TOKEN or None)
+    pipeline = Pipeline.from_pretrained(MODEL_NAME, use_auth_token=HUGGING_FACE_TOKEN or None)
     if pipeline is None:
         raise RuntimeError(
-            f"could not load {MODEL_NAME}. Set HF_TOKEN and accept the model "
+            f"could not load {MODEL_NAME}. Set HUGGING_FACE_TOKEN and accept the model "
             "terms on huggingface.co (see apps/speaker-id-ml/README.md)."
         )
     if torch.cuda.is_available():

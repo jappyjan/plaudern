@@ -63,7 +63,7 @@ docker-compose.yml   Postgres + MinIO + Redis (+ api + web + speaker-id) for loc
   confirmed, or merged. The transcript view renders speaker-attributed segments
   by aligning transcript segment timestamps with the diarization at read
   time. The pyannote models are gated on Hugging Face — see
-  `apps/speaker-id-ml/README.md` for the one-time `HF_TOKEN` setup (required
+  `apps/speaker-id-ml/README.md` for the one-time `HUGGING_FACE_TOKEN` setup (required
   for a default deploy).
 - **Capture metadata travels with the item**: `occurredAt` (when it was
   recorded) plus a free-form `metadata` field (GPS location, recording device,
@@ -80,12 +80,12 @@ docker-compose.yml   Postgres + MinIO + Redis (+ api + web + speaker-id) for loc
 ## Run & verify
 
 **Whole stack in Docker** (web + API + ML sidecar + Postgres + MinIO + Redis).
-Migrations run automatically on boot. Set `HF_TOKEN` first (see
+Migrations run automatically on boot. Set `HUGGING_FACE_TOKEN` first (see
 `apps/speaker-id-ml/README.md`) — the sidecar handles transcription and
 diarization by default and downloads ~1.5 GB of models on first start:
 
 ```bash
-HF_TOKEN=hf_... docker compose up -d --build
+HUGGING_FACE_TOKEN=hf_... docker compose up -d --build
 open http://localhost:8080          # web app (nginx, proxies /api to the api)
 curl http://localhost:3000/api/health
 ```
@@ -94,7 +94,7 @@ curl http://localhost:3000/api/health
 
 ```bash
 pnpm install
-HF_TOKEN=hf_... docker compose up -d postgres minio minio-init redis speaker-id   # infra + ML sidecar
+HUGGING_FACE_TOKEN=hf_... docker compose up -d postgres minio minio-init redis speaker-id   # infra + ML sidecar
 cp apps/api/.env.example apps/api/.env
 pnpm nx run api:migrate                     # apply DB schema
 pnpm nx serve api                           # http://localhost:3000/api
@@ -171,7 +171,7 @@ MinIO + Redis) using Coolify's magic environment variables:
   credentials are generated and persisted automatically on first deploy.
 
 Steps: create a **Docker Compose** resource in Coolify pointing at this repo,
-set the compose file to `docker-compose.coolify.yaml`, and set `HF_TOKEN` in
+set the compose file to `docker-compose.coolify.yaml`, and set `HUGGING_FACE_TOKEN` in
 the UI (**required** — the ML sidecar handles transcription and diarization by
 default; see `apps/speaker-id-ml/README.md` for the one-time token setup).
 Optionally set `OPENAI_API_KEY` + `TRANSCRIPTION_PROVIDER=openai` to use the

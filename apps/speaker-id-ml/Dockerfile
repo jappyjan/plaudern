@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY main.py .
 
 # Models are gated + large: they download on first start into this volume-
-# mounted cache using the HF_TOKEN env var. Never bake the token into the image.
+# mounted cache using the HUGGING_FACE_TOKEN env var. Never bake the token into the image.
 ENV HF_HOME=/cache/huggingface
 VOLUME /cache/huggingface
 

@@ -52,7 +52,7 @@ services:
       - QUEUE_DRIVER=bull
       - REDIS_URL=redis://:${SERVICE_PASSWORD_REDIS}@redis:6379
       # Transcription runs on the self-hosted speaker-id sidecar by default
-      # (requires HF_TOKEN on that service). To use the OpenAI API instead, set
+      # (requires HUGGING_FACE_TOKEN on that service). To use the OpenAI API instead, set
       # TRANSCRIPTION_PROVIDER=openai and OPENAI_API_KEY as environment
       # variables in Coolify and redeploy — the provider is fixed at boot.
       - TRANSCRIPTION_PROVIDER=${TRANSCRIPTION_PROVIDER:-sidecar}
@@ -63,7 +63,7 @@ services:
       - APP_ENCRYPTION_SECRET=${SERVICE_PASSWORD_APPENCRYPTION}
       - PLAUD_POLL_INTERVAL_MS=${PLAUD_POLL_INTERVAL_MS:-300000}
       # Speaker identification runs on the speaker-id sidecar by default
-      # (requires HF_TOKEN there — see apps/speaker-id-ml/README.md). Set
+      # (requires HUGGING_FACE_TOKEN there — see apps/speaker-id-ml/README.md). Set
       # SPEAKER_ID_PROVIDER=off and redeploy to disable it (fixed at boot,
       # not switchable live).
       - SPEAKER_ID_PROVIDER=${SPEAKER_ID_PROVIDER:-pyannote}
@@ -88,7 +88,7 @@ services:
       retries: 10
 
   # ML sidecar: speaker diarization + voice embeddings (pyannote) and
-  # transcription (faster-whisper). Internal-only. HF_TOKEN is REQUIRED for a
+  # transcription (faster-whisper). Internal-only. HUGGING_FACE_TOKEN is REQUIRED for a
   # default deploy: the pyannote models are gated on Hugging Face — create a
   # token and accept the model terms first (apps/speaker-id-ml/README.md).
   speaker-id:
@@ -96,7 +96,7 @@ services:
       context: apps/speaker-id-ml
     restart: unless-stopped
     environment:
-      - HF_TOKEN=${HF_TOKEN}
+      - HUGGING_FACE_TOKEN=${HUGGING_FACE_TOKEN}
       - SPEAKER_ID_TOKEN=${SERVICE_PASSWORD_SPEAKERID}
       - WHISPER_MODEL=${WHISPER_MODEL:-small}
     volumes:
