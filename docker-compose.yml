@@ -48,8 +48,9 @@ services:
       TRANSCRIPTION_PROVIDER: ${TRANSCRIPTION_PROVIDER:-stub}
       TRANSCRIPTION_MODEL: ${TRANSCRIPTION_MODEL:-whisper-1}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      # Encrypts the Plaud password stored in Postgres — override in production.
-      PLAUD_SETTINGS_SECRET: ${PLAUD_SETTINGS_SECRET:-change-me}
+      # General-purpose key encrypting secrets stored in Postgres (e.g. the
+      # Plaud password) — override in production.
+      APP_ENCRYPTION_SECRET: ${APP_ENCRYPTION_SECRET:-change-me}
       PLAUD_POLL_INTERVAL_MS: ${PLAUD_POLL_INTERVAL_MS:-300000}
       PORT: 3000
     ports:

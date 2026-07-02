@@ -91,7 +91,7 @@ export class PlaudSettingsService {
       return decryptSecret(entity.passwordEncrypted, this.requireSecret());
     } catch {
       throw new Error(
-        'stored Plaud password cannot be decrypted (PLAUD_SETTINGS_SECRET missing or changed) — re-enter the password in settings',
+        'stored Plaud password cannot be decrypted (APP_ENCRYPTION_SECRET missing or changed) — re-enter the password in settings',
       );
     }
   }
@@ -116,10 +116,10 @@ export class PlaudSettingsService {
   }
 
   private requireSecret(): string {
-    const secret = this.config.get<string>('PLAUD_SETTINGS_SECRET', '');
+    const secret = this.config.get<string>('APP_ENCRYPTION_SECRET', '');
     if (!secret) {
       throw new BadRequestException(
-        'PLAUD_SETTINGS_SECRET is not configured on the server — set it to enable Plaud credential storage',
+        'APP_ENCRYPTION_SECRET is not configured on the server — set it to enable Plaud credential storage',
       );
     }
     return secret;
