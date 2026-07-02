@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Spinner } from '@heroui/react';
 import type { InboxItemDto } from '@plaudern/contracts';
-import { listInbox } from '../lib/api';
+import { getItem, listInbox } from '../lib/api';
+import { useInboxEvents } from '../hooks/useInboxEvents';
 import { InboxItemCard } from '../components/InboxItemCard';
 import { RecordModal } from '../components/RecordModal';
 import { UploadButton } from '../components/UploadButton';
@@ -30,6 +31,30 @@ export function InboxPage() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Live updates: refetch the affected item and upsert it in place, so
+  // transcription progress and items from other devices appear without a
+  // reload — and without discarding already-loaded pagination pages.
+  useInboxEvents({
+    onEvent: (event) => {
+      if (event.type === 'heartbeat') return;
+      void getItem(event.itemId)
+        .then((fetched) => {
+          setItems((existing) => {
+            if (!existing) return existing;
+            const index = existing.findIndex((i) => i.id === fetched.id);
+            if (index >= 0) {
+              const next = existing.slice();
+              next[index] = fetched;
+              return next;
+            }
+            return [fetched, ...existing];
+          });
+        })
+        .catch(() => undefined);
+    },
+    onReconnect: () => void refresh(),
+  });
 
   const loadMore = async () => {
     if (!nextCursor) return;

@@ -32,6 +32,7 @@ describe('Ingestion pipeline (integration, real Postgres + MinIO + Redis)', () =
     process.env.QUEUE_DRIVER = 'bull';
     process.env.REDIS_URL = infra.redisUrl;
     process.env.TRANSCRIPTION_PROVIDER = 'stub';
+    process.env.GEOCODER = 'stub';
 
     const moduleRef = await Test.createTestingModule({
       imports: [(await import('./app.module')).AppModule],
@@ -89,6 +90,16 @@ describe('Ingestion pipeline (integration, real Postgres + MinIO + Redis)', () =
     const transcript = item.extractions.find((e) => e.kind === 'transcription');
     expect(transcript?.status).toBe('succeeded');
     expect(transcript?.content).toContain('stub transcription');
+
+    // Retry appends a second attempt through the real BullMQ path (and proves
+    // the geocode_cache migration ran, since the app booted with migrations).
+    await request(app.getHttpServer())
+      .post(`/api/v1/inbox/${init.body.inboxItemId}/transcription/retry`)
+      .expect(201);
+    const retried = await waitForTranscriptionCount(app, init.body.inboxItemId, 2);
+    const attempts = retried.extractions.filter((e) => e.kind === 'transcription');
+    expect(attempts).toHaveLength(2);
+    expect(attempts[0].status).toBe('succeeded');
   });
 
   it('persists an immutable text item across a real DB round-trip', async () => {
@@ -108,6 +119,26 @@ describe('Ingestion pipeline (integration, real Postgres + MinIO + Redis)', () =
     expect(list.body.items.length).toBeGreaterThanOrEqual(2);
   });
 });
+
+async function waitForTranscriptionCount(
+  app: INestApplication,
+  id: string,
+  count: number,
+  timeoutMs = 30_000,
+): Promise<InboxItemDto> {
+  const deadline = Date.now() + timeoutMs;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const res = await request(app.getHttpServer()).get(`/api/v1/inbox/${id}`);
+    const item = res.body as InboxItemDto;
+    const done = item.extractions?.filter(
+      (e) => e.kind === 'transcription' && (e.status === 'succeeded' || e.status === 'failed'),
+    );
+    if (done && done.length >= count) return item;
+    if (Date.now() > deadline) throw new Error('timed out waiting for transcriptions');
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
 
 async function waitForTranscription(
   app: INestApplication,

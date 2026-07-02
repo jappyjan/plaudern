@@ -2,6 +2,7 @@ export * from './transcription.provider';
 export * from './transcription.job';
 export * from './transcription.processor';
 export * from './transcription.service';
+export * from './transcription.controller';
 export * from './transcription.module';
 export * from './providers/local-stub.provider';
 export * from './providers/openai-whisper.provider';

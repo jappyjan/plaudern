@@ -11,6 +11,7 @@ import { LocalStubProvider } from './providers/local-stub.provider';
 import { OpenAiWhisperProvider } from './providers/openai-whisper.provider';
 import { TranscriptionProcessor } from './transcription.processor';
 import { TranscriptionService } from './transcription.service';
+import { TranscriptionController } from './transcription.controller';
 import { InlineTranscriptionQueue } from './queues/inline.queue';
 import { BullTranscriptionQueue } from './queues/bull.queue';
 
@@ -58,6 +59,7 @@ function redisConnection(config: ConfigService): ConnectionOptions {
     },
     TranscriptionService,
   ],
+  controllers: [TranscriptionController],
   exports: [TranscriptionService],
 })
 export class TranscriptionModule {}

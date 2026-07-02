@@ -7,6 +7,7 @@ import {
   InboxItemEntity,
   SourcePayloadEntity,
 } from '@plaudern/persistence';
+import { InboxEventsService } from './inbox-events.service';
 
 export interface CreatePendingItemParams {
   userId: string;
@@ -38,6 +39,7 @@ export class InboxService {
     private readonly sources: Repository<SourcePayloadEntity>,
     @InjectRepository(ExtractedPayloadEntity)
     private readonly extractions: Repository<ExtractedPayloadEntity>,
+    private readonly events: InboxEventsService,
   ) {}
 
   findByIdempotencyKey(userId: string, idempotencyKey: string): Promise<InboxItemEntity | null> {
@@ -86,12 +88,15 @@ export class InboxService {
         uploadStatus: 'committed',
       }),
     });
-    return this.items.save(item);
+    const saved = await this.items.save(item);
+    this.events.emit({ type: 'item.created', itemId: saved.id });
+    return saved;
   }
 
   /** Finalize the pending upload once the client's direct PUT is confirmed. */
   async markSourceCommitted(inboxItemId: string, byteSize: number): Promise<void> {
     await this.sources.update({ inboxItemId }, { uploadStatus: 'committed', byteSize });
+    this.events.emit({ type: 'item.committed', itemId: inboxItemId });
   }
 
   /** Append a new derived-artifact row in the `queued` state. */
@@ -106,11 +111,20 @@ export class InboxService {
       provider,
       status: 'queued',
     });
-    return this.extractions.save(row);
+    const saved = await this.extractions.save(row);
+    this.events.emit({
+      type: 'extraction.updated',
+      itemId: saved.inboxItemId,
+      extractionId: saved.id,
+      kind: saved.kind,
+      status: saved.status,
+    });
+    return saved;
   }
 
   async setExtractionStatus(id: string, status: ExtractionStatus): Promise<void> {
     await this.extractions.update({ id }, { status });
+    await this.emitExtractionUpdated(id, status);
   }
 
   async completeExtraction(
@@ -127,6 +141,20 @@ export class InboxService {
         completedAt: new Date().toISOString(),
       },
     );
+    await this.emitExtractionUpdated(id, result.status);
+  }
+
+  /** Callers only hold the extraction id — recover the item context for the event. */
+  private async emitExtractionUpdated(id: string, status: ExtractionStatus): Promise<void> {
+    const row = await this.extractions.findOne({ where: { id } });
+    if (!row) return;
+    this.events.emit({
+      type: 'extraction.updated',
+      itemId: row.inboxItemId,
+      extractionId: row.id,
+      kind: row.kind,
+      status,
+    });
   }
 
   async getItem(userId: string, id: string): Promise<InboxItemEntity> {

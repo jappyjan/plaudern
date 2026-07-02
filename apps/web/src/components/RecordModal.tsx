@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   Modal,
@@ -10,9 +10,10 @@ import {
 } from '@heroui/react';
 import { useIngest } from '../hooks/useIngest';
 import { useRecorder } from '../hooks/useRecorder';
-import { getLocationOrNull } from '../lib/geolocation';
+import { getLocationOrNull, type GeoLocation } from '../lib/geolocation';
 import { formatDuration } from '../lib/format';
-import { MicIcon, StopIcon } from './icons';
+import { StopIcon } from './icons';
+import { Waveform } from './Waveform';
 
 interface RecordModalProps {
   isOpen: boolean;
@@ -26,11 +27,23 @@ const PHASE_LABEL: Record<string, string> = {
   committing: 'Finishing…',
 };
 
+/**
+ * One-tap flow: opening the modal immediately starts recording, and stopping
+ * immediately saves. The only extra interactions are Cancel (discard while
+ * recording) and Retry/Discard if the save fails.
+ */
 export function RecordModal({ isOpen, onClose, onSaved }: RecordModalProps) {
   const recorder = useRecorder();
   const { phase, progress, error, ingest, reset: resetIngest } = useIngest();
   // One key per take: retrying a failed save of the same take stays idempotent.
   const [takeKey, setTakeKey] = useState<string | null>(null);
+
+  // Guards auto-start against StrictMode double-effects and re-renders.
+  const startGateRef = useRef(false);
+  // Prevents the auto-save effect from looping after a failed attempt.
+  const autoSaveAttemptedRef = useRef(false);
+  // GPS is fetched while recording so saving never waits on the location timeout.
+  const locationPromiseRef = useRef<Promise<GeoLocation | null>>(Promise.resolve(null));
 
   const previewUrl = useMemo(
     () => (recorder.recording ? URL.createObjectURL(recorder.recording.blob) : null),
@@ -41,20 +54,29 @@ export function RecordModal({ isOpen, onClose, onSaved }: RecordModalProps) {
 
   const close = () => {
     if (busy) return;
-    recorder.reset();
+    recorder.cancel();
     resetIngest();
     setTakeKey(null);
+    startGateRef.current = false;
+    autoSaveAttemptedRef.current = false;
     onClose();
   };
 
-  const startRecording = async () => {
+  // Auto-start: the Record button already expressed the intent to record.
+  useEffect(() => {
+    if (!isOpen || startGateRef.current) return;
+    if (recorder.state !== 'idle') return;
+    startGateRef.current = true;
+    autoSaveAttemptedRef.current = false;
     setTakeKey(crypto.randomUUID());
-    await recorder.start();
-  };
+    locationPromiseRef.current = getLocationOrNull();
+    void recorder.start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, recorder.state]);
 
   const save = async () => {
     if (!recorder.recording || !takeKey) return;
-    const location = await getLocationOrNull();
+    const location = await locationPromiseRef.current.catch(() => null);
     const itemId = await ingest({
       blob: recorder.recording.blob,
       contentType: recorder.recording.contentType,
@@ -65,16 +87,29 @@ export function RecordModal({ isOpen, onClose, onSaved }: RecordModalProps) {
         capturedVia: 'browser-recording',
         ...(location ? { location } : {}),
         device: { userAgent: navigator.userAgent },
+        tags: { durationSeconds: recorder.elapsedSeconds },
       },
     });
     if (itemId) {
       recorder.reset();
       resetIngest();
       setTakeKey(null);
+      startGateRef.current = false;
+      autoSaveAttemptedRef.current = false;
       onSaved(itemId);
       onClose();
     }
   };
+
+  // Auto-save: a finished take saves itself; the Stop tap was the confirmation.
+  useEffect(() => {
+    if (!recorder.recording || phase !== 'idle' || autoSaveAttemptedRef.current) return;
+    autoSaveAttemptedRef.current = true;
+    void save();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recorder.recording, phase]);
+
+  const saveFailed = recorder.state === 'stopped' && phase === 'error';
 
   return (
     <Modal isOpen={isOpen} onClose={close} placement="center" isDismissable={!busy}>
@@ -92,22 +127,9 @@ export function RecordModal({ isOpen, onClose, onSaved }: RecordModalProps) {
             </p>
           )}
 
-          {(recorder.state === 'idle' || recorder.state === 'denied') && (
-            <Button
-              color="danger"
-              size="lg"
-              radius="full"
-              className="h-20 w-20"
-              isIconOnly
-              aria-label="Start recording"
-              onPress={startRecording}
-            >
-              <MicIcon className="h-8 w-8" />
-            </Button>
-          )}
-
           {recorder.state === 'recording' && (
             <>
+              {recorder.analyser && <Waveform analyser={recorder.analyser} />}
               <p className="text-3xl font-semibold tabular-nums">
                 {formatDuration(recorder.elapsedSeconds)}
               </p>
@@ -118,47 +140,53 @@ export function RecordModal({ isOpen, onClose, onSaved }: RecordModalProps) {
                 radius="full"
                 className="h-20 w-20"
                 isIconOnly
-                aria-label="Stop recording"
+                aria-label="Stop recording and save"
                 onPress={recorder.stop}
               >
                 <StopIcon className="h-8 w-8" />
               </Button>
-              <p className="text-xs text-default-500">Recording… tap to stop</p>
+              <p className="text-xs text-default-500">Recording… tap to stop &amp; save</p>
             </>
           )}
 
-          {recorder.state === 'stopped' && previewUrl && (
+          {recorder.state === 'stopped' && busy && (
+            <div className="w-full">
+              <Progress
+                aria-label={PHASE_LABEL[phase] ?? 'Saving'}
+                value={phase === 'uploading' ? progress * 100 : undefined}
+                isIndeterminate={phase !== 'uploading'}
+                size="sm"
+              />
+              <p className="mt-1 text-center text-xs text-default-500">
+                {PHASE_LABEL[phase] ?? 'Saving…'}
+              </p>
+            </div>
+          )}
+
+          {saveFailed && previewUrl && (
             <>
+              <p className="text-center text-sm text-danger">{error}</p>
               <audio controls src={previewUrl} className="w-full" />
-              {busy && (
-                <div className="w-full">
-                  <Progress
-                    aria-label={PHASE_LABEL[phase] ?? 'Saving'}
-                    value={phase === 'uploading' ? progress * 100 : undefined}
-                    isIndeterminate={phase !== 'uploading'}
-                    size="sm"
-                  />
-                  <p className="mt-1 text-center text-xs text-default-500">
-                    {PHASE_LABEL[phase]}
-                  </p>
-                </div>
-              )}
-              {error && <p className="text-center text-sm text-danger">{error}</p>}
             </>
           )}
         </ModalBody>
         <ModalFooter>
-          {recorder.state === 'stopped' && (
+          {recorder.state === 'recording' && (
+            <Button variant="light" onPress={close}>
+              Cancel
+            </Button>
+          )}
+          {saveFailed && (
             <>
-              <Button variant="light" isDisabled={busy} onPress={recorder.reset}>
+              <Button variant="light" onPress={close}>
                 Discard
               </Button>
-              <Button color="primary" isLoading={busy} onPress={save}>
-                Save to inbox
+              <Button color="primary" onPress={() => void save()}>
+                Retry save
               </Button>
             </>
           )}
-          {recorder.state !== 'stopped' && (
+          {(recorder.state === 'denied' || recorder.state === 'unsupported') && (
             <Button variant="light" onPress={close}>
               Close
             </Button>

@@ -13,6 +13,7 @@
     "@nestjs/schedule": "6.1.1",
     "@nestjs/typeorm": "11.0.3",
     "@plaudern/contracts": "workspace:*",
+    "@plaudern/geocoding": "workspace:*",
     "@plaudern/inbox": "workspace:*",
     "@plaudern/ingestion": "workspace:*",
     "@plaudern/persistence": "workspace:*",
