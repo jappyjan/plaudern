@@ -14,7 +14,7 @@ type Fakes = {
     listRecordings: jest.Mock;
     downloadRecording: jest.Mock;
   };
-  inbox: { findByIdempotencyKey: jest.Mock };
+  inbox: { findByIdempotencyKey: jest.Mock; isIdempotencyKeyTombstoned: jest.Mock };
   ingestion: { ingestBlob: jest.Mock };
 };
 
@@ -70,7 +70,10 @@ function build(overrides: Partial<PlaudSettingsEntity> = {}): { service: PlaudSy
         .fn()
         .mockResolvedValue({ body: Buffer.from('audio'), contentType: 'audio/mpeg' }),
     },
-    inbox: { findByIdempotencyKey: jest.fn().mockResolvedValue(null) },
+    inbox: {
+      findByIdempotencyKey: jest.fn().mockResolvedValue(null),
+      isIdempotencyKeyTombstoned: jest.fn().mockResolvedValue(false),
+    },
     ingestion: { ingestBlob: jest.fn().mockResolvedValue({ id: 'item-1' }) },
   };
   const service = new PlaudSyncService(
@@ -137,6 +140,25 @@ describe('PlaudSyncService', () => {
     expect(fakes.client.downloadRecording).toHaveBeenCalledTimes(1);
     expect(fakes.client.downloadRecording).toHaveBeenCalledWith('us', 'cached-token', 'new');
     expect(fakes.ingestion.ingestBlob).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips tombstoned (deleted) recordings without downloading them', async () => {
+    const { service, fakes } = build();
+    fakes.client.listRecordings.mockResolvedValue([recording('deleted'), recording('kept')]);
+    fakes.inbox.isIdempotencyKeyTombstoned.mockImplementation((_user: string, key: string) =>
+      Promise.resolve(key === 'plaud:deleted'),
+    );
+
+    await service.syncNow();
+
+    expect(fakes.client.downloadRecording).toHaveBeenCalledTimes(1);
+    expect(fakes.client.downloadRecording).toHaveBeenCalledWith('us', 'cached-token', 'kept');
+    expect(fakes.ingestion.ingestBlob).toHaveBeenCalledTimes(1);
+    expect(fakes.settings.recordSyncResult).toHaveBeenCalledWith('settings-1', {
+      status: 'ok',
+      error: null,
+      importedCount: 1,
+    });
   });
 
   it('ignores trashed recordings', async () => {

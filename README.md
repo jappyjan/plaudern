@@ -1,12 +1,13 @@
 # Plaudern
 
 A modular, highly-automated **AI note-taking platform**. Its central primitive is
-an **immutable Inbox** — the source of truth. Every item has a timestamp, a
+the **Inbox** — the source of truth. Every item has a timestamp, a
 source type, a raw **source payload** (audio/text/file), and optional
-**extracted payloads** (transcription, OCR, …). Items are append-only and never
-edited; higher-level features (auto-organization, note creation) are built on top.
+**extracted payloads** (transcription, OCR, …). Items are never edited in
+place — they can only be deleted whole — and higher-level features
+(auto-organization, note creation) are built on top.
 
-This repository implements the immutable inbox + async transcription, plus a
+This repository implements the inbox + async transcription, plus a
 **web app** for capturing recordings: upload audio files or record directly in
 the browser. Web first — a mobile app comes later.
 
@@ -31,7 +32,7 @@ libs/
   backend/
     persistence/ TypeORM entities + migrations
     storage/     S3/MinIO abstraction (+ in-memory fake for tests)
-    inbox/        Immutable inbox aggregate + read API
+    inbox/        Inbox aggregate + read/delete API
     ingestion/    Source-adapter registry + presigned upload API
     transcription/ Queue (BullMQ / inline) + provider interface (sidecar whisper / OpenAI)
     speaker-id/   Diarization queue + voice-profile matching + contact book API
@@ -40,9 +41,11 @@ docker-compose.yml   Postgres + MinIO + Redis (+ api + web + speaker-id) for loc
 
 ## Architecture
 
-- **Immutable inbox** (`inbox_items`, `source_payloads`, `extracted_payloads`):
-  append-only; no update/delete of source data. Reprocessing appends a new
-  extraction row rather than mutating.
+- **Never-edited inbox** (`inbox_items`, `source_payloads`, `extracted_payloads`):
+  no in-place updates of source data — reprocessing appends a new extraction row
+  rather than mutating. Items can be deleted whole (rows + blobs); a tombstone
+  of the idempotency key (`inbox_tombstones`) keeps automated syncs (Plaud)
+  from re-importing deleted recordings.
 - **Two-phase presigned upload**: `POST /v1/ingest/init` → client PUTs bytes
   directly to S3/MinIO → `POST /v1/ingest/:id/commit`. Large audio never streams
   through Node.
@@ -126,6 +129,15 @@ pnpm nx serve web                           # http://localhost:5173 (proxies /ap
   audio via a presigned URL, polls the transcription until it lands, and shows
   the capture metadata (time, location with an OpenStreetMap link, device,
   tags).
+- **Calendar**: subscribe to iCal/ICS feed URLs (Google Calendar's "secret
+  address", Outlook, iCloud, …) in settings — the URL is a secret and is
+  stored AES-encrypted. A month view shows events and recordings per day;
+  recordings that happened during an event are **auto-linked** to it
+  (`occurredAt` + duration overlap, re-evaluated on every feed sync). Clicking
+  an event lists its recordings; an item's detail page lists its events. Links
+  can also be added/removed manually — a manual unlink is remembered and never
+  resurrected by a later sync. Feeds refresh every 15 min
+  (`CALENDAR_POLL_INTERVAL_MS`), window: ±90 days.
 
 ### Test tiers
 

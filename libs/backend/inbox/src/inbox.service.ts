@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type {
@@ -10,8 +10,10 @@ import type {
 import {
   ExtractedPayloadEntity,
   InboxItemEntity,
+  InboxTombstoneEntity,
   SourcePayloadEntity,
 } from '@plaudern/persistence';
+import { StorageService } from '@plaudern/storage';
 import { InboxEventsService } from './inbox-events.service';
 
 export interface CreatePendingItemParams {
@@ -31,12 +33,15 @@ export interface CreatePendingItemParams {
 export interface CreateCommittedItemParams extends CreatePendingItemParams {}
 
 /**
- * Owns the immutable inbox aggregate. There is intentionally no method to edit
- * or delete an item or its source payload — the only permitted mutations are
- * finalizing the pending upload and appending derived extractions (plan §2).
+ * Owns the inbox aggregate. Items and their payloads are never edited in
+ * place — the only permitted mutations are finalizing the pending upload,
+ * appending derived extractions, and deleting an item whole (rows + blobs,
+ * leaving an idempotency tombstone).
  */
 @Injectable()
 export class InboxService {
+  private readonly logger = new Logger(InboxService.name);
+
   constructor(
     @InjectRepository(InboxItemEntity)
     private readonly items: Repository<InboxItemEntity>,
@@ -44,7 +49,10 @@ export class InboxService {
     private readonly sources: Repository<SourcePayloadEntity>,
     @InjectRepository(ExtractedPayloadEntity)
     private readonly extractions: Repository<ExtractedPayloadEntity>,
+    @InjectRepository(InboxTombstoneEntity)
+    private readonly tombstones: Repository<InboxTombstoneEntity>,
     private readonly events: InboxEventsService,
+    private readonly storage: StorageService,
   ) {}
 
   findByIdempotencyKey(userId: string, idempotencyKey: string): Promise<InboxItemEntity | null> {
@@ -176,6 +184,50 @@ export class InboxService {
     });
     if (!item) throw new NotFoundException('inbox item not found');
     return item;
+  }
+
+  /** Whether an idempotency key belongs to a deleted item (Plaud sync skips these). */
+  isIdempotencyKeyTombstoned(userId: string, idempotencyKey: string): Promise<boolean> {
+    return this.tombstones.exists({ where: { userId, idempotencyKey } });
+  }
+
+  /**
+   * Hard-delete an item: tombstone + rows in one transaction, then best-effort
+   * blob cleanup. Blob deletion runs after the commit because S3 cannot join
+   * the transaction — an orphaned blob is an invisible leak, whereas a deleted
+   * blob under a still-live row would be user-visible breakage.
+   */
+  async deleteItem(userId: string, id: string): Promise<void> {
+    const item = await this.getItem(userId, id);
+    const storageKeys = [
+      item.source?.storageKey,
+      ...item.extractions.map((extraction) => extraction.contentStorageKey),
+    ].filter((key): key is string => Boolean(key));
+
+    // Children are deleted explicitly (instead of relying on FK cascades) so
+    // the behavior is identical on Postgres and the sqlite test database.
+    await this.items.manager.transaction(async (em) => {
+      await em.getRepository(InboxTombstoneEntity).save({
+        userId,
+        idempotencyKey: item.idempotencyKey,
+        deletedItemId: item.id,
+        sourceType: item.sourceType,
+      });
+      await em.getRepository(ExtractedPayloadEntity).delete({ inboxItemId: item.id });
+      await em.getRepository(SourcePayloadEntity).delete({ inboxItemId: item.id });
+      await em.getRepository(InboxItemEntity).delete({ id: item.id });
+    });
+
+    this.events.emit({ type: 'item.deleted', itemId: item.id });
+
+    const results = await Promise.allSettled(
+      storageKeys.map((key) => this.storage.deleteObject(key)),
+    );
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        this.logger.warn(`failed to delete blob ${storageKeys[index]}: ${result.reason}`);
+      }
+    });
   }
 
   async getItemById(id: string): Promise<InboxItemEntity | null> {

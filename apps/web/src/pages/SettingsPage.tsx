@@ -1,7 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Input, Select, SelectItem, Spinner, Switch } from '@heroui/react';
-import type { PlaudRegion, PlaudSettingsDto } from '@plaudern/contracts';
-import { getPlaudSettings, testPlaudConnection, triggerPlaudSync, updatePlaudSettings } from '../lib/api';
+import type { CalendarFeedsResponse, PlaudRegion, PlaudSettingsDto } from '@plaudern/contracts';
+import {
+  createCalendarFeed,
+  deleteCalendarFeed,
+  getPlaudSettings,
+  listCalendarFeeds,
+  testCalendarFeed,
+  testPlaudConnection,
+  triggerCalendarSync,
+  triggerPlaudSync,
+  updateCalendarFeed,
+  updatePlaudSettings,
+} from '../lib/api';
 import { formatDateTime } from '../lib/format';
 
 const REGIONS: { key: PlaudRegion; label: string }[] = [
@@ -222,6 +233,221 @@ export function SettingsPage() {
           )}
         </div>
       )}
+
+      <CalendarFeedsSection />
+    </div>
+  );
+}
+
+function CalendarFeedsSection() {
+  const [feeds, setFeeds] = useState<CalendarFeedsResponse | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [name, setName] = useState('');
+  const [url, setUrl] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{
+    ok: boolean;
+    error: string | null;
+    eventCount: number | null;
+    calendarName: string | null;
+  } | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      setFeeds(await listCalendarFeeds());
+      setLoadError(null);
+    } catch (cause) {
+      setLoadError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  // Live feedback while a sync runs in the background.
+  useEffect(() => {
+    if (!feeds?.syncRunning) return;
+    const timer = setInterval(() => void refresh(), 5000);
+    return () => clearInterval(timer);
+  }, [feeds?.syncRunning, refresh]);
+
+  const test = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      setTestResult(await testCalendarFeed(url));
+    } catch (cause) {
+      setTestResult({
+        ok: false,
+        error: cause instanceof Error ? cause.message : String(cause),
+        eventCount: null,
+        calendarName: null,
+      });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const add = async () => {
+    setAdding(true);
+    setActionError(null);
+    try {
+      await createCalendarFeed({ name, url, enabled: true });
+      setName('');
+      setUrl('');
+      setTestResult(null);
+      await refresh();
+      // Feed creation kicks off a background sync — pick up its result.
+      setTimeout(() => void refresh(), 1500);
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const toggle = async (id: string, enabled: boolean) => {
+    setActionError(null);
+    try {
+      await updateCalendarFeed(id, { enabled });
+      await refresh();
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  const remove = async (id: string) => {
+    setActionError(null);
+    try {
+      await deleteCalendarFeed(id);
+      await refresh();
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  const syncNow = async () => {
+    setActionError(null);
+    try {
+      await triggerCalendarSync();
+      await refresh();
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4 border-t border-default-200 pt-6">
+      <div>
+        <h2 className="text-lg font-semibold">Calendar feeds</h2>
+        <p className="text-sm text-default-500">
+          Subscribe to iCal/ICS feed URLs (Google Calendar&apos;s “secret address”, Outlook, iCloud,
+          …). Recordings made during an event are linked to it automatically.
+        </p>
+      </div>
+
+      {loadError && (
+        <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">
+          Failed to load calendar feeds: {loadError}
+        </div>
+      )}
+
+      {feeds && feeds.feeds.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {feeds.feeds.map((feed) => (
+            <div key={feed.id} className="flex flex-col gap-1 rounded-medium bg-default-50 p-3 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{feed.name}</p>
+                  <p className="truncate text-xs text-default-500">{feed.urlMasked}</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Switch
+                    size="sm"
+                    isSelected={feed.enabled}
+                    onValueChange={(enabled) => void toggle(feed.id, enabled)}
+                    aria-label={`Enable ${feed.name}`}
+                  />
+                  <Button size="sm" variant="light" color="danger" onPress={() => void remove(feed.id)}>
+                    Remove
+                  </Button>
+                </div>
+              </div>
+              <span className="text-xs text-default-500">
+                {feed.lastSyncAt
+                  ? `Last sync ${formatDateTime(feed.lastSyncAt)}${
+                      feed.lastSyncEventCount !== null ? ` — ${feed.lastSyncEventCount} events` : ''
+                    }`
+                  : 'Not synced yet.'}
+              </span>
+              {feed.lastSyncStatus === 'error' && feed.lastSyncError && (
+                <div className="rounded-medium bg-danger-50 p-2 text-xs text-danger">
+                  {feed.lastSyncError}
+                </div>
+              )}
+            </div>
+          ))}
+          <Button
+            size="sm"
+            variant="flat"
+            className="self-start"
+            isLoading={feeds.syncRunning}
+            onPress={syncNow}
+          >
+            {feeds.syncRunning ? 'Syncing…' : 'Sync now'}
+          </Button>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-3">
+        <Input label="Name" value={name} onValueChange={setName} placeholder="Work calendar" />
+        <Input
+          label="ICS feed URL"
+          value={url}
+          onValueChange={setUrl}
+          placeholder="https://calendar.google.com/calendar/ical/…/basic.ics"
+          description="The URL is stored encrypted and never displayed again."
+          autoComplete="off"
+        />
+        {actionError && (
+          <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">{actionError}</div>
+        )}
+        {testResult && (
+          <div
+            className={
+              testResult.ok
+                ? 'rounded-medium bg-success-50 p-3 text-sm text-success'
+                : 'rounded-medium bg-danger-50 p-3 text-sm text-danger'
+            }
+          >
+            {testResult.ok
+              ? `Feed OK${testResult.calendarName ? ` — “${testResult.calendarName}”` : ''}${
+                  testResult.eventCount !== null
+                    ? `, ${testResult.eventCount} events in the next weeks`
+                    : ''
+                }`
+              : `Feed test failed: ${testResult.error}`}
+          </div>
+        )}
+        <div className="flex gap-3">
+          <Button variant="flat" isLoading={testing} isDisabled={!url} onPress={test}>
+            Test feed
+          </Button>
+          <Button
+            color="primary"
+            className="flex-1"
+            isLoading={adding}
+            isDisabled={!name || !url}
+            onPress={add}
+          >
+            Add feed
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { IngestionModule } from '@plaudern/ingestion';
 import { PlaudSyncModule } from '@plaudern/plaud-sync';
 import { SpeakerIdModule } from '@plaudern/speaker-id';
 import { GeocodingModule } from '@plaudern/geocoding';
+import { CalendarModule } from '@plaudern/calendar';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -21,6 +22,7 @@ import { HealthController } from './health.controller';
     PlaudSyncModule,
     SpeakerIdModule,
     GeocodingModule,
+    CalendarModule,
   ],
   controllers: [HealthController],
 })

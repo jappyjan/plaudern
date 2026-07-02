@@ -62,6 +62,8 @@ services:
       # (e.g. the Plaud password): Coolify generates & persists it.
       - APP_ENCRYPTION_SECRET=${SERVICE_PASSWORD_APPENCRYPTION}
       - PLAUD_POLL_INTERVAL_MS=${PLAUD_POLL_INTERVAL_MS:-300000}
+      # Calendar feeds: the same secret encrypts subscribed feed URLs.
+      - CALENDAR_POLL_INTERVAL_MS=${CALENDAR_POLL_INTERVAL_MS:-900000}
       # Speaker identification runs on the speaker-id sidecar by default
       # (requires HUGGING_FACE_TOKEN there — see apps/speaker-id-ml/README.md). Set
       # SPEAKER_ID_PROVIDER=off and redeploy to disable it (fixed at boot,

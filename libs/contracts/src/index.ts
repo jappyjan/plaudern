@@ -5,3 +5,4 @@ export * from './settings';
 export * from './speakers';
 export * from './events';
 export * from './geocode';
+export * from './calendar';

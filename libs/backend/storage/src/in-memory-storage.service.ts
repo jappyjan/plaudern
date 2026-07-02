@@ -50,6 +50,10 @@ export class InMemoryStorageService extends StorageService {
     return Readable.from(obj.body);
   }
 
+  async deleteObject(storageKey: string): Promise<void> {
+    this.objects.delete(storageKey);
+  }
+
   /** Test helper: emulate the client PUT to a presigned URL. */
   simulateUpload(upload: PresignedUpload | string, body: Buffer, contentType = 'application/octet-stream') {
     const key = typeof upload === 'string' ? upload : upload.storageKey;
