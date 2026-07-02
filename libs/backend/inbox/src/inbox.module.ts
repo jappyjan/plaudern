@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   ExtractedPayloadEntity,
   InboxItemEntity,
+  InboxTombstoneEntity,
   SourcePayloadEntity,
 } from '@plaudern/persistence';
 import { InboxService } from './inbox.service';
@@ -16,6 +17,7 @@ import { InboxEventsController } from './inbox-events.controller';
       InboxItemEntity,
       SourcePayloadEntity,
       ExtractedPayloadEntity,
+      InboxTombstoneEntity,
     ]),
   ],
   providers: [InboxService, InboxEventsService],

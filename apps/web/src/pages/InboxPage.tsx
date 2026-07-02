@@ -38,6 +38,12 @@ export function InboxPage() {
   useInboxEvents({
     onEvent: (event) => {
       if (event.type === 'heartbeat') return;
+      // Deletes must be handled before the refetch-and-upsert below: fetching
+      // a deleted item 404s, and a racing event could re-insert a stale entry.
+      if (event.type === 'item.deleted') {
+        setItems((existing) => existing?.filter((i) => i.id !== event.itemId) ?? existing);
+        return;
+      }
       void getItem(event.itemId)
         .then((fetched) => {
           setItems((existing) => {
@@ -106,7 +112,13 @@ export function InboxPage() {
       {items && items.length > 0 && (
         <div className="flex flex-col gap-2">
           {items.map((item) => (
-            <InboxItemCard key={item.id} item={item} />
+            <InboxItemCard
+              key={item.id}
+              item={item}
+              onDeleted={(id) =>
+                setItems((existing) => existing?.filter((i) => i.id !== id) ?? existing)
+              }
+            />
           ))}
         </div>
       )}
