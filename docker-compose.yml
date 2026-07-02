@@ -4,7 +4,9 @@
 #   docker compose up -d --build     # web at http://localhost:8080
 #
 # Run only the infra (and api/web via `nx serve api` / `nx serve web`) with:
-#   docker compose up -d postgres minio minio-init redis
+#   docker compose up -d postgres minio minio-init redis speaker-id
+# (speaker-id is the ML sidecar the api uses for transcription and diarization
+# by default — see apps/speaker-id-ml/README.md for the required HF_TOKEN.)
 services:
   web:
     build:
@@ -28,6 +30,10 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+      # service_started, not healthy: the first boot downloads ~1.5 GB of
+      # models; failed jobs are retried by the queue meanwhile.
+      speaker-id:
+        condition: service_started
     environment:
       DATABASE_DRIVER: postgres
       DATABASE_URL: postgres://plaudern:plaudern@postgres:5432/plaudern
@@ -45,7 +51,9 @@ services:
       S3_FORCE_PATH_STYLE: 'true'
       QUEUE_DRIVER: bull
       REDIS_URL: redis://redis:6379
-      TRANSCRIPTION_PROVIDER: ${TRANSCRIPTION_PROVIDER:-stub}
+      # sidecar = self-hosted whisper in the speaker-id service (default);
+      # openai = OpenAI Whisper API (requires OPENAI_API_KEY).
+      TRANSCRIPTION_PROVIDER: ${TRANSCRIPTION_PROVIDER:-sidecar}
       TRANSCRIPTION_MODEL: ${TRANSCRIPTION_MODEL:-whisper-1}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # General-purpose key encrypting secrets stored in Postgres (e.g. the
@@ -53,8 +61,8 @@ services:
       APP_ENCRYPTION_SECRET: ${APP_ENCRYPTION_SECRET:-change-me}
       PLAUD_POLL_INTERVAL_MS: ${PLAUD_POLL_INTERVAL_MS:-300000}
       # --- Speaker identification (pyannote sidecar) ---
-      # stub = deterministic offline speakers; pyannote = real sidecar; off = disabled
-      SPEAKER_ID_PROVIDER: ${SPEAKER_ID_PROVIDER:-stub}
+      # pyannote = the speaker-id sidecar (default); off = disabled
+      SPEAKER_ID_PROVIDER: ${SPEAKER_ID_PROVIDER:-pyannote}
       SPEAKER_ID_URL: http://speaker-id:8000
       SPEAKER_ID_TOKEN: ${SPEAKER_ID_TOKEN:-change-me}
       SPEAKER_MATCH_THRESHOLD: ${SPEAKER_MATCH_THRESHOLD:-0.65}
@@ -62,9 +70,10 @@ services:
     ports:
       - '3000:3000'
 
-  # Speaker diarization + voice embeddings (pyannote). Models are gated on
-  # Hugging Face: set HF_TOKEN and accept the model terms first — see
-  # apps/speaker-id-ml/README.md. Downloads ~1 GB into hfcache on first start.
+  # ML sidecar: speaker diarization + voice embeddings (pyannote) and
+  # transcription (faster-whisper). The pyannote models are gated on Hugging
+  # Face: set HF_TOKEN and accept the model terms first — see
+  # apps/speaker-id-ml/README.md. Downloads ~1.5 GB into hfcache on first start.
   speaker-id:
     build:
       context: apps/speaker-id-ml
@@ -72,6 +81,7 @@ services:
     environment:
       HF_TOKEN: ${HF_TOKEN:-}
       SPEAKER_ID_TOKEN: ${SPEAKER_ID_TOKEN:-change-me}
+      WHISPER_MODEL: ${WHISPER_MODEL:-small}
     volumes:
       - hfcache:/cache/huggingface
     ports:

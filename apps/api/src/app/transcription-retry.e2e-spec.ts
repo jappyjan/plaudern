@@ -6,7 +6,6 @@ process.env.DATABASE_DRIVER = 'sqlite';
 process.env.DATABASE_URL = ':memory:';
 process.env.STORAGE_DRIVER = 'memory';
 process.env.QUEUE_DRIVER = 'inline';
-process.env.TRANSCRIPTION_PROVIDER = 'stub';
 process.env.GEOCODER = 'stub';
 
 import { INestApplication, VersioningType } from '@nestjs/common';
@@ -14,6 +13,12 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { InMemoryStorageService, StorageService } from '@plaudern/storage';
 import { InboxService } from '@plaudern/inbox';
+import { TRANSCRIPTION_PROVIDER } from '@plaudern/transcription';
+import { DIARIZATION_PROVIDER } from '@plaudern/speaker-id';
+import {
+  FakeDiarizationProvider,
+  FakeTranscriptionProvider,
+} from '../testing/fake-providers';
 import { AppModule } from './app.module';
 
 describe('Transcription retry (e2e, Path A)', () => {
@@ -22,7 +27,12 @@ describe('Transcription retry (e2e, Path A)', () => {
   let inbox: InboxService;
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(TRANSCRIPTION_PROVIDER)
+      .useValue(new FakeTranscriptionProvider())
+      .overrideProvider(DIARIZATION_PROVIDER)
+      .useValue(new FakeDiarizationProvider())
+      .compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api');
     app.enableVersioning({ type: VersioningType.URI });
@@ -89,7 +99,7 @@ describe('Transcription retry (e2e, Path A)', () => {
       (e: { kind: string }) => e.kind === 'transcription',
     );
     expect(latest.status).toBe('succeeded');
-    expect(latest.content).toContain('stub transcription');
+    expect(latest.content).toContain('test transcription');
   });
 
   it('rejects retry while a transcription is still in flight', async () => {

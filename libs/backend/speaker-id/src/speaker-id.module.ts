@@ -6,7 +6,6 @@ import { PersistenceModule } from '@plaudern/persistence';
 import { StorageModule } from '@plaudern/storage';
 import { DIARIZATION_PROVIDER, type DiarizationProvider } from './diarization.provider';
 import { DIARIZATION_QUEUE } from './diarization.job';
-import { LocalStubDiarizationProvider } from './providers/local-stub.provider';
 import { PyannoteHttpProvider } from './providers/pyannote-http.provider';
 import { DiarizationProcessor } from './diarization.processor';
 import { ProfileMatcherService } from './profile-matcher.service';
@@ -39,17 +38,29 @@ function redisConnection(config: ConfigService): ConnectionOptions {
   imports: [ConfigModule, InboxModule, PersistenceModule, StorageModule],
   controllers: [SpeakersController, SpeakerTranscriptController],
   providers: [
-    LocalStubDiarizationProvider,
     PyannoteHttpProvider,
     {
       provide: DIARIZATION_PROVIDER,
-      inject: [ConfigService, LocalStubDiarizationProvider, PyannoteHttpProvider],
+      inject: [ConfigService, PyannoteHttpProvider],
       useFactory: (
         config: ConfigService,
-        stub: LocalStubDiarizationProvider,
         pyannote: PyannoteHttpProvider,
-      ): DiarizationProvider =>
-        config.get<string>('SPEAKER_ID_PROVIDER', 'stub') === 'pyannote' ? pyannote : stub,
+      ): DiarizationProvider => {
+        const selected = config.get<string>('SPEAKER_ID_PROVIDER', 'pyannote');
+        switch (selected) {
+          case 'pyannote':
+          case 'off': // SpeakerIdService never enqueues; the instance is inert
+            return pyannote;
+          case 'stub':
+            throw new Error(
+              "SPEAKER_ID_PROVIDER=stub was removed; use 'pyannote' (default) or 'off'",
+            );
+          default:
+            throw new Error(
+              `unknown SPEAKER_ID_PROVIDER '${selected}' (expected 'pyannote' or 'off')`,
+            );
+        }
+      },
     },
     ProfileMatcherService,
     DiarizationProcessor,

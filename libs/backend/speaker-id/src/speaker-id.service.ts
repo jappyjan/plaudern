@@ -26,7 +26,7 @@ export class SpeakerIdService {
     @Inject(DIARIZATION_QUEUE)
     private readonly queue: DiarizationQueue,
   ) {
-    this.disabled = config.get<string>('SPEAKER_ID_PROVIDER', 'stub') === 'off';
+    this.disabled = config.get<string>('SPEAKER_ID_PROVIDER', 'pyannote') === 'off';
   }
 
   async enqueueDiarization(

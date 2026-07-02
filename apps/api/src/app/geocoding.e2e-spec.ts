@@ -6,7 +6,6 @@ process.env.DATABASE_DRIVER = 'sqlite';
 process.env.DATABASE_URL = ':memory:';
 process.env.STORAGE_DRIVER = 'memory';
 process.env.QUEUE_DRIVER = 'inline';
-process.env.TRANSCRIPTION_PROVIDER = 'stub';
 process.env.GEOCODER = 'stub';
 
 import { INestApplication, VersioningType } from '@nestjs/common';

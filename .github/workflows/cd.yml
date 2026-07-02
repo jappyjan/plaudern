@@ -18,7 +18,15 @@ jobs:
       packages: write
     strategy:
       matrix:
-        app: [api, web]
+        # api/web build from the repo root (Nx workspace); speaker-id-ml is a
+        # standalone Python service whose Dockerfile expects its own directory.
+        include:
+          - app: api
+            context: .
+          - app: web
+            context: .
+          - app: speaker-id-ml
+            context: apps/speaker-id-ml
     steps:
       - uses: actions/checkout@v4
 
@@ -45,7 +53,7 @@ jobs:
       - name: Build & push
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ${{ matrix.context }}
           file: apps/${{ matrix.app }}/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}

@@ -51,17 +51,22 @@ services:
       - S3_FORCE_PATH_STYLE=true
       - QUEUE_DRIVER=bull
       - REDIS_URL=redis://:${SERVICE_PASSWORD_REDIS}@redis:6379
-      # Transcription: set OPENAI_API_KEY and switch provider to `openai` in the UI.
-      - TRANSCRIPTION_PROVIDER=${TRANSCRIPTION_PROVIDER:-stub}
+      # Transcription runs on the self-hosted speaker-id sidecar by default
+      # (requires HF_TOKEN on that service). To use the OpenAI API instead, set
+      # TRANSCRIPTION_PROVIDER=openai and OPENAI_API_KEY as environment
+      # variables in Coolify and redeploy — the provider is fixed at boot.
+      - TRANSCRIPTION_PROVIDER=${TRANSCRIPTION_PROVIDER:-sidecar}
       - TRANSCRIPTION_MODEL=${TRANSCRIPTION_MODEL:-whisper-1}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       # General-purpose encryption key for secrets stored in the database
       # (e.g. the Plaud password): Coolify generates & persists it.
       - APP_ENCRYPTION_SECRET=${SERVICE_PASSWORD_APPENCRYPTION}
       - PLAUD_POLL_INTERVAL_MS=${PLAUD_POLL_INTERVAL_MS:-300000}
-      # Speaker identification: set HF_TOKEN on the speaker-id service and
-      # switch the provider to `pyannote` to enable it (see apps/speaker-id-ml/README.md).
-      - SPEAKER_ID_PROVIDER=${SPEAKER_ID_PROVIDER:-stub}
+      # Speaker identification runs on the speaker-id sidecar by default
+      # (requires HF_TOKEN there — see apps/speaker-id-ml/README.md). Set
+      # SPEAKER_ID_PROVIDER=off and redeploy to disable it (fixed at boot,
+      # not switchable live).
+      - SPEAKER_ID_PROVIDER=${SPEAKER_ID_PROVIDER:-pyannote}
       - SPEAKER_ID_URL=http://speaker-id:8000
       - SPEAKER_ID_TOKEN=${SERVICE_PASSWORD_SPEAKERID}
       - SPEAKER_MATCH_THRESHOLD=${SPEAKER_MATCH_THRESHOLD:-0.65}
@@ -72,15 +77,20 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+      # service_started, not healthy: the first boot downloads ~1.5 GB of
+      # models; failed jobs are retried by the queue meanwhile.
+      speaker-id:
+        condition: service_started
     healthcheck:
       test: ['CMD', 'node', '-e', "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 10
 
-  # Speaker diarization + voice embeddings (pyannote). Internal-only; models
-  # are gated on Hugging Face — set HF_TOKEN and accept the model terms first
-  # (apps/speaker-id-ml/README.md).
+  # ML sidecar: speaker diarization + voice embeddings (pyannote) and
+  # transcription (faster-whisper). Internal-only. HF_TOKEN is REQUIRED for a
+  # default deploy: the pyannote models are gated on Hugging Face — create a
+  # token and accept the model terms first (apps/speaker-id-ml/README.md).
   speaker-id:
     build:
       context: apps/speaker-id-ml
@@ -88,6 +98,7 @@ services:
     environment:
       - HF_TOKEN=${HF_TOKEN}
       - SPEAKER_ID_TOKEN=${SERVICE_PASSWORD_SPEAKERID}
+      - WHISPER_MODEL=${WHISPER_MODEL:-small}
     volumes:
       - hfcache:/cache/huggingface
 

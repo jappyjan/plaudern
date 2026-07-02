@@ -2,20 +2,24 @@ import 'reflect-metadata';
 
 // Configure the app for hardware-free, infra-free verification BEFORE the
 // modules load (ConfigModule reads process.env at init). Same Path A setup as
-// the ingestion e2e; the diarization stub emits one constant voice (matches
-// the same profile across recordings) plus one per-recording voice.
+// the ingestion e2e; the fake diarization provider emits one constant voice
+// (matches the same profile across recordings) plus one per-recording voice.
 process.env.DATABASE_DRIVER = 'sqlite';
 process.env.DATABASE_URL = ':memory:';
 process.env.STORAGE_DRIVER = 'memory';
 process.env.QUEUE_DRIVER = 'inline';
-process.env.TRANSCRIPTION_PROVIDER = 'stub';
-process.env.SPEAKER_ID_PROVIDER = 'stub';
 
 import { INestApplication, VersioningType } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import type { VoiceProfileDto } from '@plaudern/contracts';
 import { InMemoryStorageService, StorageService } from '@plaudern/storage';
+import { TRANSCRIPTION_PROVIDER } from '@plaudern/transcription';
+import { DIARIZATION_PROVIDER } from '@plaudern/speaker-id';
+import {
+  FakeDiarizationProvider,
+  FakeTranscriptionProvider,
+} from '../testing/fake-providers';
 import { AppModule } from './app.module';
 
 describe('Speaker identification (e2e, Path A)', () => {
@@ -43,7 +47,12 @@ describe('Speaker identification (e2e, Path A)', () => {
   }
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(TRANSCRIPTION_PROVIDER)
+      .useValue(new FakeTranscriptionProvider())
+      .overrideProvider(DIARIZATION_PROVIDER)
+      .useValue(new FakeDiarizationProvider())
+      .compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api');
     app.enableVersioning({ type: VersioningType.URI });
@@ -73,7 +82,7 @@ describe('Speaker identification (e2e, Path A)', () => {
     const res = await request(app.getHttpServer()).get('/api/v1/speakers').expect(200);
     const profiles: VoiceProfileDto[] = res.body.profiles;
 
-    // Constant stub voice => one shared profile; per-recording voice => one
+    // Constant fake voice => one shared profile; per-recording voice => one
     // fresh unconfirmed profile per recording.
     expect(profiles).toHaveLength(3);
     const shared = profiles.filter((p) => p.recordingCount === 2);
@@ -89,10 +98,10 @@ describe('Speaker identification (e2e, Path A)', () => {
       .expect(200);
 
     expect(res.body.mode).toBe('segmented');
-    expect(res.body.text).toContain('stub transcription');
+    expect(res.body.text).toContain('test transcription');
     expect(res.body.speakers).toHaveLength(2);
     expect(res.body.segments.length).toBeGreaterThanOrEqual(2);
-    // The stub aligns transcript segment 0-2s with SPEAKER_00 and 2-4s with SPEAKER_01.
+    // The fakes align transcript segment 0-2s with SPEAKER_00 and 2-4s with SPEAKER_01.
     expect(res.body.segments[0].speaker.label).toBe('SPEAKER_00');
     expect(res.body.segments[1].speaker.label).toBe('SPEAKER_01');
     expect(res.body.diarizationStatus).toBe('succeeded');

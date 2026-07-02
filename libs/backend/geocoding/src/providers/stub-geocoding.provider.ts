@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { GeocodingProvider, ReverseGeocodeResult } from '../geocoding.provider';
 
-/** Deterministic stub used for CI/offline verification, mirrors LocalStubProvider. */
+/** Deterministic stub used for CI/offline verification. */
 @Injectable()
 export class StubGeocodingProvider implements GeocodingProvider {
   readonly id = 'stub';

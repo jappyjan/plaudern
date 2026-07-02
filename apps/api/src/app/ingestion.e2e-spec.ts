@@ -6,12 +6,17 @@ process.env.DATABASE_DRIVER = 'sqlite';
 process.env.DATABASE_URL = ':memory:';
 process.env.STORAGE_DRIVER = 'memory';
 process.env.QUEUE_DRIVER = 'inline';
-process.env.TRANSCRIPTION_PROVIDER = 'stub';
 
 import { INestApplication, VersioningType } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { InMemoryStorageService, StorageService } from '@plaudern/storage';
+import { TRANSCRIPTION_PROVIDER } from '@plaudern/transcription';
+import { DIARIZATION_PROVIDER } from '@plaudern/speaker-id';
+import {
+  FakeDiarizationProvider,
+  FakeTranscriptionProvider,
+} from '../testing/fake-providers';
 import { AppModule } from './app.module';
 
 describe('Ingestion pipeline (e2e, Path A)', () => {
@@ -19,7 +24,12 @@ describe('Ingestion pipeline (e2e, Path A)', () => {
   let storage: InMemoryStorageService;
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(TRANSCRIPTION_PROVIDER)
+      .useValue(new FakeTranscriptionProvider())
+      .overrideProvider(DIARIZATION_PROVIDER)
+      .useValue(new FakeDiarizationProvider())
+      .compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api');
     app.enableVersioning({ type: VersioningType.URI });
@@ -81,7 +91,7 @@ describe('Ingestion pipeline (e2e, Path A)', () => {
       (e: { kind: string }) => e.kind === 'transcription',
     );
     expect(extraction.status).toBe('succeeded');
-    expect(extraction.content).toContain('stub transcription');
+    expect(extraction.content).toContain('test transcription');
     const diarization = get.body.extractions.find(
       (e: { kind: string }) => e.kind === 'diarization',
     );

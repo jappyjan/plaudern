@@ -4,7 +4,7 @@ export * from './transcription.processor';
 export * from './transcription.service';
 export * from './transcription.controller';
 export * from './transcription.module';
-export * from './providers/local-stub.provider';
+export * from './providers/sidecar.provider';
 export * from './providers/openai-whisper.provider';
 export * from './queues/inline.queue';
 export * from './queues/bull.queue';
