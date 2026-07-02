@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { IngestInitRequest } from '@plaudern/contracts';
 import type { InboxItemEntity } from '@plaudern/persistence';
 import { TranscriptionService } from '@plaudern/transcription';
+import { SpeakerIdService } from '@plaudern/speaker-id';
 import type { SourceAdapter } from '../source-adapter';
 
 /**
@@ -13,7 +14,10 @@ import type { SourceAdapter } from '../source-adapter';
 export class FileAdapter implements SourceAdapter {
   readonly sourceType = 'file' as const;
 
-  constructor(private readonly transcription: TranscriptionService) {}
+  constructor(
+    private readonly transcription: TranscriptionService,
+    private readonly speakerId: SpeakerIdService,
+  ) {}
 
   validateInit(_req: IngestInitRequest): void {
     /* any content type is accepted for generic files */
@@ -25,6 +29,10 @@ export class FileAdapter implements SourceAdapter {
         storageKey: item.source.storageKey,
         contentType: item.source.contentType,
         filename: item.source.originalFilename ?? undefined,
+      });
+      await this.speakerId.enqueueDiarization(item.id, {
+        storageKey: item.source.storageKey,
+        contentType: item.source.contentType,
       });
     }
   }

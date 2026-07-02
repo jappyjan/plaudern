@@ -10,12 +10,15 @@ import {
   PlaudSettingsEntity,
   RecordingEventLinkEntity,
   SourcePayloadEntity,
+  SpeakerOccurrenceEntity,
+  VoiceProfileEntity,
 } from './entities';
 import { InitialSchema1720000000000 } from './migrations/1720000000000-InitialSchema';
 import { DropAuthTables1720000000001 } from './migrations/1720000000001-DropAuthTables';
 import { CreatePlaudSettings1720000000002 } from './migrations/1720000000002-CreatePlaudSettings';
 import { GeocodeCache1720000000003 } from './migrations/1720000000003-GeocodeCache';
-import { CreateCalendarTables1720000000004 } from './migrations/1720000000004-CreateCalendarTables';
+import { CreateSpeakerTables1720000000004 } from './migrations/1720000000004-CreateSpeakerTables';
+import { CreateCalendarTables1720000000005 } from './migrations/1720000000005-CreateCalendarTables';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -23,6 +26,8 @@ export const ALL_ENTITIES = [
   ExtractedPayloadEntity,
   PlaudSettingsEntity,
   GeocodeCacheEntity,
+  VoiceProfileEntity,
+  SpeakerOccurrenceEntity,
   CalendarFeedEntity,
   CalendarEventEntity,
   RecordingEventLinkEntity,
@@ -35,7 +40,8 @@ export const ALL_MIGRATIONS = [
   DropAuthTables1720000000001,
   CreatePlaudSettings1720000000002,
   GeocodeCache1720000000003,
-  CreateCalendarTables1720000000004,
+  CreateSpeakerTables1720000000004,
+  CreateCalendarTables1720000000005,
 ];
 
 /**

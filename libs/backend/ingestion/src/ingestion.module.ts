@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { InboxModule } from '@plaudern/inbox';
 import { TranscriptionModule } from '@plaudern/transcription';
+import { SpeakerIdModule } from '@plaudern/speaker-id';
 import { IngestionService } from './ingestion.service';
 import { IngestionController } from './ingestion.controller';
 import { SOURCE_ADAPTERS } from './source-adapter';
@@ -10,7 +11,7 @@ import { TextAdapter } from './adapters/text.adapter';
 import { FileAdapter } from './adapters/file.adapter';
 
 @Module({
-  imports: [InboxModule, TranscriptionModule],
+  imports: [InboxModule, TranscriptionModule, SpeakerIdModule],
   providers: [
     GenericAudioAdapter,
     PlaudAdapter,

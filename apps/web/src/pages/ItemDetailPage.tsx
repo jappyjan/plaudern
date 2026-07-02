@@ -27,7 +27,7 @@ import { useInboxEvents } from '../hooks/useInboxEvents';
 import { usePlaceName } from '../hooks/usePlaceName';
 import { latestTranscription, TranscriptionChip } from '../components/TranscriptionChip';
 import { LinkEventModal } from '../components/calendar/LinkEventModal';
-import { CollapsibleText } from '../components/CollapsibleText';
+import { SpeakerTranscript } from '../components/SpeakerTranscript';
 import { BackIcon, CalendarIcon, LinkIcon, LocationIcon, UnlinkIcon } from '../components/icons';
 import { formatBytes, formatDate, formatDateTime, formatTimeRange } from '../lib/format';
 import type { GeoLocation } from '../lib/geolocation';
@@ -186,10 +186,7 @@ export function ItemDetailPage() {
             </div>
           )}
           {transcription?.status === 'succeeded' && (
-            <CollapsibleText
-              text={transcription.content ?? ''}
-              className="whitespace-pre-wrap text-sm"
-            />
+            <SpeakerTranscript itemId={item.id} transcription={transcription} />
           )}
           {transcription?.status === 'failed' && (
             <div className="flex flex-col gap-2">

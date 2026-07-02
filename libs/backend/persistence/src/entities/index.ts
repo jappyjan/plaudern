@@ -2,6 +2,8 @@ export * from './inbox-item.entity';
 export * from './source-payload.entity';
 export * from './extracted-payload.entity';
 export * from './plaud-settings.entity';
+export * from './voice-profile.entity';
+export * from './speaker-occurrence.entity';
 export * from './geocode-cache.entity';
 export * from './calendar-feed.entity';
 export * from './calendar-event.entity';

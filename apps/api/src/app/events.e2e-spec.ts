@@ -61,8 +61,13 @@ describe('Inbox events (e2e, Path A)', () => {
 
     const itemId = init.body.inboxItemId;
     const types = seen.filter((e) => 'itemId' in e && e.itemId === itemId);
+    // Audio commit runs transcription AND diarization (both inline+stub), so
+    // each contributes a full queued -> processing -> succeeded lifecycle.
     expect(types.map((e) => e.type)).toEqual([
       'item.committed',
+      'extraction.updated',
+      'extraction.updated',
+      'extraction.updated',
       'extraction.updated',
       'extraction.updated',
       'extraction.updated',
@@ -70,7 +75,14 @@ describe('Inbox events (e2e, Path A)', () => {
     const statuses = types
       .filter((e) => e.type === 'extraction.updated')
       .map((e) => (e.type === 'extraction.updated' ? e.status : ''));
-    expect(statuses).toEqual(['queued', 'processing', 'succeeded']);
+    expect(statuses).toEqual([
+      'queued',
+      'processing',
+      'succeeded',
+      'queued',
+      'processing',
+      'succeeded',
+    ]);
   });
 
   it('publishes item.created for inline text ingest', async () => {

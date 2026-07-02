@@ -6,6 +6,7 @@ import { InboxModule } from '@plaudern/inbox';
 import { TranscriptionModule } from '@plaudern/transcription';
 import { IngestionModule } from '@plaudern/ingestion';
 import { PlaudSyncModule } from '@plaudern/plaud-sync';
+import { SpeakerIdModule } from '@plaudern/speaker-id';
 import { GeocodingModule } from '@plaudern/geocoding';
 import { CalendarModule } from '@plaudern/calendar';
 import { HealthController } from './health.controller';
@@ -19,6 +20,7 @@ import { HealthController } from './health.controller';
     TranscriptionModule,
     IngestionModule,
     PlaudSyncModule,
+    SpeakerIdModule,
     GeocodingModule,
     CalendarModule,
   ],

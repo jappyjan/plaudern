@@ -36,6 +36,7 @@ export class TranscriptionProcessor {
       await this.inbox.completeExtraction(job.extractionId, {
         status: 'succeeded',
         content: result.text,
+        segments: result.segments,
         language: result.language,
       });
       this.logger.log(`transcribed inbox item ${job.inboxItemId}`);

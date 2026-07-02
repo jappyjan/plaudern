@@ -32,6 +32,7 @@ describe('Ingestion pipeline (integration, real Postgres + MinIO + Redis)', () =
     process.env.QUEUE_DRIVER = 'bull';
     process.env.REDIS_URL = infra.redisUrl;
     process.env.TRANSCRIPTION_PROVIDER = 'stub';
+    process.env.SPEAKER_ID_PROVIDER = 'stub';
     process.env.GEOCODER = 'stub';
 
     const moduleRef = await Test.createTestingModule({
@@ -86,11 +87,24 @@ describe('Ingestion pipeline (integration, real Postgres + MinIO + Redis)', () =
     expect(commit.body.source.byteSize).toBe(audio.byteLength);
 
     // BullMQ processes asynchronously — poll until the transcript lands.
-    const item = await waitForTranscription(app, init.body.inboxItemId);
+    const item = await waitForExtraction(app, init.body.inboxItemId, 'transcription');
     const transcript = item.extractions.find((e) => e.kind === 'transcription');
     expect(transcript?.status).toBe('succeeded');
     expect(transcript?.content).toContain('stub transcription');
 
+    // Diarization runs on its own queue against the real speaker tables.
+    const diarized = await waitForExtraction(app, init.body.inboxItemId, 'diarization');
+    const diarization = diarized.extractions.find((e) => e.kind === 'diarization');
+    expect(diarization?.status).toBe('succeeded');
+
+    const transcriptView = await request(app.getHttpServer())
+      .get(`/api/v1/inbox/${init.body.inboxItemId}/speaker-transcript`)
+      .expect(200);
+    expect(transcriptView.body.mode).toBe('segmented');
+    expect(transcriptView.body.speakers).toHaveLength(2);
+
+    const speakers = await request(app.getHttpServer()).get('/api/v1/speakers').expect(200);
+    expect(speakers.body.profiles.length).toBeGreaterThanOrEqual(2);
     // Retry appends a second attempt through the real BullMQ path (and proves
     // the geocode_cache migration ran, since the app booted with migrations).
     await request(app.getHttpServer())
@@ -140,9 +154,10 @@ async function waitForTranscriptionCount(
   }
 }
 
-async function waitForTranscription(
+async function waitForExtraction(
   app: INestApplication,
   id: string,
+  kind: 'transcription' | 'diarization',
   timeoutMs = 30_000,
 ): Promise<InboxItemDto> {
   const deadline = Date.now() + timeoutMs;
@@ -150,9 +165,9 @@ async function waitForTranscription(
   while (true) {
     const res = await request(app.getHttpServer()).get(`/api/v1/inbox/${id}`);
     const item = res.body as InboxItemDto;
-    const t = item.extractions?.find((e) => e.kind === 'transcription');
+    const t = item.extractions?.find((e) => e.kind === kind);
     if (t && (t.status === 'succeeded' || t.status === 'failed')) return item;
-    if (Date.now() > deadline) throw new Error('timed out waiting for transcription');
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${kind}`);
     await new Promise((r) => setTimeout(r, 500));
   }
 }

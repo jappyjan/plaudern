@@ -25,6 +25,7 @@ the browser. Web first — a mobile app comes later.
 apps/
   api/           NestJS backend — the Inbox + ingestion + transcription
   web/           Vite + React SPA (HeroUI + Tailwind) — upload & record UI
+  speaker-id-ml/ Python sidecar (FastAPI + pyannote) — diarization + voice embeddings
 libs/
   contracts/     Shared zod DTOs/types (@plaudern/contracts) — the backend↔frontend seam
   backend/
@@ -33,7 +34,8 @@ libs/
     inbox/        Immutable inbox aggregate + read API
     ingestion/    Source-adapter registry + presigned upload API
     transcription/ Queue (BullMQ / inline) + provider interface (Whisper / stub)
-docker-compose.yml   Postgres + MinIO + Redis (+ api + web) for local dev
+    speaker-id/   Diarization queue + voice-profile matching + contact book API
+docker-compose.yml   Postgres + MinIO + Redis (+ api + web + speaker-id) for local dev
 ```
 
 ## Architecture
@@ -50,6 +52,16 @@ docker-compose.yml   Postgres + MinIO + Redis (+ api + web) for local dev
   (BullMQ + Redis in prod, inline in tests) that streams the blob and writes back
   the transcript via a pluggable `TranscriptionProvider` (OpenAI Whisper, or a
   local stub for CI).
+- **Speaker identification**: alongside transcription, audio enqueues a
+  diarization job against a pluggable `DiarizationProvider` (the self-hosted
+  pyannote sidecar in `apps/speaker-id-ml`, or a stub for CI). Detected voices
+  are matched by embedding similarity to persistent **voice profiles**, so the
+  same person is recognized across recordings; unknown voices land in a review
+  queue in the web app's contact book (`/contacts`), where they can be named,
+  confirmed, or merged. The transcript view renders speaker-attributed segments
+  by aligning Whisper `verbose_json` timestamps with the diarization at read
+  time. The pyannote models are gated on Hugging Face — see
+  `apps/speaker-id-ml/README.md` for the one-time `HF_TOKEN` setup.
 - **Capture metadata travels with the item**: `occurredAt` (when it was
   recorded) plus a free-form `metadata` field (GPS location, recording device,
   file tags) set at ingest time — the envelope is immutable, so metadata is

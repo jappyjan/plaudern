@@ -5,8 +5,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * recording↔event links, plus an occurredAt index on inbox_items for
  * time-range matching. Additive only — safe on existing installs.
  */
-export class CreateCalendarTables1720000000004 implements MigrationInterface {
-  name = 'CreateCalendarTables1720000000004';
+export class CreateCalendarTables1720000000005 implements MigrationInterface {
+  name = 'CreateCalendarTables1720000000005';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

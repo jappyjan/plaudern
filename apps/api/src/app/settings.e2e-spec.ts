@@ -163,10 +163,14 @@ describe('Plaud settings + sync (e2e)', () => {
       serialNumber: 'SN42',
       importedVia: 'plaud-cloud-sync',
     });
-    // audio-bearing source type -> existing transcription pipeline ran (inline+stub)
-    expect(item.extractions).toHaveLength(1);
-    expect(item.extractions[0].kind).toBe('transcription');
-    expect(item.extractions[0].status).toBe('succeeded');
+    // audio-bearing source type -> transcription + diarization pipelines ran (inline+stub)
+    expect(item.extractions).toHaveLength(2);
+    const transcription = item.extractions.find(
+      (e: { kind: string }) => e.kind === 'transcription',
+    );
+    expect(transcription.status).toBe('succeeded');
+    const diarization = item.extractions.find((e: { kind: string }) => e.kind === 'diarization');
+    expect(diarization.status).toBe('succeeded');
   });
 
   it('re-syncing is idempotent', async () => {
