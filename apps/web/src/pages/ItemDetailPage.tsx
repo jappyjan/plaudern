@@ -1,5 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Card, CardBody, CardHeader, Chip, Spinner } from '@heroui/react';
+import {
+  Accordion,
+  AccordionItem,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  Chip,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  Spinner,
+} from '@heroui/react';
 import type { InboxItemDto } from '@plaudern/contracts';
 import { Link, useParams } from 'react-router-dom';
 import { getItem, getSourceUrl, retryTranscription } from '../lib/api';
@@ -22,12 +36,27 @@ export function ItemDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
+  const [confirmRerunOpen, setConfirmRerunOpen] = useState(false);
 
   const refetch = useCallback(() => {
     if (!id) return;
     getItem(id)
       .then(setItem)
       .catch(() => undefined);
+  }, [id]);
+
+  const retry = useCallback(async () => {
+    if (!id) return;
+    setRetrying(true);
+    setRetryError(null);
+    try {
+      setItem(await retryTranscription(id));
+      setConfirmRerunOpen(false);
+    } catch (cause) {
+      setRetryError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setRetrying(false);
+    }
   }, [id]);
 
   // Extracted before the early returns below because usePlaceName is a hook.
@@ -138,18 +167,7 @@ export function ItemDetailPage() {
                 variant="flat"
                 className="self-start"
                 isLoading={retrying}
-                onPress={async () => {
-                  if (!id) return;
-                  setRetrying(true);
-                  setRetryError(null);
-                  try {
-                    setItem(await retryTranscription(id));
-                  } catch (cause) {
-                    setRetryError(cause instanceof Error ? cause.message : String(cause));
-                  } finally {
-                    setRetrying(false);
-                  }
-                }}
+                onPress={retry}
               >
                 Retry transcription
               </Button>
@@ -216,6 +234,61 @@ export function ItemDetailPage() {
           )}
         </CardBody>
       </Card>
+
+      {transcription?.status === 'succeeded' && (
+        <>
+          <Accordion isCompact>
+            <AccordionItem
+              key="advanced"
+              aria-label="Advanced"
+              title={<span className="text-sm font-semibold">Advanced</span>}
+            >
+              <div className="flex flex-col gap-2 rounded-medium border border-danger-200 bg-danger-50 p-3">
+                <p className="text-sm text-danger">
+                  Re-running transcription will replace the current transcript.
+                </p>
+                <Button
+                  size="sm"
+                  color="danger"
+                  variant="flat"
+                  className="self-start"
+                  onPress={() => {
+                    setRetryError(null);
+                    setConfirmRerunOpen(true);
+                  }}
+                >
+                  Re-run transcription
+                </Button>
+              </div>
+            </AccordionItem>
+          </Accordion>
+
+          <Modal isOpen={confirmRerunOpen} onClose={() => !retrying && setConfirmRerunOpen(false)}>
+            <ModalContent>
+              <ModalHeader>Re-run transcription?</ModalHeader>
+              <ModalBody>
+                <p className="text-sm">
+                  The existing transcript will be overwritten by the new result. This cannot be
+                  undone.
+                </p>
+                {retryError && <p className="text-xs text-danger">{retryError}</p>}
+              </ModalBody>
+              <ModalFooter>
+                <Button
+                  variant="light"
+                  isDisabled={retrying}
+                  onPress={() => setConfirmRerunOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button color="danger" isLoading={retrying} onPress={retry}>
+                  Overwrite and re-run
+                </Button>
+              </ModalFooter>
+            </ModalContent>
+          </Modal>
+        </>
+      )}
     </div>
   );
 }
