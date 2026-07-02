@@ -2,10 +2,18 @@ import {
   inboxItemSchema,
   inboxListResponseSchema,
   ingestInitResponseSchema,
+  plaudSettingsSchema,
+  plaudSyncNowResponseSchema,
+  plaudTestConnectionResponseSchema,
   type IngestInitRequest,
   type IngestInitResponse,
   type InboxItemDto,
   type InboxListResponse,
+  type PlaudSettingsDto,
+  type PlaudSyncNowResponse,
+  type PlaudTestConnectionRequest,
+  type PlaudTestConnectionResponse,
+  type UpdatePlaudSettingsRequest,
 } from '@plaudern/contracts';
 
 /**
@@ -61,6 +69,32 @@ export async function ingestInit(req: IngestInitRequest): Promise<IngestInitResp
 export async function ingestCommit(inboxItemId: string): Promise<InboxItemDto> {
   return inboxItemSchema.parse(
     await requestJson(`/ingest/${inboxItemId}/commit`, { method: 'POST' }),
+  );
+}
+
+export async function getPlaudSettings(): Promise<PlaudSettingsDto> {
+  return plaudSettingsSchema.parse(await requestJson('/settings/plaud'));
+}
+
+export async function updatePlaudSettings(
+  req: UpdatePlaudSettingsRequest,
+): Promise<PlaudSettingsDto> {
+  return plaudSettingsSchema.parse(
+    await requestJson('/settings/plaud', { method: 'PUT', body: JSON.stringify(req) }),
+  );
+}
+
+export async function testPlaudConnection(
+  req: PlaudTestConnectionRequest,
+): Promise<PlaudTestConnectionResponse> {
+  return plaudTestConnectionResponseSchema.parse(
+    await requestJson('/settings/plaud/test', { method: 'POST', body: JSON.stringify(req) }),
+  );
+}
+
+export async function triggerPlaudSync(): Promise<PlaudSyncNowResponse> {
+  return plaudSyncNowResponseSchema.parse(
+    await requestJson('/settings/plaud/sync', { method: 'POST' }),
   );
 }
 

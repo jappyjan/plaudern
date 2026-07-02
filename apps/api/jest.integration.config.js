@@ -16,6 +16,7 @@ module.exports = {
     '^@plaudern/inbox$': `${wsRoot}/libs/backend/inbox/src/index.ts`,
     '^@plaudern/ingestion$': `${wsRoot}/libs/backend/ingestion/src/index.ts`,
     '^@plaudern/transcription$': `${wsRoot}/libs/backend/transcription/src/index.ts`,
+    '^@plaudern/plaud-sync$': `${wsRoot}/libs/backend/plaud-sync/src/index.ts`,
   },
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.spec.json' }],

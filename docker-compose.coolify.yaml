@@ -55,6 +55,9 @@ services:
       - TRANSCRIPTION_PROVIDER=${TRANSCRIPTION_PROVIDER:-stub}
       - TRANSCRIPTION_MODEL=${TRANSCRIPTION_MODEL:-whisper-1}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Plaud cloud sync: Coolify generates & persists the encryption secret.
+      - PLAUD_SETTINGS_SECRET=${SERVICE_PASSWORD_PLAUDSETTINGS}
+      - PLAUD_POLL_INTERVAL_MS=${PLAUD_POLL_INTERVAL_MS:-300000}
     depends_on:
       postgres:
         condition: service_healthy

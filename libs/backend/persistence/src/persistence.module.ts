@@ -4,20 +4,27 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   ExtractedPayloadEntity,
   InboxItemEntity,
+  PlaudSettingsEntity,
   SourcePayloadEntity,
 } from './entities';
 import { InitialSchema1720000000000 } from './migrations/1720000000000-InitialSchema';
 import { DropAuthTables1720000000001 } from './migrations/1720000000001-DropAuthTables';
+import { CreatePlaudSettings1720000000002 } from './migrations/1720000000002-CreatePlaudSettings';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
   SourcePayloadEntity,
   ExtractedPayloadEntity,
+  PlaudSettingsEntity,
 ];
 
 // Referenced as classes (not a glob) so migrations load identically under
 // ts-jest, tsx, and compiled node.
-export const ALL_MIGRATIONS = [InitialSchema1720000000000, DropAuthTables1720000000001];
+export const ALL_MIGRATIONS = [
+  InitialSchema1720000000000,
+  DropAuthTables1720000000001,
+  CreatePlaudSettings1720000000002,
+];
 
 /**
  * Wires TypeORM. Defaults to Postgres from env; when `DATABASE_DRIVER=sqlite`
