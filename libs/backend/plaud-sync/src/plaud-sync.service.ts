@@ -13,6 +13,8 @@ const TOKEN_REFRESH_BUFFER_MS = 30 * 24 * 60 * 60 * 1000;
  * Pulls new recordings from the Plaud cloud into the inbox. Everything flows
  * through the regular ingestion path (`sourceType: 'plaud'`), so dedupe comes
  * from the idempotency key and transcription fires via the existing adapter.
+ * Recordings whose key is tombstoned (deleted from the inbox by the user) are
+ * never re-imported.
  */
 @Injectable()
 export class PlaudSyncService {
@@ -74,6 +76,12 @@ export class PlaudSyncService {
         try {
           const existing = await this.inbox.findByIdempotencyKey(DEFAULT_USER_ID, idempotencyKey);
           if (existing) continue;
+          // The user deleted this recording from the inbox — never re-import
+          // it. (A delete racing a mid-download sync can still recreate the
+          // item once; sync is sequential and minutes-scale, so acceptable.)
+          if (await this.inbox.isIdempotencyKeyTombstoned(DEFAULT_USER_ID, idempotencyKey)) {
+            continue;
+          }
 
           const { body, contentType } = await this.client.downloadRecording(
             entity.region,

@@ -1,12 +1,13 @@
 # Plaudern
 
 A modular, highly-automated **AI note-taking platform**. Its central primitive is
-an **immutable Inbox** — the source of truth. Every item has a timestamp, a
+the **Inbox** — the source of truth. Every item has a timestamp, a
 source type, a raw **source payload** (audio/text/file), and optional
-**extracted payloads** (transcription, OCR, …). Items are append-only and never
-edited; higher-level features (auto-organization, note creation) are built on top.
+**extracted payloads** (transcription, OCR, …). Items are never edited in
+place — they can only be deleted whole — and higher-level features
+(auto-organization, note creation) are built on top.
 
-This repository implements the immutable inbox + async transcription, plus a
+This repository implements the inbox + async transcription, plus a
 **web app** for capturing recordings: upload audio files or record directly in
 the browser. Web first — a mobile app comes later.
 
@@ -31,7 +32,7 @@ libs/
   backend/
     persistence/ TypeORM entities + migrations
     storage/     S3/MinIO abstraction (+ in-memory fake for tests)
-    inbox/        Immutable inbox aggregate + read API
+    inbox/        Inbox aggregate + read/delete API
     ingestion/    Source-adapter registry + presigned upload API
     transcription/ Queue (BullMQ / inline) + provider interface (Whisper / stub)
     speaker-id/   Diarization queue + voice-profile matching + contact book API
@@ -40,9 +41,11 @@ docker-compose.yml   Postgres + MinIO + Redis (+ api + web + speaker-id) for loc
 
 ## Architecture
 
-- **Immutable inbox** (`inbox_items`, `source_payloads`, `extracted_payloads`):
-  append-only; no update/delete of source data. Reprocessing appends a new
-  extraction row rather than mutating.
+- **Never-edited inbox** (`inbox_items`, `source_payloads`, `extracted_payloads`):
+  no in-place updates of source data — reprocessing appends a new extraction row
+  rather than mutating. Items can be deleted whole (rows + blobs); a tombstone
+  of the idempotency key (`inbox_tombstones`) keeps automated syncs (Plaud)
+  from re-importing deleted recordings.
 - **Two-phase presigned upload**: `POST /v1/ingest/init` → client PUTs bytes
   directly to S3/MinIO → `POST /v1/ingest/:id/commit`. Large audio never streams
   through Node.

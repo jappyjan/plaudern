@@ -45,4 +45,7 @@ export abstract class StorageService {
 
   /** Stream an object, e.g. to hand to a transcription provider. */
   abstract getObjectStream(storageKey: string): Promise<Readable>;
+
+  /** Idempotent delete; a missing object is not an error. */
+  abstract deleteObject(storageKey: string): Promise<void>;
 }

@@ -1,4 +1,12 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import {
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Query,
+} from '@nestjs/common';
 import {
   inboxListQuerySchema,
   type InboxItemDto,
@@ -9,7 +17,7 @@ import { StorageService } from '@plaudern/storage';
 import { InboxService } from './inbox.service';
 import { toInboxItemDto } from './inbox.mapper';
 
-/** Read-only access to the immutable inbox. No write/update/delete routes exist. */
+/** Read access plus whole-item deletion. Items are never edited in place. */
 @Controller({ path: 'inbox', version: '1' })
 export class InboxController {
   constructor(
@@ -28,6 +36,13 @@ export class InboxController {
   async get(@Param('id') id: string): Promise<InboxItemDto> {
     const item = await this.inbox.getItem(DEFAULT_USER_ID, id);
     return toInboxItemDto(item);
+  }
+
+  /** Permanently delete an item, its extractions and its stored blobs. */
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async remove(@Param('id') id: string): Promise<void> {
+    await this.inbox.deleteItem(DEFAULT_USER_ID, id);
   }
 
   /** Presigned GET URL for playback/download of the source blob. */

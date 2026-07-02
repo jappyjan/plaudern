@@ -10,8 +10,9 @@ import type { UploadStatus } from '@plaudern/contracts';
 import { InboxItemEntity } from './inbox-item.entity';
 
 /**
- * The raw, immutable source blob pointer (1:1 with an inbox item). The object
- * itself lives in S3/MinIO at `storageKey` and is written exactly once.
+ * The raw source blob pointer (1:1 with an inbox item). The object itself
+ * lives in S3/MinIO at `storageKey`, is written exactly once, and is deleted
+ * only together with its item.
  */
 @Entity({ name: 'source_payloads' })
 export class SourcePayloadEntity {
