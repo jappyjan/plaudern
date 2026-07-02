@@ -6,6 +6,7 @@ import { getItem, getSourceUrl, retryTranscription } from '../lib/api';
 import { useInboxEvents } from '../hooks/useInboxEvents';
 import { usePlaceName } from '../hooks/usePlaceName';
 import { latestTranscription, TranscriptionChip } from '../components/TranscriptionChip';
+import { CollapsibleText } from '../components/CollapsibleText';
 import { BackIcon, LocationIcon } from '../components/icons';
 import { formatBytes, formatDateTime } from '../lib/format';
 import type { GeoLocation } from '../lib/geolocation';
@@ -123,7 +124,10 @@ export function ItemDetailPage() {
             </div>
           )}
           {transcription?.status === 'succeeded' && (
-            <p className="whitespace-pre-wrap text-sm">{transcription.content}</p>
+            <CollapsibleText
+              text={transcription.content ?? ''}
+              className="whitespace-pre-wrap text-sm"
+            />
           )}
           {transcription?.status === 'failed' && (
             <div className="flex flex-col gap-2">
