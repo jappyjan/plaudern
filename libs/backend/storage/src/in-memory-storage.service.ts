@@ -24,6 +24,10 @@ export class InMemoryStorageService extends StorageService {
     return `memory://get/${encodeURIComponent(storageKey)}`;
   }
 
+  async createInternalPresignedGetUrl(storageKey: string): Promise<string> {
+    return this.createPresignedGetUrl(storageKey);
+  }
+
   async putObject(
     storageKey: string,
     body: Buffer | Uint8Array | string,

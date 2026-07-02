@@ -34,6 +34,7 @@ export function toExtractedPayloadDto(entity: ExtractedPayloadEntity): Extracted
     provider: entity.provider,
     status: entity.status,
     content: entity.content,
+    segments: entity.segments ?? null,
     language: entity.language,
     error: entity.error,
     createdAt: iso(entity.createdAt)!,

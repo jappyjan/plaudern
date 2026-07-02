@@ -63,6 +63,11 @@ export class S3StorageService extends StorageService {
     return getSignedUrl(this.presignClient, command, { expiresIn: this.presignTtl });
   }
 
+  async createInternalPresignedGetUrl(storageKey: string): Promise<string> {
+    const command = new GetObjectCommand({ Bucket: this.bucket, Key: storageKey });
+    return getSignedUrl(this.client, command, { expiresIn: this.presignTtl });
+  }
+
   async putObject(
     storageKey: string,
     body: Buffer | Uint8Array | string,

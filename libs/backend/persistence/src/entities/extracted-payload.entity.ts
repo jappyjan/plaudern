@@ -7,7 +7,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import type { ExtractionKind, ExtractionStatus } from '@plaudern/contracts';
+import type { ExtractionKind, ExtractionSegment, ExtractionStatus } from '@plaudern/contracts';
 import { InboxItemEntity } from './inbox-item.entity';
 
 /**
@@ -43,6 +43,10 @@ export class ExtractedPayloadEntity {
   /** For large/rich outputs stored as an object instead of inline text. */
   @Column({ type: 'varchar', nullable: true })
   contentStorageKey!: string | null;
+
+  /** Timed segments: transcription => {start,end,text}, diarization => {start,end,speaker}. */
+  @Column({ type: 'simple-json', nullable: true })
+  segments!: ExtractionSegment[] | null;
 
   @Column({ type: 'varchar', nullable: true })
   language!: string | null;

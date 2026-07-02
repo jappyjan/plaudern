@@ -14,8 +14,21 @@ export const extractionStatusSchema = z.enum([
 ]);
 export type ExtractionStatus = z.infer<typeof extractionStatusSchema>;
 
-export const extractionKindSchema = z.enum(['transcription', 'ocr']);
+export const extractionKindSchema = z.enum(['transcription', 'ocr', 'diarization']);
 export type ExtractionKind = z.infer<typeof extractionKindSchema>;
+
+/**
+ * A timed slice of a derived artifact. Transcription rows carry `text`
+ * (whisper verbose_json segments), diarization rows carry `speaker`
+ * (per-recording labels like SPEAKER_00).
+ */
+export const extractionSegmentSchema = z.object({
+  start: z.number(),
+  end: z.number(),
+  text: z.string().optional(),
+  speaker: z.string().optional(),
+});
+export type ExtractionSegment = z.infer<typeof extractionSegmentSchema>;
 
 /** The immutable raw payload pointer (1:1 with an inbox item). */
 export const sourcePayloadSchema = z.object({
@@ -37,6 +50,7 @@ export const extractedPayloadSchema = z.object({
   provider: z.string(),
   status: extractionStatusSchema,
   content: z.string().nullable(),
+  segments: z.array(extractionSegmentSchema).nullable(),
   language: z.string().nullable(),
   error: z.string().nullable(),
   createdAt: z.string().datetime(),

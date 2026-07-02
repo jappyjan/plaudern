@@ -6,6 +6,9 @@ import {
   plaudSettingsSchema,
   plaudSyncNowResponseSchema,
   plaudTestConnectionResponseSchema,
+  speakerTranscriptSchema,
+  voiceProfileDetailSchema,
+  voiceProfileListResponseSchema,
   type GeocodeResponse,
   type IngestInitRequest,
   type IngestInitResponse,
@@ -15,7 +18,11 @@ import {
   type PlaudSyncNowResponse,
   type PlaudTestConnectionRequest,
   type PlaudTestConnectionResponse,
+  type SpeakerTranscriptDto,
   type UpdatePlaudSettingsRequest,
+  type UpdateVoiceProfileRequest,
+  type VoiceProfileDetailDto,
+  type VoiceProfileListResponse,
 } from '@plaudern/contracts';
 
 /**
@@ -110,6 +117,39 @@ export async function testPlaudConnection(
 export async function triggerPlaudSync(): Promise<PlaudSyncNowResponse> {
   return plaudSyncNowResponseSchema.parse(
     await requestJson('/settings/plaud/sync', { method: 'POST' }),
+  );
+}
+
+export async function getSpeakerTranscript(itemId: string): Promise<SpeakerTranscriptDto> {
+  return speakerTranscriptSchema.parse(await requestJson(`/inbox/${itemId}/speaker-transcript`));
+}
+
+export async function listSpeakers(): Promise<VoiceProfileListResponse> {
+  return voiceProfileListResponseSchema.parse(await requestJson('/speakers'));
+}
+
+export async function getSpeaker(id: string): Promise<VoiceProfileDetailDto> {
+  return voiceProfileDetailSchema.parse(await requestJson(`/speakers/${id}`));
+}
+
+export async function updateSpeaker(
+  id: string,
+  req: UpdateVoiceProfileRequest,
+): Promise<VoiceProfileDetailDto> {
+  return voiceProfileDetailSchema.parse(
+    await requestJson(`/speakers/${id}`, { method: 'PATCH', body: JSON.stringify(req) }),
+  );
+}
+
+export async function mergeSpeakers(
+  targetId: string,
+  sourceProfileId: string,
+): Promise<VoiceProfileDetailDto> {
+  return voiceProfileDetailSchema.parse(
+    await requestJson(`/speakers/${targetId}/merge`, {
+      method: 'POST',
+      body: JSON.stringify({ sourceProfileId }),
+    }),
   );
 }
 

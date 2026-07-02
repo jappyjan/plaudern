@@ -7,11 +7,14 @@ import {
   InboxItemEntity,
   PlaudSettingsEntity,
   SourcePayloadEntity,
+  SpeakerOccurrenceEntity,
+  VoiceProfileEntity,
 } from './entities';
 import { InitialSchema1720000000000 } from './migrations/1720000000000-InitialSchema';
 import { DropAuthTables1720000000001 } from './migrations/1720000000001-DropAuthTables';
 import { CreatePlaudSettings1720000000002 } from './migrations/1720000000002-CreatePlaudSettings';
 import { GeocodeCache1720000000003 } from './migrations/1720000000003-GeocodeCache';
+import { CreateSpeakerTables1720000000004 } from './migrations/1720000000004-CreateSpeakerTables';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -19,6 +22,8 @@ export const ALL_ENTITIES = [
   ExtractedPayloadEntity,
   PlaudSettingsEntity,
   GeocodeCacheEntity,
+  VoiceProfileEntity,
+  SpeakerOccurrenceEntity,
 ];
 
 // Referenced as classes (not a glob) so migrations load identically under
@@ -28,6 +33,7 @@ export const ALL_MIGRATIONS = [
   DropAuthTables1720000000001,
   CreatePlaudSettings1720000000002,
   GeocodeCache1720000000003,
+  CreateSpeakerTables1720000000004,
 ];
 
 /**

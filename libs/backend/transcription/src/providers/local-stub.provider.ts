@@ -21,6 +21,11 @@ export class LocalStubProvider implements TranscriptionProvider {
     return {
       text: `[stub transcription of ${bytes} bytes, ${input.contentType}]`,
       language: 'en',
+      // Deterministic timestamps so diarization alignment is exercisable in CI.
+      segments: [
+        { start: 0, end: 2, text: `[stub transcription of ${bytes} bytes,` },
+        { start: 2, end: 4, text: ` ${input.contentType}]` },
+      ],
     };
   }
 }
