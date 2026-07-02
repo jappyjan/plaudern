@@ -101,6 +101,9 @@ importers:
       bullmq:
         specifier: 5.79.2
         version: 5.79.2
+      node-ical:
+        specifier: 0.20.1
+        version: 0.20.1
       pg:
         specifier: 8.22.0
         version: 8.22.0
