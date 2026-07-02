@@ -27,3 +27,6 @@ coverage
 .idea
 .vscode/*
 !.vscode/extensions.json
+
+# Python (speaker-id-ml sidecar)
+__pycache__/

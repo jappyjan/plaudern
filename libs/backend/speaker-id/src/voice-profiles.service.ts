@@ -1,0 +1,165 @@
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { In, Repository } from 'typeorm';
+import type {
+  UpdateVoiceProfileRequest,
+  VoiceProfileDetailDto,
+  VoiceProfileDto,
+} from '@plaudern/contracts';
+import {
+  ExtractedPayloadEntity,
+  SpeakerOccurrenceEntity,
+  VoiceProfileEntity,
+} from '@plaudern/persistence';
+import { mergeCentroids } from './profile-matcher.service';
+
+interface OccurrenceWithItem extends SpeakerOccurrenceEntity {
+  occurredAt: string;
+}
+
+/**
+ * Contact book: CRUD over voice profiles plus per-profile recording lists.
+ * Aggregates only count occurrences from each item's LATEST succeeded
+ * diarization extraction, so append-only reprocessing supersedes old links.
+ */
+@Injectable()
+export class VoiceProfilesService {
+  constructor(
+    @InjectRepository(VoiceProfileEntity)
+    private readonly profiles: Repository<VoiceProfileEntity>,
+    @InjectRepository(SpeakerOccurrenceEntity)
+    private readonly occurrences: Repository<SpeakerOccurrenceEntity>,
+    @InjectRepository(ExtractedPayloadEntity)
+    private readonly extractions: Repository<ExtractedPayloadEntity>,
+  ) {}
+
+  async list(userId: string): Promise<VoiceProfileDto[]> {
+    const profiles = await this.profiles.find({ where: { userId } });
+    if (profiles.length === 0) return [];
+    const byProfile = await this.currentOccurrences(profiles.map((p) => p.id));
+    return profiles
+      .map((profile) => this.toDto(profile, byProfile.get(profile.id) ?? []))
+      .sort((a, b) => (b.lastHeardAt ?? '').localeCompare(a.lastHeardAt ?? ''));
+  }
+
+  async detail(userId: string, id: string): Promise<VoiceProfileDetailDto> {
+    const profile = await this.getOwned(userId, id);
+    const occurrences = (await this.currentOccurrences([id])).get(id) ?? [];
+    return {
+      ...this.toDto(profile, occurrences),
+      recordings: occurrences
+        .slice()
+        .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+        .map((occ) => ({
+          inboxItemId: occ.inboxItemId,
+          occurredAt: occ.occurredAt,
+          label: occ.label,
+          speakingSeconds: occ.speakingSeconds,
+          similarity: occ.similarity,
+        })),
+    };
+  }
+
+  async update(
+    userId: string,
+    id: string,
+    req: UpdateVoiceProfileRequest,
+  ): Promise<VoiceProfileDetailDto> {
+    const profile = await this.getOwned(userId, id);
+    if (req.name !== undefined) {
+      profile.name = req.name;
+      // Giving a voice a name is the strongest confirmation there is.
+      profile.status = 'confirmed';
+    }
+    if (req.status === 'confirmed') profile.status = 'confirmed';
+    await this.profiles.save(profile);
+    return this.detail(userId, id);
+  }
+
+  /** Merge `sourceId` into `targetId` (occurrences re-linked, source deleted). */
+  async merge(userId: string, targetId: string, sourceId: string): Promise<VoiceProfileDetailDto> {
+    if (targetId === sourceId) {
+      throw new BadRequestException('cannot merge a profile into itself');
+    }
+    const target = await this.getOwned(userId, targetId);
+    const source = await this.getOwned(userId, sourceId);
+
+    await this.profiles.manager.transaction(async (manager) => {
+      await manager.update(
+        SpeakerOccurrenceEntity,
+        { voiceProfileId: source.id },
+        { voiceProfileId: target.id },
+      );
+      if (target.centroid.length === source.centroid.length) {
+        target.centroid = mergeCentroids(
+          target.centroid,
+          target.embeddingCount,
+          source.centroid,
+          source.embeddingCount,
+        );
+      }
+      target.embeddingCount += source.embeddingCount;
+      if (!target.name && source.name) target.name = source.name;
+      await manager.save(target);
+      await manager.delete(VoiceProfileEntity, { id: source.id });
+    });
+    return this.detail(userId, targetId);
+  }
+
+  private async getOwned(userId: string, id: string): Promise<VoiceProfileEntity> {
+    const profile = await this.profiles.findOne({ where: { id, userId } });
+    if (!profile) throw new NotFoundException('voice profile not found');
+    return profile;
+  }
+
+  private toDto(profile: VoiceProfileEntity, occurrences: OccurrenceWithItem[]): VoiceProfileDto {
+    const itemIds = new Set(occurrences.map((o) => o.inboxItemId));
+    const lastHeardAt = occurrences.reduce<string | null>(
+      (max, o) => (max === null || o.occurredAt > max ? o.occurredAt : max),
+      null,
+    );
+    return {
+      id: profile.id,
+      name: profile.name,
+      status: profile.status,
+      recordingCount: itemIds.size,
+      totalSpeakingSeconds: occurrences.reduce((sum, o) => sum + o.speakingSeconds, 0),
+      lastHeardAt,
+      createdAt: profile.createdAt.toISOString(),
+    };
+  }
+
+  /**
+   * Occurrences per profile, restricted to each inbox item's latest succeeded
+   * diarization extraction and enriched with the item's occurredAt.
+   */
+  private async currentOccurrences(
+    profileIds: string[],
+  ): Promise<Map<string, OccurrenceWithItem[]>> {
+    const rows = await this.occurrences.find({
+      where: { voiceProfileId: In(profileIds) },
+      relations: { inboxItem: true },
+    });
+    const result = new Map<string, OccurrenceWithItem[]>();
+    if (rows.length === 0) return result;
+
+    const itemIds = [...new Set(rows.map((r) => r.inboxItemId))];
+    const extractionRows = await this.extractions.find({
+      where: { inboxItemId: In(itemIds), kind: 'diarization', status: 'succeeded' },
+    });
+    const latestByItem = new Map<string, ExtractedPayloadEntity>();
+    for (const row of extractionRows) {
+      const current = latestByItem.get(row.inboxItemId);
+      if (!current || row.createdAt > current.createdAt) latestByItem.set(row.inboxItemId, row);
+    }
+    const latestExtractionIds = new Set([...latestByItem.values()].map((r) => r.id));
+
+    for (const row of rows) {
+      if (!latestExtractionIds.has(row.extractionId)) continue;
+      const list = result.get(row.voiceProfileId) ?? [];
+      list.push(Object.assign(row, { occurredAt: row.inboxItem.occurredAt }));
+      result.set(row.voiceProfileId, list);
+    }
+    return result;
+  }
+}

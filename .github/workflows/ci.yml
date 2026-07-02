@@ -36,7 +36,7 @@ jobs:
         run: pnpm nx run api:typecheck
 
       - name: Unit tests (fast, infra-free)
-        run: pnpm nx run-many -t test --projects=contracts,api
+        run: pnpm nx run-many -t test --projects=contracts,api,speaker-id
 
       # Docker is available on ubuntu-latest, so Testcontainers spins up real
       # Postgres + MinIO + Redis — the full stack verified with zero manual setup.

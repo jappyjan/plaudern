@@ -75,11 +75,17 @@ describe('Ingestion pipeline (e2e, Path A)', () => {
       .get(`/api/v1/inbox/${init.body.inboxItemId}`)
       .expect(200);
 
-    expect(get.body.extractions).toHaveLength(1);
-    const extraction = get.body.extractions[0];
-    expect(extraction.kind).toBe('transcription');
+    // Audio commit schedules both transcription and speaker diarization.
+    expect(get.body.extractions).toHaveLength(2);
+    const extraction = get.body.extractions.find(
+      (e: { kind: string }) => e.kind === 'transcription',
+    );
     expect(extraction.status).toBe('succeeded');
     expect(extraction.content).toContain('stub transcription');
+    const diarization = get.body.extractions.find(
+      (e: { kind: string }) => e.kind === 'diarization',
+    );
+    expect(diarization.status).toBe('succeeded');
     expect(get.body.metadata).toEqual({
       location: { lat: 52.52, lon: 13.405 },
       capturedVia: 'browser-recording',

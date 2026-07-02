@@ -1,7 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import type { ExtractionKind, ExtractionStatus, SourceType } from '@plaudern/contracts';
+import type {
+  ExtractionKind,
+  ExtractionSegment,
+  ExtractionStatus,
+  SourceType,
+} from '@plaudern/contracts';
 import {
   ExtractedPayloadEntity,
   InboxItemEntity,
@@ -129,13 +134,20 @@ export class InboxService {
 
   async completeExtraction(
     id: string,
-    result: { status: Extract<ExtractionStatus, 'succeeded' | 'failed'>; content?: string; language?: string; error?: string },
+    result: {
+      status: Extract<ExtractionStatus, 'succeeded' | 'failed'>;
+      content?: string;
+      segments?: ExtractionSegment[];
+      language?: string;
+      error?: string;
+    },
   ): Promise<void> {
     await this.extractions.update(
       { id },
       {
         status: result.status,
         content: result.content ?? null,
+        segments: result.segments ?? null,
         language: result.language ?? null,
         error: result.error ?? null,
         completedAt: new Date().toISOString(),

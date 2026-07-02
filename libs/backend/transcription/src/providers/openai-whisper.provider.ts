@@ -35,17 +35,16 @@ export class OpenAiWhisperProvider implements TranscriptionProvider {
     }
     const buffer = Buffer.concat(chunks);
 
-    const form = new FormData();
-    const blob = new Blob([buffer], { type: input.contentType });
-    form.append('file', blob, input.filename ?? 'audio');
-    form.append('model', this.model);
-    if (input.languageHint) form.append('language', input.languageHint);
-
-    const res = await fetch(`${this.baseUrl}/audio/transcriptions`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${this.apiKey}` },
-      body: form,
-    });
+    // verbose_json yields segment timestamps needed to align diarization with
+    // the transcript. Whisper-compatible endpoints may reject the parameter,
+    // so fall back to the default (flat text) response once.
+    let res = await this.request(buffer, input, true);
+    if (!res.ok && res.status >= 400 && res.status < 500) {
+      this.logger.warn(
+        `transcription endpoint rejected verbose_json (${res.status}), retrying without segment timestamps`,
+      );
+      res = await this.request(buffer, input, false);
+    }
 
     if (!res.ok) {
       const body = await res.text();
@@ -53,7 +52,35 @@ export class OpenAiWhisperProvider implements TranscriptionProvider {
       throw new Error(`transcription provider error ${res.status}`);
     }
 
-    const json = (await res.json()) as { text: string; language?: string };
-    return { text: json.text, language: json.language, raw: json };
+    const json = (await res.json()) as {
+      text: string;
+      language?: string;
+      segments?: { start: number; end: number; text: string }[];
+    };
+    return {
+      text: json.text,
+      language: json.language,
+      segments: json.segments?.map((s) => ({ start: s.start, end: s.end, text: s.text })),
+      raw: json,
+    };
+  }
+
+  private request(
+    buffer: Buffer,
+    input: TranscriptionInput,
+    verbose: boolean,
+  ): Promise<Response> {
+    const form = new FormData();
+    const blob = new Blob([buffer], { type: input.contentType });
+    form.append('file', blob, input.filename ?? 'audio');
+    form.append('model', this.model);
+    if (input.languageHint) form.append('language', input.languageHint);
+    if (verbose) form.append('response_format', 'verbose_json');
+
+    return fetch(`${this.baseUrl}/audio/transcriptions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.apiKey}` },
+      body: form,
+    });
   }
 }

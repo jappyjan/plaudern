@@ -18,6 +18,7 @@ module.exports = {
     '^@plaudern/transcription$': `${wsRoot}/libs/backend/transcription/src/index.ts`,
     '^@plaudern/plaud-sync$': `${wsRoot}/libs/backend/plaud-sync/src/index.ts`,
     '^@plaudern/geocoding$': `${wsRoot}/libs/backend/geocoding/src/index.ts`,
+    '^@plaudern/speaker-id$': `${wsRoot}/libs/backend/speaker-id/src/index.ts`,
   },
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.spec.json' }],

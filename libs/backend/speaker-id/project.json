@@ -1,0 +1,21 @@
+{
+  "name": "speaker-id",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/backend/speaker-id/src",
+  "projectType": "library",
+  "tags": ["scope:backend", "type:feature"],
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc -p libs/backend/speaker-id/tsconfig.json --noEmit"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "jest --config libs/backend/speaker-id/jest.config.js"
+      }
+    }
+  }
+}
