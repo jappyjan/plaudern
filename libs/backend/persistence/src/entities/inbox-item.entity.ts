@@ -12,9 +12,11 @@ import { SourcePayloadEntity } from './source-payload.entity';
 import { ExtractedPayloadEntity } from './extracted-payload.entity';
 
 /**
- * The immutable inbox envelope — the source of truth. Rows are append-only:
- * there is deliberately NO updatedAt and the app layer exposes no update/delete
- * (plan §2). Derived data lives in append-only extracted_payloads.
+ * The inbox envelope — the source of truth. Rows are never edited in place:
+ * there is deliberately NO updatedAt. Items can only be deleted whole (with
+ * their source and extractions), leaving a row in inbox_tombstones so
+ * automated syncs don't re-import them. Derived data lives in append-only
+ * extracted_payloads.
  */
 @Entity({ name: 'inbox_items' })
 @Index(['userId', 'ingestedAt'])

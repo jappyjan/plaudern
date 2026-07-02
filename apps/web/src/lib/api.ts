@@ -43,6 +43,16 @@ class ApiError extends Error {
 }
 
 async function requestJson(path: string, init?: RequestInit): Promise<unknown> {
+  const res = await request(path, init);
+  return res.json();
+}
+
+/** For endpoints that reply 204 No Content — `res.json()` would throw there. */
+async function requestVoid(path: string, init?: RequestInit): Promise<void> {
+  await request(path, init);
+}
+
+async function request(path: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(`${BASE}${path}`, {
     ...init,
     headers: { 'content-type': 'application/json', ...init?.headers },
@@ -51,7 +61,7 @@ async function requestJson(path: string, init?: RequestInit): Promise<unknown> {
     const body = await res.text().catch(() => '');
     throw new ApiError(res.status, `${init?.method ?? 'GET'} ${path} failed (${res.status}): ${body}`);
   }
-  return res.json();
+  return res;
 }
 
 export async function listInbox(limit = 20, cursor?: string): Promise<InboxListResponse> {
@@ -67,6 +77,11 @@ export async function getItem(id: string): Promise<InboxItemDto> {
 export async function getSourceUrl(id: string): Promise<string | null> {
   const body = (await requestJson(`/inbox/${id}/source-url`)) as { url: string | null };
   return body.url;
+}
+
+/** Permanently delete an inbox item, its extractions and its stored blobs. */
+export async function deleteInboxItem(id: string): Promise<void> {
+  return requestVoid(`/inbox/${id}`, { method: 'DELETE' });
 }
 
 /** Enqueue a fresh transcription attempt; returns the refreshed item. */

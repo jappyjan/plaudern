@@ -5,6 +5,7 @@ import {
   ExtractedPayloadEntity,
   GeocodeCacheEntity,
   InboxItemEntity,
+  InboxTombstoneEntity,
   PlaudSettingsEntity,
   SourcePayloadEntity,
   SpeakerOccurrenceEntity,
@@ -15,11 +16,13 @@ import { DropAuthTables1720000000001 } from './migrations/1720000000001-DropAuth
 import { CreatePlaudSettings1720000000002 } from './migrations/1720000000002-CreatePlaudSettings';
 import { GeocodeCache1720000000003 } from './migrations/1720000000003-GeocodeCache';
 import { CreateSpeakerTables1720000000004 } from './migrations/1720000000004-CreateSpeakerTables';
+import { InboxTombstones1720000000005 } from './migrations/1720000000005-InboxTombstones';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
   SourcePayloadEntity,
   ExtractedPayloadEntity,
+  InboxTombstoneEntity,
   PlaudSettingsEntity,
   GeocodeCacheEntity,
   VoiceProfileEntity,
@@ -34,6 +37,7 @@ export const ALL_MIGRATIONS = [
   CreatePlaudSettings1720000000002,
   GeocodeCache1720000000003,
   CreateSpeakerTables1720000000004,
+  InboxTombstones1720000000005,
 ];
 
 /**

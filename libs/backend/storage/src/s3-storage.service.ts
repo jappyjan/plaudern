@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Readable } from 'node:stream';
 import {
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
@@ -104,5 +105,12 @@ export class S3StorageService extends StorageService {
       new GetObjectCommand({ Bucket: this.bucket, Key: storageKey }),
     );
     return res.Body as Readable;
+  }
+
+  async deleteObject(storageKey: string): Promise<void> {
+    // S3 DeleteObject succeeds for missing keys, so this is naturally idempotent.
+    await this.client.send(
+      new DeleteObjectCommand({ Bucket: this.bucket, Key: storageKey }),
+    );
   }
 }

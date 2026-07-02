@@ -15,13 +15,14 @@ import {
   Spinner,
 } from '@heroui/react';
 import type { InboxItemDto } from '@plaudern/contracts';
-import { Link, useParams } from 'react-router-dom';
-import { getItem, getSourceUrl, retryTranscription } from '../lib/api';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { deleteInboxItem, getItem, getSourceUrl, retryTranscription } from '../lib/api';
 import { useInboxEvents } from '../hooks/useInboxEvents';
 import { usePlaceName } from '../hooks/usePlaceName';
 import { latestTranscription, TranscriptionChip } from '../components/TranscriptionChip';
 import { SpeakerTranscript } from '../components/SpeakerTranscript';
-import { BackIcon, LocationIcon } from '../components/icons';
+import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
+import { BackIcon, LocationIcon, TrashIcon } from '../components/icons';
 import { formatBytes, formatDateTime } from '../lib/format';
 import type { GeoLocation } from '../lib/geolocation';
 
@@ -31,12 +32,16 @@ const POLL_INTERVAL_MS = 10_000;
 
 export function ItemDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [item, setItem] = useState<InboxItemDto | null>(null);
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
   const [confirmRerunOpen, setConfirmRerunOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const refetch = useCallback(() => {
     if (!id) return;
@@ -66,7 +71,13 @@ export function ItemDetailPage() {
   // Live transcription progress via SSE (polling below is only a fallback).
   useInboxEvents({
     onEvent: (event) => {
-      if (event.type !== 'heartbeat' && event.itemId === id) refetch();
+      if (event.type === 'heartbeat' || event.itemId !== id) return;
+      // Deleted from another tab: leave instead of refetching into a 404.
+      if (event.type === 'item.deleted') {
+        navigate('/');
+        return;
+      }
+      refetch();
     },
     onReconnect: refetch,
   });
@@ -125,9 +136,33 @@ export function ItemDetailPage() {
   const device = item.metadata?.device as Record<string, string> | undefined;
   const tags = item.metadata?.tags as Record<string, unknown> | undefined;
 
+  const confirmDelete = async () => {
+    if (!id) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteInboxItem(id);
+      navigate('/');
+    } catch (cause) {
+      setDeleteError(cause instanceof Error ? cause.message : String(cause));
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
-      <BackLink />
+      <div className="flex items-center justify-between">
+        <BackLink />
+        <Button
+          color="danger"
+          variant="light"
+          size="sm"
+          startContent={<TrashIcon className="h-4 w-4" />}
+          onPress={() => setConfirmOpen(true)}
+        >
+          Delete
+        </Button>
+      </div>
 
       {sourceUrl && item.sourceType !== 'text' && (
         <Card>
@@ -286,6 +321,17 @@ export function ItemDetailPage() {
           </Modal>
         </>
       )}
+
+      <ConfirmDeleteModal
+        isOpen={confirmOpen}
+        isDeleting={deleting}
+        error={deleteError}
+        onConfirm={() => void confirmDelete()}
+        onClose={() => {
+          setConfirmOpen(false);
+          setDeleteError(null);
+        }}
+      />
     </div>
   );
 }

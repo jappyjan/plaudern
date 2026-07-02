@@ -58,7 +58,11 @@ export const extractedPayloadSchema = z.object({
 });
 export type ExtractedPayloadDto = z.infer<typeof extractedPayloadSchema>;
 
-/** The immutable inbox envelope — the source of truth. Never edited or deleted. */
+/**
+ * The inbox envelope — the source of truth. Never edited in place; items can
+ * only be deleted whole (row + blobs), leaving an idempotency tombstone so
+ * automated syncs don't re-import them.
+ */
 export const inboxItemSchema = z.object({
   id: z.string().uuid(),
   sourceType: sourceTypeSchema,
