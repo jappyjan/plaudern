@@ -12,6 +12,7 @@ import { useIngest } from '../hooks/useIngest';
 import { useRecorder } from '../hooks/useRecorder';
 import { getLocationOrNull, type GeoLocation } from '../lib/geolocation';
 import { formatDuration } from '../lib/format';
+import { AudioPlayer } from './AudioPlayer';
 import { StopIcon } from './icons';
 import { Waveform } from './Waveform';
 
@@ -166,7 +167,7 @@ export function RecordModal({ isOpen, onClose, onSaved }: RecordModalProps) {
           {saveFailed && previewUrl && (
             <>
               <p className="text-center text-sm text-danger">{error}</p>
-              <audio controls src={previewUrl} className="w-full" />
+              <AudioPlayer src={previewUrl} className="w-full" />
             </>
           )}
         </ModalBody>
