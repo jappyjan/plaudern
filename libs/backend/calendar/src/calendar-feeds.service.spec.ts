@@ -58,7 +58,7 @@ describe('CalendarFeedsService', () => {
     expect(feed.urlMasked).toBe('example.com/…/cal.ics');
     expect(feed.urlHash).toMatch(/^[0-9a-f]{64}$/);
     // Decrypts back to the normalized https URL with APP_ENCRYPTION_SECRET.
-    expect(decryptSecret(feed.urlEncrypted, 'app-secret')).toBe(
+    expect(decryptSecret(feed.urlEncrypted!, 'app-secret')).toBe(
       'https://example.com/secret-token/cal.ics',
     );
     // DTO never exposes the URL.
@@ -91,7 +91,7 @@ describe('CalendarFeedsService', () => {
     const updated = await service.update('user-1', feed.id, { url: 'https://example.com/other.ics' });
     expect(updated.lastSyncStatus).toBeNull();
     expect(updated.lastSyncEventCount).toBeNull();
-    expect(decryptSecret(updated.urlEncrypted, 'app-secret')).toBe(
+    expect(decryptSecret(updated.urlEncrypted!, 'app-secret')).toBe(
       'https://example.com/other.ics',
     );
   });
@@ -106,5 +106,47 @@ describe('CalendarFeedsService', () => {
     expect(updated.name).toBe('Renamed');
     expect(updated.enabled).toBe(false);
     expect(updated.urlEncrypted).toBe(feed.urlEncrypted);
+  });
+
+  it('creates one feed per selected calendar and stores an encrypted token', async () => {
+    const feeds = await service.createGoogleFeeds('user-1', {
+      email: 'me@corp.com',
+      refreshToken: 'refresh-123',
+      calendars: [
+        { id: 'primary', summary: 'Me', primary: true },
+        { id: 'team@group.calendar.google.com', summary: 'Team', primary: false },
+      ],
+    });
+    expect(feeds).toHaveLength(2);
+    expect(feeds[0].providerType).toBe('google');
+    expect(feeds[0].googleAccountEmail).toBe('me@corp.com');
+    expect(feeds[0].googleRefreshTokenEncrypted).not.toContain('refresh-123'); // encrypted
+    expect(service.getDecryptedRefreshToken(feeds[0])).toBe('refresh-123');
+    expect(feeds[0].urlMasked).toContain('me@corp.com'); // readable label
+  });
+
+  it('does not duplicate an already-subscribed google calendar', async () => {
+    const input = {
+      email: 'me@corp.com',
+      refreshToken: 'r',
+      calendars: [{ id: 'primary', summary: 'Me', primary: true }],
+    };
+    await service.createGoogleFeeds('user-1', input);
+    const second = await service.createGoogleFeeds('user-1', input);
+    expect(second).toHaveLength(0);
+  });
+
+  it('updateGoogleRefreshToken rewrites tokens for the account and clears errors', async () => {
+    const [feed] = await service.createGoogleFeeds('user-1', {
+      email: 'me@corp.com',
+      refreshToken: 'old',
+      calendars: [{ id: 'primary', summary: 'Me', primary: true }],
+    });
+    await service.recordSyncResult(feed.id, { status: 'error', error: 'boom' });
+    const count = await service.updateGoogleRefreshToken('user-1', 'me@corp.com', 'new');
+    expect(count).toBe(1);
+    const reloaded = await service.getEntity('user-1', feed.id);
+    expect(service.getDecryptedRefreshToken(reloaded)).toBe('new');
+    expect(reloaded.lastSyncStatus).toBeNull();
   });
 });
