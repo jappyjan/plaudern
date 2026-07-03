@@ -64,16 +64,19 @@ docker-compose.yml   Postgres + MinIO + Redis (+ api + web + speaker-id) for loc
   the self-hosted faster-whisper in the `apps/speaker-id-ml` sidecar. Tests
   override the provider with jest fakes.
 - **Speaker identification**: alongside transcription, audio enqueues a
-  diarization job against a pluggable `DiarizationProvider` (the self-hosted
-  pyannote sidecar in `apps/speaker-id-ml`). Detected voices
-  are matched by embedding similarity to persistent **voice profiles**, so the
-  same person is recognized across recordings; unknown voices land in a review
-  queue in the web app's contact book (`/contacts`), where they can be named,
-  confirmed, or merged. The transcript view renders speaker-attributed segments
-  by aligning transcript segment timestamps with the diarization at read
-  time. The pyannote models are gated on Hugging Face — see
-  `apps/speaker-id-ml/README.md` for the one-time `HUGGING_FACE_TOKEN` setup (required
-  for a default deploy).
+  diarization job. Two interchangeable backends (`SPEAKER_ID_PROVIDER`):
+  `pyannote` runs the self-hosted pyannote sidecar in `apps/speaker-id-ml`
+  (matches voices by embedding similarity); `pyannoteai` offloads diarization to
+  the hosted [pyannoteAI](https://pyannote.ai) API (matches via voiceprints,
+  auto-enrolling new speakers) so a low-powered box isn't burdened by the heavy
+  model. Either way, detected voices are linked to persistent **voice profiles**
+  so the same person is recognized across recordings; unknown voices land in a
+  review queue in the web app's contact book (`/contacts`), where they can be
+  named, confirmed, or merged. The transcript view renders speaker-attributed
+  segments by aligning transcript segment timestamps with the diarization at
+  read time. The pyannote path's models are gated on Hugging Face — see
+  `apps/speaker-id-ml/README.md` for the one-time `HUGGING_FACE_TOKEN` setup
+  (not needed when using `pyannoteai`).
 - **Capture metadata travels with the item**: `occurredAt` (when it was
   recorded) plus a free-form `metadata` field (GPS location, recording device,
   file tags) set at ingest time — the envelope is immutable, so metadata is
@@ -219,7 +222,8 @@ curl -s localhost:3000/api/v1/inbox
 
 Backend env: `apps/api/.env.example` (DB, S3/MinIO, Redis, sidecar). Key
 switches: `DATABASE_DRIVER` (postgres|sqlite), `STORAGE_DRIVER` (s3|memory),
-`QUEUE_DRIVER` (bull|inline), `SPEAKER_ID_PROVIDER` (pyannote|off).
+`QUEUE_DRIVER` (bull|inline), `SPEAKER_ID_PROVIDER` (pyannote|pyannoteai|off;
+`pyannoteai` needs `PYANNOTEAI_API_KEY`).
 
 Authentication env: `AUTH_RP_ID` (WebAuthn relying-party id = the domain the
 web app is served from; default `localhost`), `AUTH_ORIGINS` (comma-separated

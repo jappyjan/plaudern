@@ -72,12 +72,19 @@ services:
       PLAUD_POLL_INTERVAL_MS: ${PLAUD_POLL_INTERVAL_MS:-300000}
       # Calendar feeds: APP_ENCRYPTION_SECRET also encrypts the feed URLs.
       CALENDAR_POLL_INTERVAL_MS: ${CALENDAR_POLL_INTERVAL_MS:-900000}
-      # --- Speaker identification (pyannote sidecar) ---
-      # pyannote = the speaker-id sidecar (default); off = disabled
+      # --- Speaker diarization ---
+      # pyannote  = local speaker-id sidecar (default; embeddings + cosine match)
+      # pyannoteai = hosted pyannoteAI API (offloads the heavy model; set
+      #              PYANNOTEAI_API_KEY and LOAD_DIARIZATION=false on the sidecar)
+      # off        = disabled
       SPEAKER_ID_PROVIDER: ${SPEAKER_ID_PROVIDER:-pyannote}
       SPEAKER_ID_URL: http://speaker-id:8000
       SPEAKER_ID_TOKEN: ${SPEAKER_ID_TOKEN:-change-me}
       SPEAKER_MATCH_THRESHOLD: ${SPEAKER_MATCH_THRESHOLD:-0.65}
+      # Hosted pyannoteAI (only used when SPEAKER_ID_PROVIDER=pyannoteai). Audio
+      # is uploaded to pyannoteAI directly, so storage stays private.
+      PYANNOTEAI_API_KEY: ${PYANNOTEAI_API_KEY:-}
+      PYANNOTEAI_MODEL: ${PYANNOTEAI_MODEL:-precision-2}
       PORT: 3000
     ports:
       - '3000:3000'
@@ -91,6 +98,9 @@ services:
       context: apps/speaker-id-ml
     restart: unless-stopped
     environment:
+      # Set LOAD_DIARIZATION=false when diarization runs on the pyannoteAI API,
+      # so the sidecar skips the heavy pyannote model (and HUGGING_FACE_TOKEN).
+      LOAD_DIARIZATION: ${LOAD_DIARIZATION:-true}
       HUGGING_FACE_TOKEN: ${HUGGING_FACE_TOKEN:-}
       SPEAKER_ID_TOKEN: ${SPEAKER_ID_TOKEN:-change-me}
       WHISPER_MODEL: ${WHISPER_MODEL:-small}

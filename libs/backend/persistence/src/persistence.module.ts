@@ -27,6 +27,7 @@ import { CreateCalendarTables1720000000006 } from './migrations/1720000000006-Cr
 import { CalendarFeedAutoLink1720000000007 } from './migrations/1720000000007-CalendarFeedAutoLink';
 import { CreateAuthTables1720000000008 } from './migrations/1720000000008-CreateAuthTables';
 import { DeSentinelizeOwner1720000000009 } from './migrations/1720000000009-DeSentinelizeOwner';
+import { PyannoteAiVoiceprints1720000000010 } from './migrations/1720000000010-PyannoteAiVoiceprints';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -58,6 +59,7 @@ export const ALL_MIGRATIONS = [
   CalendarFeedAutoLink1720000000007,
   CreateAuthTables1720000000008,
   DeSentinelizeOwner1720000000009,
+  PyannoteAiVoiceprints1720000000010,
 ];
 
 /**

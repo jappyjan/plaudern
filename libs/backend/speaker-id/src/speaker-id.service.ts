@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InboxService } from '@plaudern/inbox';
-import { DIARIZATION_PROVIDER, type DiarizationProvider } from './diarization.provider';
+import { SPEAKER_IDENTIFIER, type SpeakerIdentifier } from './speaker-identifier';
 import { DIARIZATION_QUEUE, type DiarizationQueue } from './diarization.job';
 
 export interface EnqueueDiarizationParams {
@@ -21,8 +21,8 @@ export class SpeakerIdService {
   constructor(
     config: ConfigService,
     private readonly inbox: InboxService,
-    @Inject(DIARIZATION_PROVIDER)
-    private readonly provider: DiarizationProvider,
+    @Inject(SPEAKER_IDENTIFIER)
+    private readonly identifier: SpeakerIdentifier,
     @Inject(DIARIZATION_QUEUE)
     private readonly queue: DiarizationQueue,
   ) {
@@ -34,7 +34,7 @@ export class SpeakerIdService {
     params: EnqueueDiarizationParams,
   ): Promise<string | null> {
     if (this.disabled) return null;
-    const extraction = await this.inbox.addExtraction(inboxItemId, 'diarization', this.provider.id);
+    const extraction = await this.inbox.addExtraction(inboxItemId, 'diarization', this.identifier.id);
     await this.queue.enqueue({
       extractionId: extraction.id,
       inboxItemId,

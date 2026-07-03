@@ -1,15 +1,14 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InboxService } from '@plaudern/inbox';
-import { StorageService } from '@plaudern/storage';
-import { DIARIZATION_PROVIDER, type DiarizationProvider } from './diarization.provider';
 import type { DiarizationJob } from './diarization.job';
-import { ProfileMatcherService } from './profile-matcher.service';
+import { SPEAKER_IDENTIFIER, type SpeakerIdentifier } from './speaker-identifier';
 
 /**
- * Executes a single diarization job: hand the provider a presigned audio URL,
- * link the returned speakers to voice profiles, and write the speaker-labeled
- * segments onto the append-only extraction row. Shared by the inline and
- * BullMQ queues.
+ * Executes a single diarization job: delegate to the configured speaker
+ * identifier (local embeddings or hosted voiceprints), which diarizes the
+ * recording and links speakers to voice profiles, then write the
+ * speaker-labeled segments onto the append-only extraction row. Shared by the
+ * inline and BullMQ queues.
  */
 @Injectable()
 export class DiarizationProcessor {
@@ -17,10 +16,8 @@ export class DiarizationProcessor {
 
   constructor(
     private readonly inbox: InboxService,
-    private readonly storage: StorageService,
-    private readonly matcher: ProfileMatcherService,
-    @Inject(DIARIZATION_PROVIDER)
-    private readonly provider: DiarizationProvider,
+    @Inject(SPEAKER_IDENTIFIER)
+    private readonly identifier: SpeakerIdentifier,
   ) {}
 
   async process(job: DiarizationJob): Promise<void> {
@@ -30,23 +27,21 @@ export class DiarizationProcessor {
       // matched within — and only within — that user's contact book.
       const item = await this.inbox.getItemById(job.inboxItemId);
       if (!item) throw new Error('inbox item no longer exists');
-      // Presign at run time (not enqueue time) so queue retries never hold an
-      // expired URL. Internal endpoint: the sidecar sits on the server network.
-      const audioUrl = await this.storage.createInternalPresignedGetUrl(job.storageKey);
-      const result = await this.provider.diarize({ audioUrl, contentType: job.contentType });
-      await this.matcher.assignSpeakers(
-        item.userId,
-        job.inboxItemId,
-        job.extractionId,
-        result.speakers,
-      );
+      // The identifier presigns/uploads the audio at run time (not enqueue
+      // time) so queue retries never hold an expired URL.
+      const result = await this.identifier.identify({
+        userId: item.userId,
+        inboxItemId: job.inboxItemId,
+        extractionId: job.extractionId,
+        storageKey: job.storageKey,
+        contentType: job.contentType,
+      });
       await this.inbox.completeExtraction(job.extractionId, {
         status: 'succeeded',
         segments: result.segments.map((s) => ({ start: s.start, end: s.end, speaker: s.speaker })),
       });
-      this.logger.log(
-        `diarized inbox item ${job.inboxItemId}: ${result.speakers.length} speaker(s)`,
-      );
+      const speakerCount = new Set(result.segments.map((s) => s.speaker)).size;
+      this.logger.log(`diarized inbox item ${job.inboxItemId}: ${speakerCount} speaker(s)`);
     } catch (err) {
       const message = (err as Error).message;
       this.logger.error(`diarization failed for ${job.inboxItemId}: ${message}`);

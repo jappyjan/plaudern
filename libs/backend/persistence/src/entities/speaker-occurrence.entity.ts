@@ -49,9 +49,13 @@ export class SpeakerOccurrenceEntity {
   @Column({ type: 'varchar' })
   label!: string;
 
-  /** L2-normalized embedding of this speaker in this recording. */
-  @Column({ type: 'simple-json' })
-  embedding!: number[];
+  /**
+   * L2-normalized embedding of this speaker in this recording.
+   * Null for occurrences produced by the pyannoteAI (voiceprint) path, which
+   * does not expose embeddings.
+   */
+  @Column({ type: 'simple-json', nullable: true })
+  embedding!: number[] | null;
 
   @Column({ type: 'float', default: 0 })
   speakingSeconds!: number;

@@ -90,7 +90,11 @@ export class VoiceProfilesService {
         { voiceProfileId: source.id },
         { voiceProfileId: target.id },
       );
-      if (target.centroid.length === source.centroid.length) {
+      if (
+        target.centroid &&
+        source.centroid &&
+        target.centroid.length === source.centroid.length
+      ) {
         target.centroid = mergeCentroids(
           target.centroid,
           target.embeddingCount,

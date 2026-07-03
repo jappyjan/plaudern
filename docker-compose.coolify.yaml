@@ -70,13 +70,22 @@ services:
       - PLAUD_POLL_INTERVAL_MS=${PLAUD_POLL_INTERVAL_MS:-300000}
       # Calendar feeds: the same secret encrypts subscribed feed URLs.
       - CALENDAR_POLL_INTERVAL_MS=${CALENDAR_POLL_INTERVAL_MS:-900000}
-      # Speaker identification runs on the speaker-id sidecar by default
-      # (requires HUGGING_FACE_TOKEN there — see apps/speaker-id-ml/README.md). Set
-      # SPEAKER_ID_PROVIDER=off and redeploy to disable it (fixed at boot,
-      # not switchable live).
-      - SPEAKER_ID_PROVIDER=${SPEAKER_ID_PROVIDER:-pyannote}
+      # Speaker diarization. Default here is the hosted pyannoteAI API so the box
+      # isn't burdened by the heavy local pyannote model — fill in
+      # PYANNOTEAI_API_KEY (get one at pyannote.ai). Alternatives: pyannote = run
+      # the full local sidecar instead (also set the sidecar's
+      # LOAD_DIARIZATION=true and HUGGING_FACE_TOKEN); off = disabled. Fixed at
+      # boot, not switchable live.
+      - SPEAKER_ID_PROVIDER=${SPEAKER_ID_PROVIDER:-pyannoteai}
+      # Hosted pyannoteAI (used when SPEAKER_ID_PROVIDER=pyannoteai). Audio is
+      # uploaded to pyannoteAI directly (storage stays private); voiceprints for
+      # new speakers are enrolled from clips the sidecar slices.
+      - PYANNOTEAI_API_KEY=${PYANNOTEAI_API_KEY}
+      - PYANNOTEAI_MODEL=${PYANNOTEAI_MODEL:-precision-2}
+      # Sidecar: transcription (always) + voiceprint clip extraction (pyannoteai mode).
       - SPEAKER_ID_URL=http://speaker-id:8000
       - SPEAKER_ID_TOKEN=${SERVICE_PASSWORD_SPEAKERID}
+      # Cosine threshold for the local pyannote path only (ignored by pyannoteai).
       - SPEAKER_MATCH_THRESHOLD=${SPEAKER_MATCH_THRESHOLD:-0.65}
     depends_on:
       postgres:
@@ -95,16 +104,20 @@ services:
       timeout: 5s
       retries: 10
 
-  # ML sidecar: speaker diarization + voice embeddings (pyannote) and
-  # transcription (faster-whisper). Internal-only. HUGGING_FACE_TOKEN is REQUIRED for a
-  # default deploy: the pyannote models are gated on Hugging Face — create a
-  # token and accept the model terms first (apps/speaker-id-ml/README.md).
+  # ML sidecar: transcription (faster-whisper) + voiceprint clip extraction, and
+  # optionally local diarization (pyannote). Internal-only. With the default
+  # pyannoteai provider, LOAD_DIARIZATION defaults to false here: the sidecar
+  # skips the ~1.5 GB gated pyannote model and HUGGING_FACE_TOKEN is not needed.
+  # To run the full local sidecar instead, set SPEAKER_ID_PROVIDER=pyannote,
+  # LOAD_DIARIZATION=true and provide HUGGING_FACE_TOKEN (accept the model terms
+  # first — see apps/speaker-id-ml/README.md).
   speaker-id:
     build:
       context: apps/speaker-id-ml
     restart: unless-stopped
     environment:
-      - HUGGING_FACE_TOKEN=${HUGGING_FACE_TOKEN}
+      - LOAD_DIARIZATION=${LOAD_DIARIZATION:-false}
+      - HUGGING_FACE_TOKEN=${HUGGING_FACE_TOKEN:-}
       - SPEAKER_ID_TOKEN=${SERVICE_PASSWORD_SPEAKERID}
       - WHISPER_MODEL=${WHISPER_MODEL:-small}
     volumes:
