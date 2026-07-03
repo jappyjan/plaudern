@@ -101,6 +101,9 @@ importers:
       '@plaudern/transcription':
         specifier: workspace:*
         version: link:../../libs/backend/transcription
+      '@simplewebauthn/server':
+        specifier: 13.3.2
+        version: 13.3.2
       bullmq:
         specifier: 5.79.2
         version: 5.79.2
