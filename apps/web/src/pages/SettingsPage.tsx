@@ -13,6 +13,7 @@ import {
   deleteCalendarFeed,
   getPlaudSettings,
   listCalendarFeeds,
+  purgeAllData,
   testCalendarFeed,
   testPlaudConnection,
   triggerCalendarSync,
@@ -21,6 +22,7 @@ import {
   updatePlaudSettings,
 } from '../lib/api';
 import { formatDateTime } from '../lib/format';
+import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 
 const REGIONS: { key: PlaudRegion; label: string }[] = [
   { key: 'us', label: 'US (api.plaud.ai)' },
@@ -244,6 +246,104 @@ export function SettingsPage() {
       )}
 
       <CalendarFeedsSection />
+
+      <DangerZoneSection
+        plaudEnabled={settings?.enabled ?? false}
+        onPurged={() => void refresh()}
+      />
+    </div>
+  );
+}
+
+/**
+ * Destructive per-user actions, fenced off visually. "Purge all data" wipes
+ * every recording and all recording-derived data, then — if Plaud sync is
+ * enabled — kicks off a re-sync that reloads the recordings and triggers a
+ * fresh round of processing. Primarily a testing aid.
+ */
+function DangerZoneSection({
+  plaudEnabled,
+  onPurged,
+}: {
+  plaudEnabled: boolean;
+  onPurged: () => void;
+}) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [purging, setPurging] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+
+  const purge = async () => {
+    setPurging(true);
+    setError(null);
+    setResult(null);
+    try {
+      const { deletedItems } = await purgeAllData();
+      let message = `Purged ${deletedItems} recording${deletedItems === 1 ? '' : 's'} and all derived data.`;
+      // Reload from Plaud so a fresh round of processing fires. Only meaningful
+      // when sync is enabled; the endpoint 400s otherwise, so guard on it.
+      if (plaudEnabled) {
+        await triggerPlaudSync();
+        message += ' Plaud re-sync started — recordings will reappear as they import.';
+      }
+      setResult(message);
+      setConfirmOpen(false);
+      onPurged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setPurging(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4 rounded-medium border border-danger-200 bg-danger-50/40 p-4">
+      <div>
+        <h2 className="text-lg font-semibold text-danger">Danger zone</h2>
+        <p className="text-sm text-default-500">
+          Permanently delete every recording, transcript, speaker and calendar link in your account.
+          {plaudEnabled
+            ? ' A Plaud re-sync then reloads the recordings and triggers a fresh round of processing.'
+            : ' Enable Plaud sync above first if you want them reloaded afterwards.'}{' '}
+          This cannot be undone.
+        </p>
+      </div>
+
+      {result && (
+        <div className="rounded-medium bg-success-50 p-3 text-sm text-success">{result}</div>
+      )}
+      {error && !confirmOpen && (
+        <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">{error}</div>
+      )}
+
+      <Button
+        color="danger"
+        variant="flat"
+        className="self-start"
+        onPress={() => {
+          setError(null);
+          setResult(null);
+          setConfirmOpen(true);
+        }}
+      >
+        Purge all data
+      </Button>
+
+      <ConfirmDeleteModal
+        isOpen={confirmOpen}
+        title="Purge all data?"
+        message={
+          'This permanently deletes every recording, transcript, speaker profile and calendar link in your account' +
+          (plaudEnabled
+            ? ', then re-syncs from Plaud to reload and reprocess them.'
+            : '. Nothing will be reloaded unless Plaud sync is enabled.') +
+          ' This cannot be undone.'
+        }
+        isDeleting={purging}
+        error={error}
+        onConfirm={() => void purge()}
+        onClose={() => setConfirmOpen(false)}
+      />
     </div>
   );
 }
