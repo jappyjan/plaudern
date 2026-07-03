@@ -48,7 +48,7 @@ describe('CalendarFeedsService', () => {
   });
 
   it('creates a feed with an encrypted, masked, hashed URL', async () => {
-    const feed = await service.create({
+    const feed = await service.create('user-1', {
       name: 'Work',
       url: 'webcal://example.com/secret-token/cal.ics',
       enabled: true,
@@ -69,26 +69,26 @@ describe('CalendarFeedsService', () => {
   it('rejects when no secret is configured', async () => {
     secretValue = undefined;
     await expect(
-      service.create({ name: 'Work', url: 'https://example.com/cal.ics', enabled: true }),
+      service.create('user-1', { name: 'Work', url: 'https://example.com/cal.ics', enabled: true }),
     ).rejects.toThrow(/SECRET/);
   });
 
   it('rejects a duplicate URL (webcal and https forms collide)', async () => {
-    await service.create({ name: 'Work', url: 'https://example.com/cal.ics', enabled: true });
+    await service.create('user-1', { name: 'Work', url: 'https://example.com/cal.ics', enabled: true });
     await expect(
-      service.create({ name: 'Copy', url: 'webcal://example.com/cal.ics', enabled: true }),
+      service.create('user-1', { name: 'Copy', url: 'webcal://example.com/cal.ics', enabled: true }),
     ).rejects.toThrow('already subscribed as "Work"');
   });
 
   it('updating the URL resets sync status', async () => {
-    const feed = await service.create({
+    const feed = await service.create('user-1', {
       name: 'Work',
       url: 'https://example.com/cal.ics',
       enabled: true,
     });
     await service.recordSyncResult(feed.id, { status: 'ok', eventCount: 5 });
 
-    const updated = await service.update(feed.id, { url: 'https://example.com/other.ics' });
+    const updated = await service.update('user-1', feed.id, { url: 'https://example.com/other.ics' });
     expect(updated.lastSyncStatus).toBeNull();
     expect(updated.lastSyncEventCount).toBeNull();
     expect(decryptSecret(updated.urlEncrypted, 'app-secret')).toBe(
@@ -97,12 +97,12 @@ describe('CalendarFeedsService', () => {
   });
 
   it('updates without url keep the stored URL', async () => {
-    const feed = await service.create({
+    const feed = await service.create('user-1', {
       name: 'Work',
       url: 'https://example.com/cal.ics',
       enabled: true,
     });
-    const updated = await service.update(feed.id, { name: 'Renamed', enabled: false });
+    const updated = await service.update('user-1', feed.id, { name: 'Renamed', enabled: false });
     expect(updated.name).toBe('Renamed');
     expect(updated.enabled).toBe(false);
     expect(updated.urlEncrypted).toBe(feed.urlEncrypted);

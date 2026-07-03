@@ -1,6 +1,6 @@
 import { Controller, Param, Post } from '@nestjs/common';
 import type { InboxItemDto } from '@plaudern/contracts';
-import { DEFAULT_USER_ID } from '@plaudern/persistence';
+import { CurrentUser, type AuthenticatedUser } from '@plaudern/auth';
 import { InboxService, toInboxItemDto } from '@plaudern/inbox';
 import { TranscriptionService } from './transcription.service';
 
@@ -17,9 +17,12 @@ export class TranscriptionController {
   ) {}
 
   @Post(':id/transcription/retry')
-  async retry(@Param('id') id: string): Promise<InboxItemDto> {
-    await this.transcription.retryTranscription(id);
-    const item = await this.inbox.getItem(DEFAULT_USER_ID, id);
+  async retry(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ): Promise<InboxItemDto> {
+    await this.transcription.retryTranscription(user.id, id);
+    const item = await this.inbox.getItem(user.id, id);
     return toInboxItemDto(item);
   }
 }

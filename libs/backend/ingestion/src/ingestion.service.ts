@@ -6,7 +6,6 @@ import type {
   InboxItemDto,
   SourceType,
 } from '@plaudern/contracts';
-import { DEFAULT_USER_ID } from '@plaudern/persistence';
 import { InboxService, toInboxItemDto } from '@plaudern/inbox';
 import { StorageService } from '@plaudern/storage';
 import { AdapterRegistry, SOURCE_ADAPTERS, type SourceAdapter } from './source-adapter';
@@ -26,6 +25,9 @@ const STALE_EXTRACTION_MS = 15 * 60 * 1000;
  *   init  -> create immutable envelope + pending payload, return presigned PUT
  *   (client PUTs bytes directly to storage)
  *   commit -> verify upload, mark committed, run the adapter's onCommitted hook.
+ *
+ * Every entry point takes the acting user; items, idempotency keys and
+ * storage keys are all scoped to that user.
  */
 @Injectable()
 export class IngestionService {
@@ -39,11 +41,11 @@ export class IngestionService {
     this.registry = new AdapterRegistry(adapters);
   }
 
-  async init(req: IngestInitRequest): Promise<IngestInitResponse> {
+  async init(userId: string, req: IngestInitRequest): Promise<IngestInitResponse> {
     const adapter = this.registry.get(req.sourceType);
     adapter.validateInit(req);
 
-    const existing = await this.inbox.findByIdempotencyKey(DEFAULT_USER_ID, req.idempotencyKey);
+    const existing = await this.inbox.findByIdempotencyKey(userId, req.idempotencyKey);
     if (existing?.source) {
       const uploadUrl = await this.storage.createPresignedPutUrl(
         existing.source.storageKey,
@@ -57,13 +59,9 @@ export class IngestionService {
       };
     }
 
-    const storageKey = buildSourceStorageKey(
-      DEFAULT_USER_ID,
-      req.contentType,
-      req.originalFilename,
-    );
+    const storageKey = buildSourceStorageKey(userId, req.contentType, req.originalFilename);
     const item = await this.inbox.createPendingItem({
-      userId: DEFAULT_USER_ID,
+      userId,
       deviceId: null,
       sourceType: req.sourceType,
       occurredAt: req.occurredAt,
@@ -80,8 +78,8 @@ export class IngestionService {
     return { inboxItemId: item.id, storageKey, uploadUrl, alreadyCommitted: false };
   }
 
-  async commit(inboxItemId: string): Promise<InboxItemDto> {
-    const item = await this.inbox.getItem(DEFAULT_USER_ID, inboxItemId);
+  async commit(userId: string, inboxItemId: string): Promise<InboxItemDto> {
+    const item = await this.inbox.getItem(userId, inboxItemId);
     if (!item.source) throw new BadRequestException('item has no source payload');
 
     if (item.source.uploadStatus === 'committed') {
@@ -93,12 +91,12 @@ export class IngestionService {
       throw new BadRequestException('uploaded object not found; PUT the file before committing');
     }
 
-    await this.inbox.markSourceCommitted(inboxItemId, head.byteSize);
+    await this.inbox.markSourceCommitted(userId, inboxItemId, head.byteSize);
 
-    const committed = await this.inbox.getItem(DEFAULT_USER_ID, inboxItemId);
+    const committed = await this.inbox.getItem(userId, inboxItemId);
     await this.registry.get(committed.sourceType).onCommitted(committed);
 
-    const finalItem = await this.inbox.getItem(DEFAULT_USER_ID, inboxItemId);
+    const finalItem = await this.inbox.getItem(userId, inboxItemId);
     return toInboxItemDto(finalItem);
   }
 
@@ -119,8 +117,8 @@ export class IngestionService {
    * because a sibling diarization row is stuck). So we reclaim stale rows and
    * replay, while still refusing when work is actually in progress.
    */
-  async reprocess(inboxItemId: string): Promise<InboxItemDto> {
-    const item = await this.inbox.getItem(DEFAULT_USER_ID, inboxItemId);
+  async reprocess(userId: string, inboxItemId: string): Promise<InboxItemDto> {
+    const item = await this.inbox.getItem(userId, inboxItemId);
     if (!item.source || item.source.uploadStatus !== 'committed') {
       throw new BadRequestException('item has no committed source to reprocess');
     }
@@ -142,18 +140,18 @@ export class IngestionService {
       });
     }
     await this.registry.get(item.sourceType).onCommitted(item);
-    return toInboxItemDto(await this.inbox.getItem(DEFAULT_USER_ID, inboxItemId));
+    return toInboxItemDto(await this.inbox.getItem(userId, inboxItemId));
   }
 
-  async ingestText(req: IngestTextRequest): Promise<InboxItemDto> {
-    const existing = await this.inbox.findByIdempotencyKey(DEFAULT_USER_ID, req.idempotencyKey);
-    if (existing) return toInboxItemDto(await this.inbox.getItem(DEFAULT_USER_ID, existing.id));
+  async ingestText(userId: string, req: IngestTextRequest): Promise<InboxItemDto> {
+    const existing = await this.inbox.findByIdempotencyKey(userId, req.idempotencyKey);
+    if (existing) return toInboxItemDto(await this.inbox.getItem(userId, existing.id));
 
-    const storageKey = buildSourceStorageKey(DEFAULT_USER_ID, 'text/plain');
+    const storageKey = buildSourceStorageKey(userId, 'text/plain');
     await this.storage.putObject(storageKey, req.text, 'text/plain');
 
     const item = await this.inbox.createCommittedItem({
-      userId: DEFAULT_USER_ID,
+      userId,
       deviceId: null,
       sourceType: 'text',
       occurredAt: req.occurredAt,
@@ -165,28 +163,28 @@ export class IngestionService {
     });
 
     await this.registry.get('text').onCommitted(item);
-    return toInboxItemDto(await this.inbox.getItem(DEFAULT_USER_ID, item.id));
+    return toInboxItemDto(await this.inbox.getItem(userId, item.id));
   }
 
   /**
    * Server-side single-shot ingestion for blobs the backend already holds
    * (e.g. recordings pulled from the Plaud cloud) — no presigned round-trip.
    */
-  async ingestBlob(params: IngestBlobParams): Promise<InboxItemDto> {
+  async ingestBlob(userId: string, params: IngestBlobParams): Promise<InboxItemDto> {
     const adapter = this.registry.get(params.sourceType);
 
-    const existing = await this.inbox.findByIdempotencyKey(DEFAULT_USER_ID, params.idempotencyKey);
-    if (existing) return toInboxItemDto(await this.inbox.getItem(DEFAULT_USER_ID, existing.id));
+    const existing = await this.inbox.findByIdempotencyKey(userId, params.idempotencyKey);
+    if (existing) return toInboxItemDto(await this.inbox.getItem(userId, existing.id));
 
     const storageKey = buildSourceStorageKey(
-      DEFAULT_USER_ID,
+      userId,
       params.contentType,
       params.originalFilename ?? undefined,
     );
     await this.storage.putObject(storageKey, params.body, params.contentType);
 
     const item = await this.inbox.createCommittedItem({
-      userId: DEFAULT_USER_ID,
+      userId,
       deviceId: null,
       sourceType: params.sourceType,
       occurredAt: params.occurredAt,
@@ -198,8 +196,8 @@ export class IngestionService {
       metadata: params.metadata ?? null,
     });
 
-    await adapter.onCommitted(await this.inbox.getItem(DEFAULT_USER_ID, item.id));
-    return toInboxItemDto(await this.inbox.getItem(DEFAULT_USER_ID, item.id));
+    await adapter.onCommitted(await this.inbox.getItem(userId, item.id));
+    return toInboxItemDto(await this.inbox.getItem(userId, item.id));
   }
 }
 

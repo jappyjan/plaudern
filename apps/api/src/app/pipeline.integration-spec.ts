@@ -38,6 +38,7 @@ describe('Ingestion pipeline (integration, real Postgres + MinIO + Redis)', () =
     process.env.QUEUE_DRIVER = 'bull';
     process.env.REDIS_URL = infra.redisUrl;
     process.env.GEOCODER = 'stub';
+    process.env.AUTH_DISABLED = 'true'; // single-user mode — auth has its own spec
 
     const moduleRef = await Test.createTestingModule({
       imports: [(await import('./app.module')).AppModule],
