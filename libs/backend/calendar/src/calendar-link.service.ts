@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Between, In, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import {
   CalendarEventEntity,
+  CalendarFeedEntity,
   DEFAULT_USER_ID,
   InboxItemEntity,
   RecordingEventLinkEntity,
@@ -34,6 +35,8 @@ export class CalendarLinkService {
     private readonly links: Repository<RecordingEventLinkEntity>,
     @InjectRepository(CalendarEventEntity)
     private readonly events: Repository<CalendarEventEntity>,
+    @InjectRepository(CalendarFeedEntity)
+    private readonly feeds: Repository<CalendarFeedEntity>,
     @InjectRepository(InboxItemEntity)
     private readonly items: Repository<InboxItemEntity>,
   ) {}
@@ -61,6 +64,15 @@ export class CalendarLinkService {
       },
     });
 
+    // Feeds opted out of auto-linking (e.g. a partner's shared calendar) don't
+    // produce new desired pairs, but the toggle only governs *future* linking:
+    // existing auto links on those feeds are left untouched (see stale pass).
+    const noAutoLink = new Set(
+      (await this.feeds.find({ where: { userId: DEFAULT_USER_ID, autoLink: false }, select: { id: true } })).map(
+        (feed) => feed.id,
+      ),
+    );
+
     // In-memory join — fine at single-user scale (bounded by the sync window).
     const desired = new Set<string>();
     for (const item of items) {
@@ -68,6 +80,7 @@ export class CalendarLinkService {
       const duration = recordingDurationMs(item.metadata) ?? 0;
       const recEnd = new Date(Date.parse(recStart) + duration).toISOString();
       for (const event of events) {
+        if (noAutoLink.has(event.feedId)) continue;
         if (overlaps(recStart, recEnd, event.startAt, event.endAt)) {
           desired.add(pairKey(item.id, event.id));
         }
@@ -86,6 +99,7 @@ export class CalendarLinkService {
     for (const link of existing) {
       existingByPair.set(pairKey(link.inboxItemId, link.calendarEventId), link);
     }
+    const feedByEventId = new Map(events.map((event) => [event.id, event.feedId]));
 
     let inserted = 0;
     for (const pair of desired) {
@@ -109,6 +123,9 @@ export class CalendarLinkService {
     for (const link of existingByPair.values()) {
       if (link.origin !== 'auto' || link.status !== 'active') continue;
       if (desired.has(pairKey(link.inboxItemId, link.calendarEventId))) continue;
+      // A feed that turned auto-link off keeps its already-linked recordings;
+      // the toggle only stops new links, it never retroactively unlinks.
+      if (noAutoLink.has(feedByEventId.get(link.calendarEventId) ?? '')) continue;
       await this.links.delete({ id: link.id });
       removed += 1;
     }
