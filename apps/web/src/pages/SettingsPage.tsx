@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Input, Select, SelectItem, Spinner, Switch } from '@heroui/react';
+import { Button, Checkbox, Input, Select, SelectItem, Spinner, Switch } from '@heroui/react';
 import {
   SUMMARY_LANGUAGE_LABELS,
   summaryLanguagePreferenceSchema,
   type CalendarFeedsResponse,
+  type GooglePendingResponse,
   type PasskeyDto,
   type PlaudRegion,
   type PlaudSettingsDto,
@@ -13,11 +14,15 @@ import { useAuth } from '../auth/AuthContext';
 import { addPasskey, deletePasskey, listPasskeys } from '../lib/auth';
 import {
   createCalendarFeed,
+  createGoogleFeeds,
   deleteCalendarFeed,
+  getGoogleAuthUrl,
+  getGooglePending,
   getPlaudSettings,
   getSummarizationSettings,
   listCalendarFeeds,
   purgeAllData,
+  reconnectGoogle,
   testCalendarFeed,
   testPlaudConnection,
   triggerCalendarSync,
@@ -462,6 +467,11 @@ function CalendarFeedsSection() {
     calendarName: string | null;
   } | null>(null);
 
+  const [pending, setPending] = useState<GooglePendingResponse | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [reconnectMode, setReconnectMode] = useState(false);
+
   const refresh = useCallback(async () => {
     try {
       setFeeds(await listCalendarFeeds());
@@ -474,6 +484,22 @@ function CalendarFeedsSection() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('googlePending');
+    if (!id) return;
+    setPendingId(id);
+    const isReconnect = sessionStorage.getItem('googleReconnect') === '1';
+    setReconnectMode(isReconnect);
+    sessionStorage.removeItem('googleReconnect');
+    getGooglePending(id)
+      .then((p) => {
+        setPending(p);
+        setChecked(new Set(p.calendars.filter((c) => c.primary).map((c) => c.id)));
+      })
+      .catch((cause) => setActionError(cause instanceof Error ? cause.message : String(cause)));
+  }, []);
 
   // Live feedback while a sync runs in the background.
   useEffect(() => {
@@ -557,6 +583,41 @@ function CalendarFeedsSection() {
     }
   };
 
+  const connectGoogle = async () => {
+    setActionError(null);
+    try {
+      const { url } = await getGoogleAuthUrl();
+      window.location.href = url;
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  const clearPendingParam = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('googlePending');
+    window.history.replaceState({}, '', url.toString());
+  };
+
+  const confirmGoogle = async () => {
+    if (!pendingId) return;
+    setActionError(null);
+    try {
+      if (reconnectMode) {
+        await reconnectGoogle(pendingId);
+      } else {
+        await createGoogleFeeds(pendingId, [...checked]);
+      }
+      setPending(null);
+      setPendingId(null);
+      clearPendingParam();
+      await refresh();
+      setTimeout(() => void refresh(), 1500);
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4 border-t border-default-200 pt-6">
       <div>
@@ -570,6 +631,40 @@ function CalendarFeedsSection() {
       {loadError && (
         <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">
           Failed to load calendar feeds: {loadError}
+        </div>
+      )}
+
+      {pending && (
+        <div className="flex flex-col gap-2 rounded-medium bg-default-50 p-3">
+          <p className="text-sm font-medium">Connected as {pending.email}</p>
+          {reconnectMode ? (
+            <p className="text-sm text-default-500">Reconnect this account to resume syncing.</p>
+          ) : (
+            pending.calendars.map((c) => (
+              <label key={c.id} className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  isSelected={checked.has(c.id)}
+                  onValueChange={(on) =>
+                    setChecked((prev) => {
+                      const next = new Set(prev);
+                      if (on) next.add(c.id);
+                      else next.delete(c.id);
+                      return next;
+                    })
+                  }
+                />
+                {c.summary}
+              </label>
+            ))
+          )}
+          <Button
+            color="primary"
+            className="self-start"
+            isDisabled={!reconnectMode && checked.size === 0}
+            onPress={confirmGoogle}
+          >
+            {reconnectMode ? 'Reconnect' : 'Add selected calendars'}
+          </Button>
         </div>
       )}
 
@@ -589,6 +684,19 @@ function CalendarFeedsSection() {
                     onValueChange={(enabled) => void toggle(feed.id, enabled)}
                     aria-label={`Enable ${feed.name}`}
                   />
+                  {feed.providerType === 'google' && feed.lastSyncStatus === 'error' && (
+                    <Button
+                      size="sm"
+                      variant="flat"
+                      color="warning"
+                      onPress={() => {
+                        sessionStorage.setItem('googleReconnect', '1');
+                        void connectGoogle();
+                      }}
+                    >
+                      Reconnect
+                    </Button>
+                  )}
                   <Button size="sm" variant="light" color="danger" onPress={() => void remove(feed.id)}>
                     Remove
                   </Button>
@@ -673,6 +781,18 @@ function CalendarFeedsSection() {
           </Button>
         </div>
       </div>
+
+      {feeds?.googleConfigured && (
+        <div className="flex flex-col gap-2 border-t border-default-200 pt-4">
+          <p className="text-sm text-default-500">
+            Or connect a Google account directly — works when ICS export is disabled by your
+            organization.
+          </p>
+          <Button variant="flat" className="self-start" onPress={connectGoogle}>
+            Connect Google Calendar
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
