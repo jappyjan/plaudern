@@ -22,35 +22,10 @@ async function bootAttempt(): Promise<void> {
 
 describe('Provider config fail-fast (e2e, Path A)', () => {
   afterEach(() => {
-    delete process.env.TRANSCRIPTION_PROVIDER;
     delete process.env.SPEAKER_ID_PROVIDER;
-    delete process.env.OPENAI_API_KEY;
   });
 
   it('boots with the real-provider defaults (no provider env set)', async () => {
-    await expect(bootAttempt()).resolves.toBeUndefined();
-  });
-
-  it('rejects the removed TRANSCRIPTION_PROVIDER=stub', async () => {
-    process.env.TRANSCRIPTION_PROVIDER = 'stub';
-    await expect(bootAttempt()).rejects.toThrow('TRANSCRIPTION_PROVIDER=stub was removed');
-  });
-
-  it('rejects an unknown TRANSCRIPTION_PROVIDER', async () => {
-    process.env.TRANSCRIPTION_PROVIDER = 'whisper';
-    await expect(bootAttempt()).rejects.toThrow("unknown TRANSCRIPTION_PROVIDER 'whisper'");
-  });
-
-  it('rejects TRANSCRIPTION_PROVIDER=openai without OPENAI_API_KEY', async () => {
-    process.env.TRANSCRIPTION_PROVIDER = 'openai';
-    await expect(bootAttempt()).rejects.toThrow(
-      'TRANSCRIPTION_PROVIDER=openai requires OPENAI_API_KEY',
-    );
-  });
-
-  it('accepts TRANSCRIPTION_PROVIDER=openai with OPENAI_API_KEY', async () => {
-    process.env.TRANSCRIPTION_PROVIDER = 'openai';
-    process.env.OPENAI_API_KEY = 'sk-test';
     await expect(bootAttempt()).resolves.toBeUndefined();
   });
 

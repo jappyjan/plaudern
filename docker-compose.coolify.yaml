@@ -7,7 +7,7 @@
 #   SERVICE_USER_<ID> /
 #   SERVICE_PASSWORD_<ID>      -> Coolify generates & persists a random value the
 #                                 first time it's referenced.
-# Plain ${VARS} (e.g. OPENAI_API_KEY) are surfaced in the Coolify UI to fill in.
+# Plain ${VARS} (e.g. HUGGING_FACE_TOKEN) are surfaced in the Coolify UI to fill in.
 #
 # Only `web`, `api` and `minio` are exposed; postgres/redis stay on the internal
 # network. NOTE: there is no auth — put your own access control (basic auth,
@@ -51,13 +51,8 @@ services:
       - S3_FORCE_PATH_STYLE=true
       - QUEUE_DRIVER=bull
       - REDIS_URL=redis://:${SERVICE_PASSWORD_REDIS}@redis:6379
-      # Transcription runs on the self-hosted speaker-id sidecar by default
-      # (requires HUGGING_FACE_TOKEN on that service). To use the OpenAI API instead, set
-      # TRANSCRIPTION_PROVIDER=openai and OPENAI_API_KEY as environment
-      # variables in Coolify and redeploy — the provider is fixed at boot.
-      - TRANSCRIPTION_PROVIDER=${TRANSCRIPTION_PROVIDER:-sidecar}
-      - TRANSCRIPTION_MODEL=${TRANSCRIPTION_MODEL:-whisper-1}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Transcription runs on the self-hosted speaker-id sidecar
+      # (requires HUGGING_FACE_TOKEN on that service — see apps/speaker-id-ml/README.md).
       # General-purpose encryption key for secrets stored in the database
       # (e.g. the Plaud password): Coolify generates & persists it.
       - APP_ENCRYPTION_SECRET=${SERVICE_PASSWORD_APPENCRYPTION}

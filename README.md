@@ -34,7 +34,7 @@ libs/
     storage/     S3/MinIO abstraction (+ in-memory fake for tests)
     inbox/        Inbox aggregate + read/delete API
     ingestion/    Source-adapter registry + presigned upload API
-    transcription/ Queue (BullMQ / inline) + provider interface (sidecar whisper / OpenAI)
+    transcription/ Queue (BullMQ / inline) + sidecar whisper provider
     speaker-id/   Diarization queue + voice-profile matching + contact book API
 docker-compose.yml   Postgres + MinIO + Redis (+ api + web + speaker-id) for local dev
 ```
@@ -53,10 +53,8 @@ docker-compose.yml   Postgres + MinIO + Redis (+ api + web + speaker-id) for loc
   `text`, `file`, `plaud`). Adding an input = adding one adapter.
 - **Async transcription**: on commit, audio-bearing sources enqueue a job
   (BullMQ + Redis in prod, inline in tests) that writes back the transcript via
-  a pluggable `TranscriptionProvider` — the self-hosted faster-whisper in the
-  `apps/speaker-id-ml` sidecar by default, or the OpenAI Whisper API
-  (`TRANSCRIPTION_PROVIDER=openai`). Tests override the provider with jest
-  fakes.
+  the self-hosted faster-whisper in the `apps/speaker-id-ml` sidecar. Tests
+  override the provider with jest fakes.
 - **Speaker identification**: alongside transcription, audio enqueues a
   diarization job against a pluggable `DiarizationProvider` (the self-hosted
   pyannote sidecar in `apps/speaker-id-ml`). Detected voices
@@ -184,11 +182,8 @@ MinIO + Redis) using Coolify's magic environment variables:
 
 Steps: create a **Docker Compose** resource in Coolify pointing at this repo,
 set the compose file to `docker-compose.coolify.yaml`, and set `HUGGING_FACE_TOKEN` in
-the UI (**required** — the ML sidecar handles transcription and diarization by
-default; see `apps/speaker-id-ml/README.md` for the one-time token setup).
-Optionally set `OPENAI_API_KEY` + `TRANSCRIPTION_PROVIDER=openai` to use the
-OpenAI Whisper API for transcription instead — providers are fixed at container
-boot, so changing them means editing the env vars and redeploying. Deploy —
+the UI (**required** — the ML sidecar handles transcription and diarization;
+see `apps/speaker-id-ml/README.md` for the one-time token setup). Deploy —
 migrations run on boot. Remember: **no auth** — restrict access to the exposed
 domains yourself.
 
@@ -208,7 +203,6 @@ curl -s localhost:3000/api/v1/inbox
 
 ## Configuration reference
 
-Backend env: `apps/api/.env.example` (DB, S3/MinIO, Redis, transcription
-provider). Key switches: `DATABASE_DRIVER` (postgres|sqlite), `STORAGE_DRIVER`
-(s3|memory), `QUEUE_DRIVER` (bull|inline), `TRANSCRIPTION_PROVIDER`
-(sidecar|openai), `SPEAKER_ID_PROVIDER` (pyannote|off).
+Backend env: `apps/api/.env.example` (DB, S3/MinIO, Redis, sidecar). Key
+switches: `DATABASE_DRIVER` (postgres|sqlite), `STORAGE_DRIVER` (s3|memory),
+`QUEUE_DRIVER` (bull|inline), `SPEAKER_ID_PROVIDER` (pyannote|off).

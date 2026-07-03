@@ -12,23 +12,18 @@ import type {
 
 /**
  * Deterministic test double, injected via overrideProvider(TRANSCRIPTION_PROVIDER).
- * Drains the stream (so the storage read path is genuinely exercised) and
- * returns fixed text with timestamps aligned to FakeDiarizationProvider.
+ * Like the real sidecar it works off the presigned URL, and returns fixed text
+ * with timestamps aligned to FakeDiarizationProvider.
  */
 export class FakeTranscriptionProvider implements TranscriptionProvider {
   readonly id = 'fake-transcription';
 
   async transcribe(input: TranscriptionInput): Promise<TranscriptionResult> {
-    let bytes = 0;
-    const stream = await input.openStream();
-    for await (const chunk of stream) {
-      bytes += (chunk as Buffer).length;
-    }
     return {
-      text: `[test transcription of ${bytes} bytes, ${input.contentType}]`,
+      text: `[test transcription, ${input.contentType}]`,
       language: 'en',
       segments: [
-        { start: 0, end: 2, text: `[test transcription of ${bytes} bytes,` },
+        { start: 0, end: 2, text: `[test transcription,` },
         { start: 2, end: 4, text: ` ${input.contentType}]` },
       ],
     };
