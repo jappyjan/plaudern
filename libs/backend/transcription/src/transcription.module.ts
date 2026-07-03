@@ -2,13 +2,9 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import type { ConnectionOptions } from 'bullmq';
 import { InboxModule } from '@plaudern/inbox';
-import {
-  TRANSCRIPTION_PROVIDER,
-  type TranscriptionProvider,
-} from './transcription.provider';
+import { TRANSCRIPTION_PROVIDER } from './transcription.provider';
 import { TRANSCRIPTION_QUEUE } from './transcription.job';
 import { SidecarTranscriptionProvider } from './providers/sidecar.provider';
-import { OpenAiWhisperProvider } from './providers/openai-whisper.provider';
 import { TranscriptionProcessor } from './transcription.processor';
 import { TranscriptionService } from './transcription.service';
 import { TranscriptionController } from './transcription.controller';
@@ -37,35 +33,8 @@ function redisConnection(config: ConfigService): ConnectionOptions {
   imports: [ConfigModule, InboxModule],
   providers: [
     SidecarTranscriptionProvider,
-    OpenAiWhisperProvider,
-    {
-      provide: TRANSCRIPTION_PROVIDER,
-      inject: [ConfigService, SidecarTranscriptionProvider, OpenAiWhisperProvider],
-      useFactory: (
-        config: ConfigService,
-        sidecar: SidecarTranscriptionProvider,
-        openai: OpenAiWhisperProvider,
-      ): TranscriptionProvider => {
-        const selected = config.get<string>('TRANSCRIPTION_PROVIDER', 'sidecar');
-        switch (selected) {
-          case 'sidecar':
-            return sidecar;
-          case 'openai':
-            if (!config.get<string>('OPENAI_API_KEY')) {
-              throw new Error('TRANSCRIPTION_PROVIDER=openai requires OPENAI_API_KEY');
-            }
-            return openai;
-          case 'stub':
-            throw new Error(
-              "TRANSCRIPTION_PROVIDER=stub was removed; use 'sidecar' (default, apps/speaker-id-ml) or 'openai'",
-            );
-          default:
-            throw new Error(
-              `unknown TRANSCRIPTION_PROVIDER '${selected}' (expected 'sidecar' or 'openai')`,
-            );
-        }
-      },
-    },
+    // Transcription runs exclusively on the self-hosted sidecar (apps/speaker-id-ml).
+    { provide: TRANSCRIPTION_PROVIDER, useExisting: SidecarTranscriptionProvider },
     TranscriptionProcessor,
     {
       provide: TRANSCRIPTION_QUEUE,

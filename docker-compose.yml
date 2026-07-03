@@ -51,11 +51,7 @@ services:
       S3_FORCE_PATH_STYLE: 'true'
       QUEUE_DRIVER: bull
       REDIS_URL: redis://redis:6379
-      # sidecar = self-hosted whisper in the speaker-id service (default);
-      # openai = OpenAI Whisper API (requires OPENAI_API_KEY).
-      TRANSCRIPTION_PROVIDER: ${TRANSCRIPTION_PROVIDER:-sidecar}
-      TRANSCRIPTION_MODEL: ${TRANSCRIPTION_MODEL:-whisper-1}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Transcription runs on the self-hosted whisper sidecar (speaker-id service).
       # General-purpose key encrypting secrets stored in Postgres (e.g. the
       # Plaud password) — override in production.
       APP_ENCRYPTION_SECRET: ${APP_ENCRYPTION_SECRET:-change-me}
