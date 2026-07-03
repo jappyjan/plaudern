@@ -10,8 +10,8 @@
 # Plain ${VARS} (e.g. HUGGING_FACE_TOKEN) are surfaced in the Coolify UI to fill in.
 #
 # Only `web`, `api` and `minio` are exposed; postgres/redis stay on the internal
-# network. NOTE: there is no auth — put your own access control (basic auth,
-# Tailscale, VPN) in front of the exposed domains.
+# network. Access is protected by passkey (WebAuthn) login — set AUTH_RP_ID to
+# the web app's domain so passkeys bind to it.
 services:
   web:
     build:
@@ -56,6 +56,17 @@ services:
       # General-purpose encryption key for secrets stored in the database
       # (e.g. the Plaud password): Coolify generates & persists it.
       - APP_ENCRYPTION_SECRET=${SERVICE_PASSWORD_APPENCRYPTION}
+      # Passkey (WebAuthn) auth: the RP id must be the web app's domain.
+      # SERVICE_FQDN_WEB is the (scheme-less) domain Coolify routes to the
+      # web service, so this auto-populates; override AUTH_RP_ID only for
+      # custom setups. NOTE: if you change the web domain later, passkeys
+      # registered under the old domain stop working — that's inherent to
+      # WebAuthn, not a config problem.
+      - AUTH_RP_ID=${AUTH_RP_ID:-${SERVICE_FQDN_WEB}}
+      # Accepted browser origins; defaults to https://<AUTH_RP_ID> in the
+      # api, so an override is only needed for multi-origin setups.
+      - AUTH_ORIGINS=${AUTH_ORIGINS}
+      - AUTH_ALLOW_REGISTRATION=${AUTH_ALLOW_REGISTRATION:-true}
       - PLAUD_POLL_INTERVAL_MS=${PLAUD_POLL_INTERVAL_MS:-300000}
       # Calendar feeds: the same secret encrypts subscribed feed URLs.
       - CALENDAR_POLL_INTERVAL_MS=${CALENDAR_POLL_INTERVAL_MS:-900000}

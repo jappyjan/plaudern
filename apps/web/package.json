@@ -7,6 +7,7 @@
     "@heroui/react": "^2.8.5",
     "@heroui/theme": "^2.4.23",
     "@plaudern/contracts": "workspace:*",
+    "@simplewebauthn/browser": "^13.3.0",
     "framer-motion": "^12.23.0",
     "music-metadata": "^11.9.0",
     "react": "19.2.3",

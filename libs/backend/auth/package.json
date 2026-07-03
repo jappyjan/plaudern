@@ -1,0 +1,24 @@
+{
+  "name": "@plaudern/auth",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@plaudern/contracts": "workspace:*",
+    "@plaudern/persistence": "workspace:*",
+    "@simplewebauthn/server": "^13.3.2"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/config": "^4.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/typeorm": "^11.0.0",
+    "rxjs": "^7.8.0",
+    "typeorm": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.0"
+  }
+}

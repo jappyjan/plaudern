@@ -2,16 +2,19 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
+  AuthSessionEntity,
   CalendarEventEntity,
   CalendarFeedEntity,
   ExtractedPayloadEntity,
   GeocodeCacheEntity,
   InboxItemEntity,
   InboxTombstoneEntity,
+  PasskeyCredentialEntity,
   PlaudSettingsEntity,
   RecordingEventLinkEntity,
   SourcePayloadEntity,
   SpeakerOccurrenceEntity,
+  UserEntity,
   VoiceProfileEntity,
 } from './entities';
 import { InitialSchema1720000000000 } from './migrations/1720000000000-InitialSchema';
@@ -22,6 +25,7 @@ import { CreateSpeakerTables1720000000004 } from './migrations/1720000000004-Cre
 import { InboxTombstones1720000000005 } from './migrations/1720000000005-InboxTombstones';
 import { CreateCalendarTables1720000000006 } from './migrations/1720000000006-CreateCalendarTables';
 import { CalendarFeedAutoLink1720000000007 } from './migrations/1720000000007-CalendarFeedAutoLink';
+import { CreateAuthTables1720000000008 } from './migrations/1720000000008-CreateAuthTables';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -35,6 +39,9 @@ export const ALL_ENTITIES = [
   CalendarFeedEntity,
   CalendarEventEntity,
   RecordingEventLinkEntity,
+  UserEntity,
+  PasskeyCredentialEntity,
+  AuthSessionEntity,
 ];
 
 // Referenced as classes (not a glob) so migrations load identically under
@@ -48,6 +55,7 @@ export const ALL_MIGRATIONS = [
   InboxTombstones1720000000005,
   CreateCalendarTables1720000000006,
   CalendarFeedAutoLink1720000000007,
+  CreateAuthTables1720000000008,
 ];
 
 /**

@@ -9,13 +9,14 @@ import type {
   CreateCalendarFeedRequest,
   UpdateCalendarFeedRequest,
 } from '@plaudern/contracts';
-import { CalendarFeedEntity, DEFAULT_USER_ID } from '@plaudern/persistence';
+import { CalendarFeedEntity } from '@plaudern/persistence';
 import { decryptSecret, encryptSecret } from './crypto';
 import { maskFeedUrl, normalizeFeedUrl } from './ics/ics-feed.client';
 
 /**
- * Owns calendar feed rows. Feed URLs are secrets: stored AES-encrypted,
- * deduped via a sha256 hash, and only ever exposed masked.
+ * Owns calendar feed rows, each belonging to exactly one user. Feed URLs are
+ * secrets: stored AES-encrypted, deduped via a sha256 hash, and only ever
+ * exposed masked.
  */
 @Injectable()
 export class CalendarFeedsService {
@@ -25,33 +26,34 @@ export class CalendarFeedsService {
     private readonly config: ConfigService,
   ) {}
 
-  list(): Promise<CalendarFeedEntity[]> {
-    return this.repo.find({ where: { userId: DEFAULT_USER_ID }, order: { createdAt: 'ASC' } });
+  list(userId: string): Promise<CalendarFeedEntity[]> {
+    return this.repo.find({ where: { userId }, order: { createdAt: 'ASC' } });
   }
 
-  listEnabled(): Promise<CalendarFeedEntity[]> {
+  /** Enabled feeds of one user, or of every user (the sync scheduler). */
+  listEnabled(userId?: string): Promise<CalendarFeedEntity[]> {
     return this.repo.find({
-      where: { userId: DEFAULT_USER_ID, enabled: true },
+      where: userId ? { userId, enabled: true } : { enabled: true },
       order: { createdAt: 'ASC' },
     });
   }
 
-  async getEntity(id: string): Promise<CalendarFeedEntity> {
-    const feed = await this.repo.findOne({ where: { id, userId: DEFAULT_USER_ID } });
+  async getEntity(userId: string, id: string): Promise<CalendarFeedEntity> {
+    const feed = await this.repo.findOne({ where: { id, userId } });
     if (!feed) throw new NotFoundException('calendar feed not found');
     return feed;
   }
 
-  async create(req: CreateCalendarFeedRequest): Promise<CalendarFeedEntity> {
+  async create(userId: string, req: CreateCalendarFeedRequest): Promise<CalendarFeedEntity> {
     const secret = this.requireSecret();
     const url = normalizeFeedUrl(req.url);
     const urlHash = hashUrl(url);
-    const duplicate = await this.repo.findOne({ where: { userId: DEFAULT_USER_ID, urlHash } });
+    const duplicate = await this.repo.findOne({ where: { userId, urlHash } });
     if (duplicate) {
       throw new ConflictException(`this feed is already subscribed as "${duplicate.name}"`);
     }
     const created = this.repo.create({
-      userId: DEFAULT_USER_ID,
+      userId,
       name: req.name,
       providerType: 'ics',
       urlEncrypted: encryptSecret(url, secret),
@@ -64,8 +66,12 @@ export class CalendarFeedsService {
     return this.repo.save(created);
   }
 
-  async update(id: string, req: UpdateCalendarFeedRequest): Promise<CalendarFeedEntity> {
-    const feed = await this.getEntity(id);
+  async update(
+    userId: string,
+    id: string,
+    req: UpdateCalendarFeedRequest,
+  ): Promise<CalendarFeedEntity> {
+    const feed = await this.getEntity(userId, id);
     if (req.name !== undefined) feed.name = req.name;
     if (req.color !== undefined) feed.color = req.color;
     if (req.enabled !== undefined) feed.enabled = req.enabled;
@@ -74,7 +80,7 @@ export class CalendarFeedsService {
       const secret = this.requireSecret();
       const url = normalizeFeedUrl(req.url);
       const urlHash = hashUrl(url);
-      const duplicate = await this.repo.findOne({ where: { userId: DEFAULT_USER_ID, urlHash } });
+      const duplicate = await this.repo.findOne({ where: { userId, urlHash } });
       if (duplicate && duplicate.id !== id) {
         throw new ConflictException(`this feed is already subscribed as "${duplicate.name}"`);
       }
@@ -90,8 +96,8 @@ export class CalendarFeedsService {
     return this.repo.save(feed);
   }
 
-  async remove(id: string): Promise<void> {
-    const feed = await this.getEntity(id);
+  async remove(userId: string, id: string): Promise<void> {
+    const feed = await this.getEntity(userId, id);
     // Events (and their links) go with the feed via FK cascades.
     await this.repo.remove(feed);
   }

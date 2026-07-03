@@ -6,6 +6,7 @@ process.env.DATABASE_DRIVER = 'sqlite';
 process.env.DATABASE_URL = ':memory:';
 process.env.STORAGE_DRIVER = 'memory';
 process.env.QUEUE_DRIVER = 'inline';
+process.env.AUTH_DISABLED = 'true'; // single-user mode — auth has its own spec
 process.env.GEOCODER = 'stub';
 
 import { INestApplication, VersioningType } from '@nestjs/common';
@@ -76,7 +77,7 @@ describe('Inbox item deletion (e2e, Path A)', () => {
     expect((await storage.headObject(storageKey)).exists).toBe(true);
 
     const seen: InboxEvent[] = [];
-    const subscription = events.stream().subscribe((event) => seen.push(event));
+    const subscription = events.stream(DEFAULT_USER_ID).subscribe((event) => seen.push(event));
 
     await request(app.getHttpServer()).delete(`/api/v1/inbox/${itemId}`).expect(204);
     subscription.unsubscribe();

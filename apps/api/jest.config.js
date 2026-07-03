@@ -20,6 +20,8 @@ module.exports = {
     '^@plaudern/plaud-sync$': `${wsRoot}/libs/backend/plaud-sync/src/index.ts`,
     '^@plaudern/geocoding$': `${wsRoot}/libs/backend/geocoding/src/index.ts`,
     '^@plaudern/speaker-id$': `${wsRoot}/libs/backend/speaker-id/src/index.ts`,
+    '^@plaudern/calendar$': `${wsRoot}/libs/backend/calendar/src/index.ts`,
+    '^@plaudern/auth$': `${wsRoot}/libs/backend/auth/src/index.ts`,
   },
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.spec.json' }],

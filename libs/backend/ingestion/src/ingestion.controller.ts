@@ -6,6 +6,7 @@ import {
   type IngestTextRequest,
   type InboxItemDto,
 } from '@plaudern/contracts';
+import { CurrentUser, type AuthenticatedUser } from '@plaudern/auth';
 import { IngestionService } from './ingestion.service';
 
 /**
@@ -18,24 +19,36 @@ export class IngestionController {
   constructor(private readonly ingestion: IngestionService) {}
 
   @Post('init')
-  async init(@Body() body: unknown): Promise<IngestInitResponse> {
+  async init(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: unknown,
+  ): Promise<IngestInitResponse> {
     const req = ingestInitRequestSchema.parse(body);
-    return this.ingestion.init(req);
+    return this.ingestion.init(user.id, req);
   }
 
   @Post(':id/commit')
-  async commit(@Param('id') id: string): Promise<InboxItemDto> {
-    return this.ingestion.commit(id);
+  async commit(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ): Promise<InboxItemDto> {
+    return this.ingestion.commit(user.id, id);
   }
 
   @Post(':id/reprocess')
-  async reprocess(@Param('id') id: string): Promise<InboxItemDto> {
-    return this.ingestion.reprocess(id);
+  async reprocess(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ): Promise<InboxItemDto> {
+    return this.ingestion.reprocess(user.id, id);
   }
 
   @Post('text')
-  async text(@Body() body: unknown): Promise<InboxItemDto> {
+  async text(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: unknown,
+  ): Promise<InboxItemDto> {
     const req: IngestTextRequest = ingestTextRequestSchema.parse(body);
-    return this.ingestion.ingestText(req);
+    return this.ingestion.ingestText(user.id, req);
   }
 }

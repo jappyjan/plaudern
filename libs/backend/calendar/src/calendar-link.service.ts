@@ -4,7 +4,6 @@ import { Between, In, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeo
 import {
   CalendarEventEntity,
   CalendarFeedEntity,
-  DEFAULT_USER_ID,
   InboxItemEntity,
   RecordingEventLinkEntity,
 } from '@plaudern/persistence';
@@ -21,10 +20,12 @@ export function overlaps(
 }
 
 /**
- * Owns recording↔event links. Semantics (see RecordingEventLinkEntity):
- * the auto pass inserts missing overlapping pairs and deletes stale *active
- * auto* links; manual links and suppressed tombstones are never touched, so a
- * user's link/unlink decisions survive every future sync.
+ * Owns recording↔event links, always within a single user (recordings and
+ * events of different users can never be linked). Semantics (see
+ * RecordingEventLinkEntity): the auto pass inserts missing overlapping pairs
+ * and deletes stale *active auto* links; manual links and suppressed
+ * tombstones are never touched, so a user's link/unlink decisions survive
+ * every future sync.
  */
 @Injectable()
 export class CalendarLinkService {
@@ -41,13 +42,13 @@ export class CalendarLinkService {
     private readonly items: Repository<InboxItemEntity>,
   ) {}
 
-  /** Re-evaluates auto links for everything inside [windowStart, windowEnd]. */
-  async autoLinkWindow(windowStart: Date, windowEnd: Date): Promise<void> {
+  /** Re-evaluates one user's auto links inside [windowStart, windowEnd]. */
+  async autoLinkWindow(userId: string, windowStart: Date, windowEnd: Date): Promise<void> {
     const startIso = windowStart.toISOString();
     const endIso = windowEnd.toISOString();
 
     const events = await this.events.find({
-      where: { userId: DEFAULT_USER_ID, startAt: LessThanOrEqual(endIso), endAt: MoreThanOrEqual(startIso) },
+      where: { userId, startAt: LessThanOrEqual(endIso), endAt: MoreThanOrEqual(startIso) },
     });
 
     // Pull recordings from a bit before the window so a long recording that
@@ -56,7 +57,7 @@ export class CalendarLinkService {
     const items = await this.items.find({
       select: { id: true, occurredAt: true, metadata: true },
       where: {
-        userId: DEFAULT_USER_ID,
+        userId,
         occurredAt: Between(
           new Date(windowStart.getTime() - recordingLookbackMs).toISOString(),
           endIso,
@@ -68,12 +69,12 @@ export class CalendarLinkService {
     // produce new desired pairs, but the toggle only governs *future* linking:
     // existing auto links on those feeds are left untouched (see stale pass).
     const noAutoLink = new Set(
-      (await this.feeds.find({ where: { userId: DEFAULT_USER_ID, autoLink: false }, select: { id: true } })).map(
+      (await this.feeds.find({ where: { userId, autoLink: false }, select: { id: true } })).map(
         (feed) => feed.id,
       ),
     );
 
-    // In-memory join — fine at single-user scale (bounded by the sync window).
+    // In-memory join — fine at per-user scale (bounded by the sync window).
     const desired = new Set<string>();
     for (const item of items) {
       const recStart = item.occurredAt;
@@ -107,7 +108,7 @@ export class CalendarLinkService {
       const [inboxItemId, calendarEventId] = splitPairKey(pair);
       await this.links.save(
         this.links.create({
-          userId: DEFAULT_USER_ID,
+          userId,
           inboxItemId,
           calendarEventId,
           origin: 'auto',
@@ -136,10 +137,14 @@ export class CalendarLinkService {
   }
 
   /** Manual link; revives a suppressed pair and upgrades an auto link. */
-  async link(inboxItemId: string, eventId: string): Promise<RecordingEventLinkEntity> {
-    const item = await this.items.findOne({ where: { id: inboxItemId, userId: DEFAULT_USER_ID } });
+  async link(
+    userId: string,
+    inboxItemId: string,
+    eventId: string,
+  ): Promise<RecordingEventLinkEntity> {
+    const item = await this.items.findOne({ where: { id: inboxItemId, userId } });
     if (!item) throw new NotFoundException('inbox item not found');
-    const event = await this.events.findOne({ where: { id: eventId, userId: DEFAULT_USER_ID } });
+    const event = await this.events.findOne({ where: { id: eventId, userId } });
     if (!event) throw new NotFoundException('calendar event not found');
 
     const existing = await this.links.findOne({
@@ -152,7 +157,7 @@ export class CalendarLinkService {
     }
     return this.links.save(
       this.links.create({
-        userId: DEFAULT_USER_ID,
+        userId,
         inboxItemId,
         calendarEventId: eventId,
         origin: 'manual',
@@ -162,9 +167,9 @@ export class CalendarLinkService {
   }
 
   /** Unlink = suppress. The tombstone stops the auto pass from re-linking. */
-  async unlink(inboxItemId: string, eventId: string): Promise<void> {
+  async unlink(userId: string, inboxItemId: string, eventId: string): Promise<void> {
     const existing = await this.links.findOne({
-      where: { inboxItemId, calendarEventId: eventId, status: 'active' },
+      where: { userId, inboxItemId, calendarEventId: eventId, status: 'active' },
     });
     if (!existing) throw new NotFoundException('link not found');
     existing.status = 'suppressed';

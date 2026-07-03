@@ -5,7 +5,6 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { InboxService } from '@plaudern/inbox';
-import { DEFAULT_USER_ID } from '@plaudern/persistence';
 import {
   TRANSCRIPTION_PROVIDER,
   type TranscriptionProvider,
@@ -54,8 +53,8 @@ export class TranscriptionService {
    * Re-run transcription for an item. Extractions are append-only, so a retry
    * simply enqueues a fresh row; older attempts stay visible in the history.
    */
-  async retryTranscription(inboxItemId: string): Promise<string> {
-    const item = await this.inbox.getItem(DEFAULT_USER_ID, inboxItemId);
+  async retryTranscription(userId: string, inboxItemId: string): Promise<string> {
+    const item = await this.inbox.getItem(userId, inboxItemId);
     const source = item.source;
     if (
       !source ||

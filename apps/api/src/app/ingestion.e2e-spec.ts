@@ -6,6 +6,7 @@ process.env.DATABASE_DRIVER = 'sqlite';
 process.env.DATABASE_URL = ':memory:';
 process.env.STORAGE_DRIVER = 'memory';
 process.env.QUEUE_DRIVER = 'inline';
+process.env.AUTH_DISABLED = 'true'; // single-user mode — auth has its own spec
 
 import { INestApplication, VersioningType } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -42,7 +43,7 @@ describe('Ingestion pipeline (e2e, Path A)', () => {
     await app.close();
   });
 
-  it('serves the inbox without any authentication', async () => {
+  it('serves the inbox without a session when AUTH_DISABLED=true', async () => {
     await request(app.getHttpServer()).get('/api/v1/inbox').expect(200);
   });
 

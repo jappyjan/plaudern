@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Input, Select, SelectItem, Spinner, Switch } from '@heroui/react';
-import type { CalendarFeedsResponse, PlaudRegion, PlaudSettingsDto } from '@plaudern/contracts';
+import type {
+  CalendarFeedsResponse,
+  PasskeyDto,
+  PlaudRegion,
+  PlaudSettingsDto,
+} from '@plaudern/contracts';
+import { useAuth } from '../auth/AuthContext';
+import { addPasskey, deletePasskey, listPasskeys } from '../lib/auth';
 import {
   createCalendarFeed,
   deleteCalendarFeed,
@@ -126,7 +133,9 @@ export function SettingsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
+      <AccountSection />
+
+      <div className="border-t border-default-200 pt-6">
         <h2 className="text-lg font-semibold">Plaud sync</h2>
         <p className="text-sm text-default-500">
           Connect your Plaud account to automatically pull recordings into the inbox. Your Plaud
@@ -466,6 +475,131 @@ function CalendarFeedsSection() {
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function AccountSection() {
+  const { user, status, logout } = useAuth();
+  const [passkeys, setPasskeys] = useState<PasskeyDto[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [newLabel, setNewLabel] = useState('');
+
+  const authDisabled = status?.authDisabled ?? false;
+
+  const refresh = useCallback(async () => {
+    if (authDisabled) return;
+    try {
+      setPasskeys((await listPasskeys()).passkeys);
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, [authDisabled]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const add = async () => {
+    setAdding(true);
+    setError(null);
+    try {
+      await addPasskey(newLabel.trim() || undefined);
+      setNewLabel('');
+      await refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error && cause.name === 'NotAllowedError'
+          ? 'The passkey prompt was dismissed.'
+          : cause instanceof Error
+            ? cause.message
+            : String(cause),
+      );
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const remove = async (id: string) => {
+    setError(null);
+    try {
+      await deletePasskey(id);
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold">Account</h2>
+          <p className="text-sm text-default-500">
+            {authDisabled
+              ? 'Authentication is disabled on this instance (AUTH_DISABLED).'
+              : `Signed in as ${user?.username ?? '…'}. All data is private to this account.`}
+          </p>
+        </div>
+        {!authDisabled && (
+          <Button size="sm" variant="flat" color="danger" onPress={() => void logout()}>
+            Sign out
+          </Button>
+        )}
+      </div>
+
+      {error && (
+        <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">{error}</div>
+      )}
+
+      {!authDisabled && passkeys && (
+        <div className="flex flex-col gap-2">
+          {passkeys.map((key) => (
+            <div
+              key={key.id}
+              className="flex items-center justify-between gap-2 rounded-medium bg-default-50 p-3 text-sm"
+            >
+              <div className="min-w-0">
+                <p className="truncate font-medium">
+                  {key.label ?? `Passkey ${key.id.slice(0, 8)}…`}
+                </p>
+                <p className="truncate text-xs text-default-500">
+                  {key.deviceType === 'multiDevice' ? 'Synced passkey' : 'Device-bound passkey'}
+                  {' · added '}
+                  {formatDateTime(key.createdAt)}
+                  {key.lastUsedAt ? ` · last used ${formatDateTime(key.lastUsedAt)}` : ''}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="light"
+                color="danger"
+                isDisabled={passkeys.length <= 1}
+                onPress={() => void remove(key.id)}
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+          <div className="flex items-end gap-3">
+            <Input
+              size="sm"
+              label="New passkey name (optional)"
+              value={newLabel}
+              onValueChange={setNewLabel}
+              placeholder="e.g. Phone"
+            />
+            <Button size="sm" variant="flat" isLoading={adding} onPress={() => void add()}>
+              Add passkey
+            </Button>
+          </div>
+          <p className="text-xs text-default-400">
+            Add a passkey on every device you use. The last passkey cannot be removed.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

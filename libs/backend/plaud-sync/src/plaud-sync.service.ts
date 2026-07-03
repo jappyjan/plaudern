@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { PlaudSyncNowResponse } from '@plaudern/contracts';
-import { DEFAULT_USER_ID, PlaudSettingsEntity } from '@plaudern/persistence';
+import { PlaudSettingsEntity } from '@plaudern/persistence';
 import { InboxService } from '@plaudern/inbox';
 import { IngestionService } from '@plaudern/ingestion';
 import { PlaudApiClient, PlaudApiError, type PlaudRecording } from './plaud-api.client';
@@ -10,11 +10,12 @@ import { PlaudSettingsService } from './plaud-settings.service';
 const TOKEN_REFRESH_BUFFER_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
- * Pulls new recordings from the Plaud cloud into the inbox. Everything flows
- * through the regular ingestion path (`sourceType: 'plaud'`), so dedupe comes
- * from the idempotency key and transcription fires via the existing adapter.
- * Recordings whose key is tombstoned (deleted from the inbox by the user) are
- * never re-imported.
+ * Pulls new recordings from the Plaud cloud into the inbox, per user (each
+ * user has their own Plaud credentials and their recordings land only in
+ * their own inbox). Everything flows through the regular ingestion path
+ * (`sourceType: 'plaud'`), so dedupe comes from the idempotency key and
+ * transcription fires via the existing adapter. Recordings whose key is
+ * tombstoned (deleted from the inbox by the user) are never re-imported.
  */
 @Injectable()
 export class PlaudSyncService {
@@ -33,16 +34,27 @@ export class PlaudSyncService {
     return this.running;
   }
 
-  /** Entry point for the interval, the manual trigger, and save-with-enabled. */
-  async syncNow(): Promise<PlaudSyncNowResponse> {
+  /**
+   * Entry point for the interval (no userId: every user's enabled settings,
+   * sequentially), the manual trigger and save-with-enabled (userId: just
+   * that user).
+   */
+  async syncNow(userId?: string): Promise<PlaudSyncNowResponse> {
     if (this.running) return { started: false, alreadyRunning: true };
     // Claim the mutex synchronously with the check so concurrent callers
     // can't both pass it before the first await.
     this.running = true;
     try {
-      const entity = await this.settings.getEntity();
-      if (!entity || !entity.enabled) return { started: false, alreadyRunning: false };
-      await this.runSync(entity);
+      const entities = userId
+        ? [await this.settings.getEntity(userId)]
+        : await this.settings.listEnabled();
+      const enabled = entities.filter(
+        (entity): entity is PlaudSettingsEntity => Boolean(entity?.enabled),
+      );
+      if (enabled.length === 0) return { started: false, alreadyRunning: false };
+      for (const entity of enabled) {
+        await this.runSync(entity);
+      }
       return { started: true, alreadyRunning: false };
     } finally {
       this.running = false;
@@ -74,12 +86,12 @@ export class PlaudSyncService {
       for (const rec of active) {
         const idempotencyKey = `plaud:${rec.id}`;
         try {
-          const existing = await this.inbox.findByIdempotencyKey(DEFAULT_USER_ID, idempotencyKey);
+          const existing = await this.inbox.findByIdempotencyKey(entity.userId, idempotencyKey);
           if (existing) continue;
           // The user deleted this recording from the inbox — never re-import
           // it. (A delete racing a mid-download sync can still recreate the
           // item once; sync is sequential and minutes-scale, so acceptable.)
-          if (await this.inbox.isIdempotencyKeyTombstoned(DEFAULT_USER_ID, idempotencyKey)) {
+          if (await this.inbox.isIdempotencyKeyTombstoned(entity.userId, idempotencyKey)) {
             continue;
           }
 
@@ -88,7 +100,7 @@ export class PlaudSyncService {
             token,
             rec.id,
           );
-          await this.ingestion.ingestBlob({
+          await this.ingestion.ingestBlob(entity.userId, {
             sourceType: 'plaud',
             body,
             contentType,

@@ -9,7 +9,6 @@ import type {
 import {
   CalendarEventEntity,
   CalendarFeedEntity,
-  DEFAULT_USER_ID,
   InboxItemEntity,
   RecordingEventLinkEntity,
 } from '@plaudern/persistence';
@@ -30,16 +29,16 @@ export class CalendarEventsService {
   ) {}
 
   /** Events overlapping [from, to], with active linked recording ids. */
-  async eventsInRange(from: string, to: string): Promise<CalendarEventDto[]> {
+  async eventsInRange(userId: string, from: string, to: string): Promise<CalendarEventDto[]> {
     const events = await this.events.find({
-      where: { userId: DEFAULT_USER_ID, startAt: LessThanOrEqual(to), endAt: MoreThanOrEqual(from) },
+      where: { userId, startAt: LessThanOrEqual(to), endAt: MoreThanOrEqual(from) },
       order: { startAt: 'ASC' },
     });
     return this.toEventDtos(events);
   }
 
-  async eventDetail(id: string): Promise<CalendarEventDetailDto> {
-    const event = await this.events.findOne({ where: { id, userId: DEFAULT_USER_ID } });
+  async eventDetail(userId: string, id: string): Promise<CalendarEventDetailDto> {
+    const event = await this.events.findOne({ where: { id, userId } });
     if (!event) throw new NotFoundException('calendar event not found');
     const [dto] = await this.toEventDtos([event]);
 
@@ -49,9 +48,9 @@ export class CalendarEventsService {
   }
 
   /** Recordings (inbox items) whose occurredAt falls in [from, to]. */
-  async recordingsInRange(from: string, to: string): Promise<RecordingSummaryDto[]> {
+  async recordingsInRange(userId: string, from: string, to: string): Promise<RecordingSummaryDto[]> {
     const items = await this.items.find({
-      where: { userId: DEFAULT_USER_ID, occurredAt: Between(from, to) },
+      where: { userId, occurredAt: Between(from, to) },
       relations: { source: true },
       order: { occurredAt: 'ASC' },
     });
@@ -59,9 +58,9 @@ export class CalendarEventsService {
   }
 
   /** Events actively linked to one inbox item. */
-  async eventsForItem(inboxItemId: string): Promise<CalendarEventDto[]> {
+  async eventsForItem(userId: string, inboxItemId: string): Promise<CalendarEventDto[]> {
     const item = await this.items.findOne({
-      where: { id: inboxItemId, userId: DEFAULT_USER_ID },
+      where: { id: inboxItemId, userId },
     });
     if (!item) throw new NotFoundException('inbox item not found');
     const links = await this.links.find({ where: { inboxItemId, status: 'active' } });
