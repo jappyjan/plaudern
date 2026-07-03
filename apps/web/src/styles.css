@@ -2,3 +2,31 @@
 @plugin './hero.ts';
 @source '../node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}';
 @custom-variant dark (&:is(.dark *));
+
+@layer base {
+  html {
+    /* Stop mobile browsers from arbitrarily inflating text. */
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* Remove the 300ms double-tap-to-zoom delay on interactive elements. */
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  [role='button'] {
+    touch-action: manipulation;
+  }
+
+  /* iOS Safari auto-zooms into focused form fields whose font-size is below
+     16px. Force 16px on touch devices so focusing an input never zooms the
+     page (HeroUI inputs default to 14px). */
+  @media (pointer: coarse) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+}

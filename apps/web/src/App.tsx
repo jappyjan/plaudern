@@ -23,6 +23,10 @@ export function App() {
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
     localStorage.setItem('theme', theme);
+    // Keep the browser/PWA chrome in sync with the manual theme toggle.
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute('content', theme === 'dark' ? '#000000' : '#ffffff');
   }, [theme]);
 
   return (
