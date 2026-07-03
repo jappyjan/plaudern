@@ -112,7 +112,9 @@ export function RecordModal({ isOpen, onClose, onSaved }: RecordModalProps) {
   const saveFailed = recorder.state === 'stopped' && phase === 'error';
 
   return (
-    <Modal isOpen={isOpen} onClose={close} placement="center" isDismissable={!busy}>
+    // disableAnimation: iOS PWAs drop the modal open on a quick tap when
+    // framer-motion animates it (heroui-inc/heroui#3222).
+    <Modal disableAnimation isOpen={isOpen} onClose={close} placement="center" isDismissable={!busy}>
       <ModalContent>
         <ModalHeader>Record a note</ModalHeader>
         <ModalBody className="items-center gap-4 py-6">

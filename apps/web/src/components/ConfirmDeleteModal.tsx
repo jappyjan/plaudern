@@ -28,7 +28,9 @@ export function ConfirmDeleteModal({
   onClose,
 }: ConfirmDeleteModalProps) {
   return (
-    <Modal isOpen={isOpen} onClose={isDeleting ? undefined : onClose}>
+    // disableAnimation: on iOS PWAs framer-motion's AnimatePresence drops the
+    // open on a quick tap, so the modal never appears (heroui-inc/heroui#3222).
+    <Modal disableAnimation isOpen={isOpen} onClose={isDeleting ? undefined : onClose}>
       <ModalContent>
         <ModalHeader>{title}</ModalHeader>
         <ModalBody>

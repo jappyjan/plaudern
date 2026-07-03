@@ -63,7 +63,9 @@ export function LinkEventModal({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} scrollBehavior="inside">
+    // disableAnimation: iOS PWAs drop the modal open on a quick tap when
+    // framer-motion animates it (heroui-inc/heroui#3222).
+    <Modal disableAnimation isOpen={isOpen} onClose={onClose} scrollBehavior="inside">
       <ModalContent>
         <ModalHeader>Link to a calendar event</ModalHeader>
         <ModalBody className="gap-2 pb-2">

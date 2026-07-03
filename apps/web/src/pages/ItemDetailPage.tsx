@@ -397,7 +397,11 @@ export function ItemDetailPage() {
             </AccordionItem>
           </Accordion>
 
-          <Modal isOpen={confirmRerunOpen} onClose={() => !retrying && setConfirmRerunOpen(false)}>
+          <Modal
+            disableAnimation
+            isOpen={confirmRerunOpen}
+            onClose={() => !retrying && setConfirmRerunOpen(false)}
+          >
             <ModalContent>
               <ModalHeader>Reprocess recording?</ModalHeader>
               <ModalBody>

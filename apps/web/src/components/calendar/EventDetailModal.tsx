@@ -98,7 +98,9 @@ export function EventDetailModal({ eventId, onClose, onLinksChanged }: EventDeta
   };
 
   return (
-    <Modal isOpen={eventId !== null} onClose={onClose} scrollBehavior="inside">
+    // disableAnimation: iOS PWAs drop the modal open on a quick tap when
+    // framer-motion animates it (heroui-inc/heroui#3222).
+    <Modal disableAnimation isOpen={eventId !== null} onClose={onClose} scrollBehavior="inside">
       <ModalContent>
         <ModalHeader className="flex flex-col gap-1">
           {event ? (event.title ?? '(untitled event)') : 'Event'}
