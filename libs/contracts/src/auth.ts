@@ -19,6 +19,10 @@ export const usernameSchema = z
   );
 
 export const authUserSchema = z.object({
+  // Every account — including the very first (owner) one — has a real random
+  // UUID. The old build gave the owner a fixed sentinel id, which this schema
+  // deliberately rejects: `.uuid()` (RFC 9562) is the invariant the backend
+  // must honour, not something to relax.
   id: z.string().uuid(),
   username: z.string(),
 });

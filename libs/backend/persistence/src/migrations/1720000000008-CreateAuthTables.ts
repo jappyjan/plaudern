@@ -3,8 +3,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 /**
  * Multi-user passkey authentication: accounts, WebAuthn credentials and
  * cookie sessions. Additive only — existing rows keep their DEFAULT_USER_ID
- * owner, which the FIRST registered user adopts (the auth service creates
- * that user with DEFAULT_USER_ID as its id).
+ * sentinel owner, which the FIRST registered user adopts by re-pointing those
+ * rows at its own real random id (see AuthService.adoptPreAuthData).
  */
 export class CreateAuthTables1720000000008 implements MigrationInterface {
   name = 'CreateAuthTables1720000000008';

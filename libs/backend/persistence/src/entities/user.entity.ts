@@ -6,9 +6,11 @@ import { Column, CreateDateColumn, Entity, Index, PrimaryColumn } from 'typeorm'
  * profiles, calendar feeds, Plaud settings, ...) is scoped to a userId —
  * users are fully isolated from each other, nothing is shared.
  *
- * The id is assigned by the auth service (not DB-generated) because the very
- * first registered user deliberately receives DEFAULT_USER_ID, adopting all
- * data created while the instance ran without authentication.
+ * The id is assigned by the auth service (not DB-generated) as a fresh random
+ * UUID for every account, including the first. The first user *adopts* the
+ * data created while the instance ran without authentication by re-pointing
+ * the DEFAULT_USER_ID sentinel rows at its own id — no account ever carries
+ * the sentinel id itself.
  */
 @Entity({ name: 'users' })
 export class UserEntity {
