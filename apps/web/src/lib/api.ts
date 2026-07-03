@@ -104,10 +104,13 @@ export async function deleteInboxItem(id: string): Promise<void> {
   return requestVoid(`/inbox/${id}`, { method: 'DELETE' });
 }
 
-/** Enqueue a fresh transcription attempt; returns the refreshed item. */
-export async function retryTranscription(id: string): Promise<InboxItemDto> {
+/**
+ * Re-run the whole processing pipeline (transcription + speaker diarization)
+ * for a recording; returns the refreshed item.
+ */
+export async function reprocessItem(id: string): Promise<InboxItemDto> {
   return inboxItemSchema.parse(
-    await requestJson(`/inbox/${id}/transcription/retry`, { method: 'POST' }),
+    await requestJson(`/ingest/${id}/reprocess`, { method: 'POST' }),
   );
 }
 

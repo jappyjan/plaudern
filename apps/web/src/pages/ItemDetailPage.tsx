@@ -22,7 +22,7 @@ import {
   getItem,
   getSourceUrl,
   listItemEvents,
-  retryTranscription,
+  reprocessItem,
 } from '../lib/api';
 import { useInboxEvents } from '../hooks/useInboxEvents';
 import { usePlaceName } from '../hooks/usePlaceName';
@@ -67,12 +67,12 @@ export function ItemDetailPage() {
       .catch(() => undefined);
   }, [id]);
 
-  const retry = useCallback(async () => {
+  const reprocess = useCallback(async () => {
     if (!id) return;
     setRetrying(true);
     setRetryError(null);
     try {
-      setItem(await retryTranscription(id));
+      setItem(await reprocessItem(id));
       setConfirmRerunOpen(false);
     } catch (cause) {
       setRetryError(cause instanceof Error ? cause.message : String(cause));
@@ -240,9 +240,9 @@ export function ItemDetailPage() {
                 variant="flat"
                 className="self-start"
                 isLoading={retrying}
-                onPress={retry}
+                onPress={reprocess}
               >
-                Retry transcription
+                Reprocess
               </Button>
               {retryError && <p className="text-xs text-danger">{retryError}</p>}
             </div>
@@ -378,7 +378,8 @@ export function ItemDetailPage() {
             >
               <div className="flex flex-col gap-2 rounded-medium border border-danger-200 bg-danger-50 p-3">
                 <p className="text-sm text-danger">
-                  Re-running transcription will replace the current transcript.
+                  Reprocessing re-runs transcription and speaker diarization, replacing the
+                  current transcript and speakers.
                 </p>
                 <Button
                   size="sm"
@@ -390,7 +391,7 @@ export function ItemDetailPage() {
                     setConfirmRerunOpen(true);
                   }}
                 >
-                  Re-run transcription
+                  Reprocess recording
                 </Button>
               </div>
             </AccordionItem>
@@ -398,11 +399,11 @@ export function ItemDetailPage() {
 
           <Modal isOpen={confirmRerunOpen} onClose={() => !retrying && setConfirmRerunOpen(false)}>
             <ModalContent>
-              <ModalHeader>Re-run transcription?</ModalHeader>
+              <ModalHeader>Reprocess recording?</ModalHeader>
               <ModalBody>
                 <p className="text-sm">
-                  The existing transcript will be overwritten by the new result. This cannot be
-                  undone.
+                  This re-runs transcription and speaker diarization. The current transcript and
+                  speakers will be replaced by the new result. This cannot be undone.
                 </p>
                 {retryError && <p className="text-xs text-danger">{retryError}</p>}
               </ModalBody>
@@ -414,8 +415,8 @@ export function ItemDetailPage() {
                 >
                   Cancel
                 </Button>
-                <Button color="danger" isLoading={retrying} onPress={retry}>
-                  Overwrite and re-run
+                <Button color="danger" isLoading={retrying} onPress={reprocess}>
+                  Overwrite and reprocess
                 </Button>
               </ModalFooter>
             </ModalContent>
