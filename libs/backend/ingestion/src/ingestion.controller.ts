@@ -28,6 +28,11 @@ export class IngestionController {
     return this.ingestion.commit(id);
   }
 
+  @Post(':id/reprocess')
+  async reprocess(@Param('id') id: string): Promise<InboxItemDto> {
+    return this.ingestion.reprocess(id);
+  }
+
   @Post('text')
   async text(@Body() body: unknown): Promise<InboxItemDto> {
     const req: IngestTextRequest = ingestTextRequestSchema.parse(body);

@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
 import type {
   IngestInitRequest,
   IngestInitResponse,
@@ -91,6 +91,24 @@ export class IngestionService {
 
     const finalItem = await this.inbox.getItem(DEFAULT_USER_ID, inboxItemId);
     return toInboxItemDto(finalItem);
+  }
+
+  /**
+   * Re-run the whole processing pipeline for an already-committed item by
+   * replaying its adapter's onCommitted hook (for audio: transcription +
+   * diarization). Extractions are append-only, so this enqueues fresh attempts
+   * and the old ones stay in history.
+   */
+  async reprocess(inboxItemId: string): Promise<InboxItemDto> {
+    const item = await this.inbox.getItem(DEFAULT_USER_ID, inboxItemId);
+    if (!item.source || item.source.uploadStatus !== 'committed') {
+      throw new BadRequestException('item has no committed source to reprocess');
+    }
+    if (item.extractions.some((e) => e.status === 'queued' || e.status === 'processing')) {
+      throw new ConflictException('processing is already in progress for this item');
+    }
+    await this.registry.get(item.sourceType).onCommitted(item);
+    return toInboxItemDto(await this.inbox.getItem(DEFAULT_USER_ID, inboxItemId));
   }
 
   async ingestText(req: IngestTextRequest): Promise<InboxItemDto> {
