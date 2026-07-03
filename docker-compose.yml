@@ -67,8 +67,8 @@ services:
       SPEAKER_ID_URL: http://speaker-id:8000
       SPEAKER_ID_TOKEN: ${SPEAKER_ID_TOKEN:-change-me}
       SPEAKER_MATCH_THRESHOLD: ${SPEAKER_MATCH_THRESHOLD:-0.65}
-      # Hosted pyannoteAI (only used when SPEAKER_ID_PROVIDER=pyannoteai). Needs
-      # storage whose presigned URLs are publicly reachable (set S3_PUBLIC_ENDPOINT).
+      # Hosted pyannoteAI (only used when SPEAKER_ID_PROVIDER=pyannoteai). Audio
+      # is uploaded to pyannoteAI directly, so storage stays private.
       PYANNOTEAI_API_KEY: ${PYANNOTEAI_API_KEY:-}
       PYANNOTEAI_MODEL: ${PYANNOTEAI_MODEL:-precision-2}
       PORT: 3000

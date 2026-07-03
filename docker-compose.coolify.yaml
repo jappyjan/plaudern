@@ -66,9 +66,9 @@ services:
       # LOAD_DIARIZATION=true and HUGGING_FACE_TOKEN); off = disabled. Fixed at
       # boot, not switchable live.
       - SPEAKER_ID_PROVIDER=${SPEAKER_ID_PROVIDER:-pyannoteai}
-      # Hosted pyannoteAI (used when SPEAKER_ID_PROVIDER=pyannoteai). The API
-      # fetches audio via the public S3_PUBLIC_ENDPOINT, and enrolls voiceprints
-      # for new speakers from clips the sidecar slices.
+      # Hosted pyannoteAI (used when SPEAKER_ID_PROVIDER=pyannoteai). Audio is
+      # uploaded to pyannoteAI directly (storage stays private); voiceprints for
+      # new speakers are enrolled from clips the sidecar slices.
       - PYANNOTEAI_API_KEY=${PYANNOTEAI_API_KEY}
       - PYANNOTEAI_MODEL=${PYANNOTEAI_MODEL:-precision-2}
       # Sidecar: transcription (always) + voiceprint clip extraction (pyannoteai mode).

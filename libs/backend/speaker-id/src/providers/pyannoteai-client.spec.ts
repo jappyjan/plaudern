@@ -91,6 +91,26 @@ describe('PyannoteAiClient', () => {
     await expect(client().diarize('https://audio')).rejects.toThrow(/failed.*bad audio/);
   });
 
+  it('uploads bytes via /media/input then PUT, returning the media handle', async () => {
+    const { fn, calls } = fakeFetch([
+      { body: { url: 'https://storage.test/put-here' } }, // POST /media/input
+      { body: {} }, // PUT to presigned url
+    ]);
+    global.fetch = fn as unknown as typeof fetch;
+
+    const handle = await client().upload(Buffer.from('AUDIO'), 'audio/wav', 'abc');
+
+    expect(handle).toBe('media://plaudern-abc');
+    expect(calls[0].url).toBe('https://api.test/v1/media/input');
+    expect(JSON.parse((calls[0].init?.body as string) ?? '{}')).toEqual({
+      url: 'media://plaudern-abc',
+    });
+    // PUT goes to the presigned URL with no bearer auth, just the content type.
+    expect(calls[1].url).toBe('https://storage.test/put-here');
+    expect(calls[1].init?.method).toBe('PUT');
+    expect(calls[1].init?.headers).toEqual({ 'content-type': 'audio/wav' });
+  });
+
   it('throws on a non-2xx submit', async () => {
     const { fn } = fakeFetch([{ ok: false, status: 402, body: { message: 'no credits' } }]);
     global.fetch = fn as unknown as typeof fetch;

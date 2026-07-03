@@ -1,9 +1,11 @@
+import { Readable } from 'node:stream';
 import { PyannoteAiSpeakerIdentifier } from './pyannoteai.identifier';
 import type { PyannoteAiClient, PyannoteAiDiarization } from '../providers/pyannoteai-client';
 import type { VoiceprintMatcherService, DiarizedSpeakerLite } from '../voiceprint-matcher.service';
 
 const config = { get: (_: string, d?: string) => d } as any;
-const storage = { createPresignedGetUrl: async (k: string) => `https://public/${k}` } as any;
+// Audio is read from private storage and pushed to pyannoteAI — never presigned.
+const storage = { getObjectStream: async () => Readable.from([Buffer.from('AUDIO')]) } as any;
 
 const job = {
   userId: 'u1',
@@ -23,12 +25,13 @@ function build(known: { id: string; voiceprint: string | null }[]) {
   const profiles = { find: async () => known } as any;
   const clientCalls: string[] = [];
   const client = {
-    diarize: async () => {
-      clientCalls.push('diarize');
+    upload: async () => 'media://uploaded',
+    diarize: async (url: string) => {
+      clientCalls.push(`diarize:${url}`);
       return diar;
     },
-    identify: async () => {
-      clientCalls.push('identify');
+    identify: async (url: string) => {
+      clientCalls.push(`identify:${url}`);
       return diar;
     },
   } as unknown as PyannoteAiClient;
@@ -51,7 +54,8 @@ describe('PyannoteAiSpeakerIdentifier', () => {
 
     const result = await identifier.identify(job);
 
-    expect(clientCalls).toEqual(['diarize']);
+    // Uploaded to pyannoteAI's storage, then diarized off the media:// handle.
+    expect(clientCalls).toEqual(['diarize:media://uploaded']);
     expect(captured.speakers?.map((s) => s.label)).toEqual(['SPEAKER_00', 'SPEAKER_01']);
     expect(captured.speakers?.every((s) => s.matchedProfile === null)).toBe(true);
     expect(result.segments).toHaveLength(2);
@@ -71,7 +75,7 @@ describe('PyannoteAiSpeakerIdentifier', () => {
 
     const result = await identifier.identify(job);
 
-    expect(clientCalls).toEqual(['identify']);
+    expect(clientCalls).toEqual(['identify:media://uploaded']);
     const speakers = captured.speakers ?? [];
     // Canonical relabeling in order of appearance, regardless of raw labels.
     expect(speakers.map((s) => s.label)).toEqual(['SPEAKER_00', 'SPEAKER_01']);

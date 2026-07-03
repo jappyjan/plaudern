@@ -39,6 +39,37 @@ export class PyannoteAiClient {
     private readonly timeoutMs: number,
   ) {}
 
+  /**
+   * Upload audio bytes to pyannoteAI's own temporary storage and return the
+   * `media://` handle to reference in a job. This is the privacy-preserving
+   * alternative to handing pyannoteAI a presigned URL into our storage: nothing
+   * of ours is exposed to the internet — we push, they never pull.
+   */
+  async upload(bytes: Buffer, contentType: string, keyHint: string): Promise<string> {
+    const objectKey = `media://plaudern-${keyHint}`;
+    const res = await this.fetchWithTimeout(`${this.baseUrl}/media/input`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({ url: objectKey }),
+    });
+    if (!res.ok) {
+      throw new Error(`pyannoteAI /media/input failed ${res.status}: ${(await res.text()).slice(0, 500)}`);
+    }
+    const { url } = (await res.json()) as { url?: string };
+    if (!url) throw new Error('pyannoteAI /media/input returned no upload url');
+
+    // Presigned PUT to their storage — no auth header, just the content type.
+    const put = await this.fetchWithTimeout(url, {
+      method: 'PUT',
+      headers: { 'content-type': contentType },
+      body: bytes,
+    });
+    if (!put.ok) {
+      throw new Error(`pyannoteAI media upload failed ${put.status}: ${(await put.text()).slice(0, 500)}`);
+    }
+    return objectKey;
+  }
+
   /** Diarize with no prior speakers: who-spoke-when, generic SPEAKER_xx labels. */
   async diarize(audioUrl: string): Promise<PyannoteAiDiarization> {
     const jobId = await this.submit('/diarize', { url: audioUrl, model: this.model });

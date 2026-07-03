@@ -209,4 +209,4 @@ curl -s localhost:3000/api/v1/inbox
 Backend env: `apps/api/.env.example` (DB, S3/MinIO, Redis, sidecar). Key
 switches: `DATABASE_DRIVER` (postgres|sqlite), `STORAGE_DRIVER` (s3|memory),
 `QUEUE_DRIVER` (bull|inline), `SPEAKER_ID_PROVIDER` (pyannote|pyannoteai|off;
-`pyannoteai` needs `PYANNOTEAI_API_KEY` + publicly reachable storage).
+`pyannoteai` needs `PYANNOTEAI_API_KEY`).

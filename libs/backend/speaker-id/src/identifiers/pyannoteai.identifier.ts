@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -21,11 +22,10 @@ import {
  * pyannoteAI API. Voiceprints of known profiles are passed to /identify so
  * matching happens server-side; unknown speakers are enrolled by the matcher.
  *
- * pyannoteAI fetches the audio itself over the public internet, so this hands
- * it the PUBLIC presigned URL (createPresignedGetUrl) — the internal one points
- * at a host only the local network can reach. This means pyannoteai mode
- * requires storage whose presigned URLs are publicly reachable (S3, or MinIO
- * behind a public S3_PUBLIC_ENDPOINT).
+ * Audio is uploaded to pyannoteAI's own storage (PyannoteAiClient.upload) and
+ * referenced by a `media://` handle, rather than handing pyannoteAI a presigned
+ * URL into our storage. This keeps our S3/MinIO fully private — it never needs
+ * a public endpoint for this feature and no link to it leaves the box.
  */
 @Injectable()
 export class PyannoteAiSpeakerIdentifier implements SpeakerIdentifier {
@@ -47,7 +47,10 @@ export class PyannoteAiSpeakerIdentifier implements SpeakerIdentifier {
   }
 
   async identify(job: SpeakerIdentificationJob): Promise<SpeakerIdentificationResult> {
-    const audioUrl = await this.storage.createPresignedGetUrl(job.storageKey);
+    // Push the bytes to pyannoteAI (private storage stays private) and work off
+    // the returned media:// handle.
+    const bytes = await this.readObject(job.storageKey);
+    const audioUrl = await this.client.upload(bytes, job.contentType, randomUUID());
 
     // Known profiles with a voiceprint become /identify candidates, keyed by id.
     const known = await this.profiles.find({
@@ -77,6 +80,15 @@ export class PyannoteAiSpeakerIdentifier implements SpeakerIdentifier {
         speaker: canonicalByRaw.get(s.speaker) ?? s.speaker,
       })),
     };
+  }
+
+  private async readObject(storageKey: string): Promise<Buffer> {
+    const stream = await this.storage.getObjectStream(storageKey);
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
   }
 
   /**

@@ -136,15 +136,16 @@ export class VoiceprintMatcherService {
     }
 
     for (const clip of clips) {
-      const key = `voiceprints/tmp/${randomUUID()}.wav`;
       try {
-        await this.storage.putObject(key, Buffer.from(clip.audio_base64, 'base64'), 'audio/wav');
-        const clipUrl = await this.storage.createPresignedGetUrl(key);
-        enrolled.set(clip.label, await this.pyannote.voiceprint(clipUrl));
+        // Upload the clip straight to pyannoteAI — no temp object in our storage.
+        const mediaUrl = await this.pyannote.upload(
+          Buffer.from(clip.audio_base64, 'base64'),
+          'audio/wav',
+          randomUUID(),
+        );
+        enrolled.set(clip.label, await this.pyannote.voiceprint(mediaUrl));
       } catch (err) {
         this.logger.warn(`voiceprint enrollment failed for ${clip.label}: ${(err as Error).message}`);
-      } finally {
-        await this.storage.deleteObject(key).catch(() => undefined);
       }
     }
     return enrolled;
