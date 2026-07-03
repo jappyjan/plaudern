@@ -91,6 +91,12 @@ services:
       # known voices into recordings they aren't in; 50 is pyannoteAI's
       # recommended strict floor. Raise toward 70 for stricter matching.
       - PYANNOTEAI_MATCH_THRESHOLD=${PYANNOTEAI_MATCH_THRESHOLD:-50}
+      # Native Google Calendar (optional): set these in Coolify to enable it.
+      # REDIRECT_URI must be your API's public URL + /v1/calendar/google/callback.
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-}
+      - GOOGLE_APP_BASE_URL=${GOOGLE_APP_BASE_URL:-}
     depends_on:
       postgres:
         condition: service_healthy
