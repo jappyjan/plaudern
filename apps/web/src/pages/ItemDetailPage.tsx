@@ -26,6 +26,7 @@ import {
 } from '../lib/api';
 import { useInboxEvents } from '../hooks/useInboxEvents';
 import { usePlaceName } from '../hooks/usePlaceName';
+import { AudioPlayer } from '../components/AudioPlayer';
 import { latestTranscription, TranscriptionChip } from '../components/TranscriptionChip';
 import { LinkEventModal } from '../components/calendar/LinkEventModal';
 import { SpeakerTranscript } from '../components/SpeakerTranscript';
@@ -209,7 +210,7 @@ export function ItemDetailPage() {
         <Card>
           <CardBody>
             {/* Presigned GET straight from object storage. */}
-            <audio controls src={sourceUrl} className="w-full" preload="metadata" />
+            <AudioPlayer src={sourceUrl} className="w-full" />
           </CardBody>
         </Card>
       )}
