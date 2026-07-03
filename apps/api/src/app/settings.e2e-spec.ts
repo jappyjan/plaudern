@@ -201,4 +201,46 @@ describe('Plaud settings + sync (e2e)', () => {
     );
     expect(plaudItems).toHaveLength(1);
   });
+
+  it('deleting a recording tombstones it so re-sync will not re-import it', async () => {
+    const inbox = await request(app.getHttpServer()).get('/api/v1/inbox?limit=10').expect(200);
+    const item = inbox.body.items.find((i: { sourceType: string }) => i.sourceType === 'plaud');
+    expect(item).toBeDefined();
+
+    await request(app.getHttpServer()).delete(`/api/v1/inbox/${item.id}`).expect(204);
+
+    const before = await request(app.getHttpServer()).get('/api/v1/settings/plaud').expect(200);
+    await request(app.getHttpServer()).post('/api/v1/settings/plaud/sync').expect(201);
+    const result = await waitForSyncResult(before.body.lastSyncAt);
+    // Tombstoned — the deleted recording is not resurrected by sync.
+    expect(result.lastSyncImportedCount).toBe(0);
+
+    const after = await request(app.getHttpServer()).get('/api/v1/inbox?limit=10').expect(200);
+    expect(
+      after.body.items.filter((i: { sourceType: string }) => i.sourceType === 'plaud'),
+    ).toHaveLength(0);
+  });
+
+  it('purging all data clears tombstones so a re-sync reloads and reprocesses everything', async () => {
+    const purge = await request(app.getHttpServer()).delete('/api/v1/inbox').expect(200);
+    expect(purge.body).toEqual({ deletedItems: 0 }); // already emptied by the delete above
+
+    const empty = await request(app.getHttpServer()).get('/api/v1/inbox?limit=10').expect(200);
+    expect(empty.body.items).toHaveLength(0);
+
+    const before = await request(app.getHttpServer()).get('/api/v1/settings/plaud').expect(200);
+    await request(app.getHttpServer()).post('/api/v1/settings/plaud/sync').expect(201);
+    const result = await waitForSyncResult(before.body.lastSyncAt);
+    // The tombstone from the previous delete is gone, so the recording returns.
+    expect(result.lastSyncStatus).toBe('ok');
+    expect(result.lastSyncImportedCount).toBe(1);
+
+    const inbox = await request(app.getHttpServer()).get('/api/v1/inbox?limit=10').expect(200);
+    const plaudItems = inbox.body.items.filter(
+      (i: { sourceType: string }) => i.sourceType === 'plaud',
+    );
+    expect(plaudItems).toHaveLength(1);
+    // A fresh round of processing fired on re-import.
+    expect(plaudItems[0].extractions).toHaveLength(2);
+  });
 });

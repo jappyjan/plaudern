@@ -11,6 +11,7 @@ import {
   inboxListQuerySchema,
   type InboxItemDto,
   type InboxListResponse,
+  type InboxPurgeResponse,
 } from '@plaudern/contracts';
 import { CurrentUser, type AuthenticatedUser } from '@plaudern/auth';
 import { StorageService } from '@plaudern/storage';
@@ -42,6 +43,18 @@ export class InboxController {
   ): Promise<InboxItemDto> {
     const item = await this.inbox.getItem(user.id, id);
     return toInboxItemDto(item);
+  }
+
+  /**
+   * DANGER: permanently purge every recording and all recording-derived data
+   * for the signed-in user (items, transcripts, speakers, calendar links) and
+   * clear the idempotency tombstones so an automated Plaud re-sync re-imports
+   * everything from scratch. A testing aid — kept whole-inbox rather than
+   * per-item on purpose.
+   */
+  @Delete()
+  async purge(@CurrentUser() user: AuthenticatedUser): Promise<InboxPurgeResponse> {
+    return this.inbox.purgeAllForUser(user.id);
   }
 
   /** Permanently delete an item, its extractions and its stored blobs. */

@@ -9,6 +9,7 @@ import {
   geocodeResponseSchema,
   inboxItemSchema,
   inboxListResponseSchema,
+  inboxPurgeResponseSchema,
   ingestInitResponseSchema,
   itemEventsResponseSchema,
   linkResponseSchema,
@@ -31,6 +32,7 @@ import {
   type IngestInitResponse,
   type InboxItemDto,
   type InboxListResponse,
+  type InboxPurgeResponse,
   type PlaudSettingsDto,
   type PlaudSyncNowResponse,
   type PlaudTestConnectionRequest,
@@ -110,6 +112,14 @@ export async function getSourceUrl(id: string): Promise<string | null> {
 /** Permanently delete an inbox item, its extractions and its stored blobs. */
 export async function deleteInboxItem(id: string): Promise<void> {
   return requestVoid(`/inbox/${id}`, { method: 'DELETE' });
+}
+
+/**
+ * DANGER: purge every recording and all recording-derived data for the current
+ * user, clearing idempotency tombstones so a Plaud re-sync reloads them fresh.
+ */
+export async function purgeAllData(): Promise<InboxPurgeResponse> {
+  return inboxPurgeResponseSchema.parse(await requestJson('/inbox', { method: 'DELETE' }));
 }
 
 /**

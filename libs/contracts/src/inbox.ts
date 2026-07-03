@@ -86,3 +86,13 @@ export const inboxListResponseSchema = z.object({
   nextCursor: z.string().uuid().nullable(),
 });
 export type InboxListResponse = z.infer<typeof inboxListResponseSchema>;
+
+/**
+ * Result of purging every recording (and all recording-derived data) for the
+ * signed-in user. Idempotency tombstones are cleared too, so an automated
+ * Plaud re-sync will re-import the deleted recordings from scratch.
+ */
+export const inboxPurgeResponseSchema = z.object({
+  deletedItems: z.number().int().nonnegative(),
+});
+export type InboxPurgeResponse = z.infer<typeof inboxPurgeResponseSchema>;

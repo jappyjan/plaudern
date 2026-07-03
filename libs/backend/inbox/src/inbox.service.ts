@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import type {
   ExtractionKind,
   ExtractionSegment,
@@ -11,7 +11,10 @@ import {
   ExtractedPayloadEntity,
   InboxItemEntity,
   InboxTombstoneEntity,
+  RecordingEventLinkEntity,
   SourcePayloadEntity,
+  SpeakerOccurrenceEntity,
+  VoiceProfileEntity,
 } from '@plaudern/persistence';
 import { StorageService } from '@plaudern/storage';
 import { InboxEventsService } from './inbox-events.service';
@@ -242,6 +245,61 @@ export class InboxService {
         this.logger.warn(`failed to delete blob ${storageKeys[index]}: ${result.reason}`);
       }
     });
+  }
+
+  /**
+   * Nuke every recording and all recording-derived data for one user: inbox
+   * items, source/extracted payloads, diarization occurrences, voice profiles,
+   * calendar links and — crucially — the idempotency tombstones, so an
+   * automated Plaud re-sync re-imports the recordings from scratch and a fresh
+   * round of processing fires. Deliberately dangerous; primarily a testing aid.
+   *
+   * Other per-user data (Plaud credentials, calendar feeds, passkeys, sessions)
+   * is left intact so the re-sync has something to sync from.
+   */
+  async purgeAllForUser(userId: string): Promise<{ deletedItems: number }> {
+    const items = await this.items.find({
+      where: { userId },
+      relations: { source: true, extractions: true },
+    });
+    const itemIds = items.map((item) => item.id);
+    const storageKeys = items
+      .flatMap((item) => [
+        item.source?.storageKey,
+        ...item.extractions.map((extraction) => extraction.contentStorageKey),
+      ])
+      .filter((key): key is string => Boolean(key));
+
+    // Explicit child deletes (rather than FK cascades) so behavior is identical
+    // on Postgres and the sqlite test database — mirrors deleteItem(). Order
+    // respects FK direction: occurrences/links/payloads before their parents.
+    await this.items.manager.transaction(async (em) => {
+      if (itemIds.length > 0) {
+        await em.getRepository(SpeakerOccurrenceEntity).delete({ inboxItemId: In(itemIds) });
+        await em.getRepository(RecordingEventLinkEntity).delete({ inboxItemId: In(itemIds) });
+        await em.getRepository(ExtractedPayloadEntity).delete({ inboxItemId: In(itemIds) });
+        await em.getRepository(SourcePayloadEntity).delete({ inboxItemId: In(itemIds) });
+      }
+      await em.getRepository(VoiceProfileEntity).delete({ userId });
+      await em.getRepository(InboxItemEntity).delete({ userId });
+      await em.getRepository(InboxTombstoneEntity).delete({ userId });
+    });
+
+    for (const item of items) {
+      this.events.emit(userId, { type: 'item.deleted', itemId: item.id });
+    }
+
+    const results = await Promise.allSettled(
+      storageKeys.map((key) => this.storage.deleteObject(key)),
+    );
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        this.logger.warn(`failed to delete blob ${storageKeys[index]}: ${result.reason}`);
+      }
+    });
+
+    this.logger.log(`purged ${itemIds.length} inbox items for user ${userId}`);
+    return { deletedItems: itemIds.length };
   }
 
   async getItemById(id: string): Promise<InboxItemEntity | null> {
