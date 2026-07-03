@@ -31,6 +31,7 @@ import { DeSentinelizeOwner1720000000009 } from './migrations/1720000000009-DeSe
 import { PyannoteAiVoiceprints1720000000010 } from './migrations/1720000000010-PyannoteAiVoiceprints';
 import { CreateSummarizationSettings1720000000011 } from './migrations/1720000000011-CreateSummarizationSettings';
 import { DropEmbeddingColumns1720000000012 } from './migrations/1720000000012-DropEmbeddingColumns';
+import { GoogleCalendarFeeds1720000000013 } from './migrations/1720000000013-GoogleCalendarFeeds';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -66,6 +67,7 @@ export const ALL_MIGRATIONS = [
   PyannoteAiVoiceprints1720000000010,
   CreateSummarizationSettings1720000000011,
   DropEmbeddingColumns1720000000012,
+  GoogleCalendarFeeds1720000000013,
 ];
 
 /**

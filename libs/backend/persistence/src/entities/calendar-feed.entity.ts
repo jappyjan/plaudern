@@ -29,19 +29,31 @@ export class CalendarFeedEntity {
   providerType!: CalendarProviderType;
 
   /**
-   * The feed URL is a secret (it grants read access to the calendar).
-   * AES-256-GCM ciphertext, format `v1:<ivB64>:<tagB64>:<dataB64>`.
+   * ICS feed URL (secret). AES-256-GCM ciphertext `v1:<iv>:<tag>:<data>`.
+   * Null for non-ICS providers (google).
    */
-  @Column({ type: 'text' })
-  urlEncrypted!: string;
+  @Column({ type: 'text', nullable: true })
+  urlEncrypted!: string | null;
 
-  /** sha256 hex of the normalized URL — dedupe without decrypting. */
-  @Column({ type: 'varchar' })
-  urlHash!: string;
+  /** sha256 hex of the normalized URL — dedupe without decrypting. Null for google. */
+  @Column({ type: 'varchar', nullable: true })
+  urlHash!: string | null;
 
-  /** Safe-to-display remnant (host + URL tail), used in DTOs and logs. */
-  @Column({ type: 'varchar' })
-  urlMasked!: string;
+  /** Safe-to-display remnant. For google feeds, a readable "email · calendar" label. */
+  @Column({ type: 'varchar', nullable: true })
+  urlMasked!: string | null;
+
+  /** Google calendar id (e.g. 'primary' or '…@group.calendar.google.com'). Null for ics. */
+  @Column({ type: 'varchar', nullable: true })
+  googleCalendarId!: string | null;
+
+  /** Owning Google account email — groups feeds for reconnect + dedup. Null for ics. */
+  @Column({ type: 'varchar', nullable: true })
+  googleAccountEmail!: string | null;
+
+  /** OAuth refresh token (secret), AES-256-GCM encrypted like urlEncrypted. Null for ics. */
+  @Column({ type: 'text', nullable: true })
+  googleRefreshTokenEncrypted!: string | null;
 
   @Column({ type: 'varchar', nullable: true })
   color!: string | null;
