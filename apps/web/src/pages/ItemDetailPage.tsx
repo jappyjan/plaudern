@@ -26,7 +26,7 @@ import {
 } from '../lib/api';
 import { useInboxEvents } from '../hooks/useInboxEvents';
 import { usePlaceName } from '../hooks/usePlaceName';
-import { latestTranscription, TranscriptionChip } from '../components/TranscriptionChip';
+import { transcriptionUnit, TranscriptionChip } from '../components/TranscriptionChip';
 import { LinkEventModal } from '../components/calendar/LinkEventModal';
 import { SpeakerTranscript } from '../components/SpeakerTranscript';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
@@ -133,9 +133,10 @@ export function ItemDetailPage() {
         const fetched = await getItem(id);
         if (cancelled) return;
         setItem(fetched);
-        // Keep polling while a transcription is still in flight.
-        const transcription = latestTranscription(fetched);
-        if (transcription && ['queued', 'processing'].includes(transcription.status)) {
+        // Keep polling while either half of the unit (transcription or
+        // diarization) is still in flight.
+        const unit = transcriptionUnit(fetched);
+        if (unit && ['queued', 'processing'].includes(unit.status)) {
           timer = setTimeout(load, POLL_INTERVAL_MS);
         }
       } catch (cause) {
@@ -173,7 +174,7 @@ export function ItemDetailPage() {
     );
   }
 
-  const transcription = latestTranscription(item);
+  const unit = transcriptionUnit(item);
   const device = item.metadata?.device as Record<string, string> | undefined;
   const tags = item.metadata?.tags as Record<string, unknown> | undefined;
 
@@ -220,20 +221,28 @@ export function ItemDetailPage() {
           <TranscriptionChip item={item} />
         </CardHeader>
         <CardBody>
-          {!transcription && (
-            <p className="text-sm text-default-500">No transcription for this item.</p>
-          )}
-          {transcription && ['queued', 'processing'].includes(transcription.status) && (
+          {/* Transcription and diarization are one unit: the transcript is only
+              revealed once BOTH have succeeded, so speakers are never missing
+              from a "done" recording, and a silently-failed diarization now
+              surfaces instead of masquerading as a plain transcript. */}
+          {!unit && <p className="text-sm text-default-500">No transcription for this item.</p>}
+          {unit && ['queued', 'processing'].includes(unit.status) && (
             <div className="flex items-center gap-2 text-sm text-default-500">
-              <Spinner size="sm" /> Transcribing…
+              <Spinner size="sm" />{' '}
+              {unit.transcription.status === 'succeeded' ? 'Identifying speakers…' : 'Transcribing…'}
             </div>
           )}
-          {transcription?.status === 'succeeded' && (
-            <SpeakerTranscript itemId={item.id} transcription={transcription} />
+          {unit?.status === 'succeeded' && (
+            <SpeakerTranscript itemId={item.id} transcription={unit.transcription} />
           )}
-          {transcription?.status === 'failed' && (
+          {unit?.status === 'failed' && (
             <div className="flex flex-col gap-2">
-              <p className="text-sm text-danger">{transcription.error ?? 'Transcription failed.'}</p>
+              <p className="text-sm text-danger">
+                {unit.failure?.error ??
+                  (unit.failure?.kind === 'diarization'
+                    ? 'Speaker diarization failed.'
+                    : 'Transcription failed.')}
+              </p>
               <Button
                 size="sm"
                 color="primary"
@@ -368,7 +377,7 @@ export function ItemDetailPage() {
         </CardBody>
       </Card>
 
-      {transcription?.status === 'succeeded' && (
+      {unit?.status === 'succeeded' && (
         <>
           <Accordion isCompact>
             <AccordionItem
