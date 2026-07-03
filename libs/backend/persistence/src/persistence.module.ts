@@ -21,6 +21,7 @@ import { GeocodeCache1720000000003 } from './migrations/1720000000003-GeocodeCac
 import { CreateSpeakerTables1720000000004 } from './migrations/1720000000004-CreateSpeakerTables';
 import { InboxTombstones1720000000005 } from './migrations/1720000000005-InboxTombstones';
 import { CreateCalendarTables1720000000006 } from './migrations/1720000000006-CreateCalendarTables';
+import { CalendarFeedAutoLink1720000000007 } from './migrations/1720000000007-CalendarFeedAutoLink';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -46,6 +47,7 @@ export const ALL_MIGRATIONS = [
   CreateSpeakerTables1720000000004,
   InboxTombstones1720000000005,
   CreateCalendarTables1720000000006,
+  CalendarFeedAutoLink1720000000007,
 ];
 
 /**
