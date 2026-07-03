@@ -284,6 +284,10 @@ importers:
       typeorm:
         specifier: ^1.0.0
         version: 1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3))
+    devDependencies:
+      '@nestjs/testing':
+        specifier: 11.1.27
+        version: 11.1.27(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(@nestjs/platform-express@11.1.27)
 
   libs/backend/geocoding:
     dependencies:
