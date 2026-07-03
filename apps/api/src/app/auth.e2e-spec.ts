@@ -15,8 +15,8 @@ import { INestApplication, VersioningType } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
-import { SESSION_COOKIE, SessionService } from '@plaudern/auth';
-import { DEFAULT_USER_ID, UserEntity } from '@plaudern/persistence';
+import { AuthService, SESSION_COOKIE, SessionService } from '@plaudern/auth';
+import { DEFAULT_USER_ID, InboxItemEntity, UserEntity } from '@plaudern/persistence';
 import { InMemoryStorageService, StorageService } from '@plaudern/storage';
 import { TRANSCRIPTION_PROVIDER } from '@plaudern/transcription';
 import { DIARIZATION_PROVIDER } from '@plaudern/speaker-id';
@@ -252,29 +252,41 @@ describe('Authentication & multi-user isolation (e2e, Path A)', () => {
       expect(bobSettings.body.configured).toBe(false);
     });
 
-    it('adopts pre-auth data: the DEFAULT_USER_ID owner sees legacy rows', async () => {
-      // Rows created while the instance ran unauthenticated belong to
-      // DEFAULT_USER_ID; the auth service assigns that id to the first
-      // registered user. Simulate that user and a stranger.
-      const owner = await createUserSession('first-owner', DEFAULT_USER_ID);
+    it('adopts pre-auth data under a real random owner id (never the sentinel)', async () => {
+      // Rows created while the instance ran unauthenticated belong to the
+      // DEFAULT_USER_ID sentinel. The first real account gets its OWN random
+      // id and adopts that data by re-pointing it — no account ever carries
+      // the sentinel id itself.
+      const legacyId = randomUUID();
+      await dataSource.getRepository(InboxItemEntity).insert({
+        id: legacyId,
+        userId: DEFAULT_USER_ID,
+        sourceType: 'text',
+        occurredAt: '2026-07-01T08:00:00.000Z',
+        idempotencyKey: 'pre-auth-legacy-1',
+        metadata: null,
+      });
+
+      const owner = await createUserSession('first-owner'); // real random id
+      expect(owner.userId).not.toBe(DEFAULT_USER_ID);
       const stranger = await createUserSession('stranger');
 
-      const text = await request(app.getHttpServer())
-        .post('/api/v1/ingest/text')
-        .set('cookie', owner.cookie)
-        .send({
-          text: 'legacy note',
-          occurredAt: '2026-07-01T08:00:00.000Z',
-          idempotencyKey: 'legacy-1',
-        })
-        .expect(201);
-
+      // Before adoption the legacy row is still owned by the sentinel, so even
+      // the fresh owner can't see it.
       await request(app.getHttpServer())
-        .get(`/api/v1/inbox/${text.body.id}`)
+        .get(`/api/v1/inbox/${legacyId}`)
+        .set('cookie', owner.cookie)
+        .expect(404);
+
+      await app.get(AuthService).adoptPreAuthData(owner.userId);
+
+      // Now the owner sees the adopted row; a stranger never does.
+      await request(app.getHttpServer())
+        .get(`/api/v1/inbox/${legacyId}`)
         .set('cookie', owner.cookie)
         .expect(200);
       await request(app.getHttpServer())
-        .get(`/api/v1/inbox/${text.body.id}`)
+        .get(`/api/v1/inbox/${legacyId}`)
         .set('cookie', stranger.cookie)
         .expect(404);
     });
