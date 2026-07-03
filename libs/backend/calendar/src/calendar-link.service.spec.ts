@@ -186,7 +186,7 @@ describe('CalendarLinkService', () => {
     await createEvent(feed.id, '2026-07-01T09:00:00.000Z', '2026-07-01T10:00:00.000Z');
     await createItem('2026-07-01T09:30:00.000Z');
 
-    await service.autoLinkWindow(WINDOW_START, WINDOW_END);
+    await service.autoLinkWindow(DEFAULT_USER_ID, WINDOW_START, WINDOW_END);
     expect(await findLinks()).toHaveLength(0);
   });
 
@@ -194,13 +194,13 @@ describe('CalendarLinkService', () => {
     const feed = await createFeed();
     const event = await createEvent(feed.id, '2026-07-01T09:00:00.000Z', '2026-07-01T10:00:00.000Z');
     const item = await createItem('2026-07-01T09:30:00.000Z');
-    await service.autoLinkWindow(WINDOW_START, WINDOW_END);
+    await service.autoLinkWindow(DEFAULT_USER_ID, WINDOW_START, WINDOW_END);
     expect(await findLinks()).toHaveLength(1);
 
     feed.autoLink = false;
     await dataSource.getRepository(CalendarFeedEntity).save(feed);
 
-    await service.autoLinkWindow(WINDOW_START, WINDOW_END);
+    await service.autoLinkWindow(DEFAULT_USER_ID, WINDOW_START, WINDOW_END);
     const links = await findLinks();
     expect(links).toHaveLength(1);
     expect(links[0]).toMatchObject({
@@ -216,7 +216,7 @@ describe('CalendarLinkService', () => {
     // First recording links while auto-link is on.
     await createEvent(feed.id, '2026-07-01T09:00:00.000Z', '2026-07-01T10:00:00.000Z', 'uid-a');
     await createItem('2026-07-01T09:30:00.000Z');
-    await service.autoLinkWindow(WINDOW_START, WINDOW_END);
+    await service.autoLinkWindow(DEFAULT_USER_ID, WINDOW_START, WINDOW_END);
     expect(await findLinks()).toHaveLength(1);
 
     // Feed opts out; a later event + recording must NOT auto-link.
@@ -225,7 +225,7 @@ describe('CalendarLinkService', () => {
     await createEvent(feed.id, '2026-07-02T09:00:00.000Z', '2026-07-02T10:00:00.000Z', 'uid-b');
     await createItem('2026-07-02T09:30:00.000Z');
 
-    await service.autoLinkWindow(WINDOW_START, WINDOW_END);
+    await service.autoLinkWindow(DEFAULT_USER_ID, WINDOW_START, WINDOW_END);
     expect(await findLinks()).toHaveLength(1);
   });
 
@@ -233,9 +233,9 @@ describe('CalendarLinkService', () => {
     const feed = await createFeed(false);
     const event = await createEvent(feed.id, '2026-07-01T09:00:00.000Z', '2026-07-01T10:00:00.000Z');
     const item = await createItem('2026-07-01T09:30:00.000Z');
-    await service.link(item.id, event.id);
+    await service.link(DEFAULT_USER_ID, item.id, event.id);
 
-    await service.autoLinkWindow(WINDOW_START, WINDOW_END);
+    await service.autoLinkWindow(DEFAULT_USER_ID, WINDOW_START, WINDOW_END);
 
     const links = await findLinks();
     expect(links).toHaveLength(1);
