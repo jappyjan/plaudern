@@ -50,6 +50,7 @@ describe('CalendarLinkService', () => {
     service = new CalendarLinkService(
       dataSource.getRepository(RecordingEventLinkEntity),
       dataSource.getRepository(CalendarEventEntity),
+      dataSource.getRepository(CalendarFeedEntity),
       dataSource.getRepository(InboxItemEntity),
     );
   });
@@ -58,15 +59,16 @@ describe('CalendarLinkService', () => {
     await dataSource.destroy();
   });
 
-  async function createFeed(): Promise<CalendarFeedEntity> {
+  async function createFeed(autoLink = true): Promise<CalendarFeedEntity> {
     return dataSource.getRepository(CalendarFeedEntity).save({
       userId: DEFAULT_USER_ID,
       name: 'Test feed',
       providerType: 'ics' as const,
       urlEncrypted: 'v1:x:y:z',
-      urlHash: 'hash',
+      urlHash: `hash-${Math.random()}`,
       urlMasked: 'example.com/…test.ics',
       enabled: true,
+      autoLink,
     });
   }
 
@@ -177,6 +179,67 @@ describe('CalendarLinkService', () => {
 
     await service.autoLinkWindow(WINDOW_START, WINDOW_END);
     expect(await findLinks()).toHaveLength(0);
+  });
+
+  it('does not auto-link events from a feed with auto-link disabled', async () => {
+    const feed = await createFeed(false);
+    await createEvent(feed.id, '2026-07-01T09:00:00.000Z', '2026-07-01T10:00:00.000Z');
+    await createItem('2026-07-01T09:30:00.000Z');
+
+    await service.autoLinkWindow(WINDOW_START, WINDOW_END);
+    expect(await findLinks()).toHaveLength(0);
+  });
+
+  it('keeps existing auto links when a feed later opts out (toggle only affects future linking)', async () => {
+    const feed = await createFeed();
+    const event = await createEvent(feed.id, '2026-07-01T09:00:00.000Z', '2026-07-01T10:00:00.000Z');
+    const item = await createItem('2026-07-01T09:30:00.000Z');
+    await service.autoLinkWindow(WINDOW_START, WINDOW_END);
+    expect(await findLinks()).toHaveLength(1);
+
+    feed.autoLink = false;
+    await dataSource.getRepository(CalendarFeedEntity).save(feed);
+
+    await service.autoLinkWindow(WINDOW_START, WINDOW_END);
+    const links = await findLinks();
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({
+      inboxItemId: item.id,
+      calendarEventId: event.id,
+      origin: 'auto',
+      status: 'active',
+    });
+  });
+
+  it('opting out stops new auto links but preserves the ones already there', async () => {
+    const feed = await createFeed();
+    // First recording links while auto-link is on.
+    await createEvent(feed.id, '2026-07-01T09:00:00.000Z', '2026-07-01T10:00:00.000Z', 'uid-a');
+    await createItem('2026-07-01T09:30:00.000Z');
+    await service.autoLinkWindow(WINDOW_START, WINDOW_END);
+    expect(await findLinks()).toHaveLength(1);
+
+    // Feed opts out; a later event + recording must NOT auto-link.
+    feed.autoLink = false;
+    await dataSource.getRepository(CalendarFeedEntity).save(feed);
+    await createEvent(feed.id, '2026-07-02T09:00:00.000Z', '2026-07-02T10:00:00.000Z', 'uid-b');
+    await createItem('2026-07-02T09:30:00.000Z');
+
+    await service.autoLinkWindow(WINDOW_START, WINDOW_END);
+    expect(await findLinks()).toHaveLength(1);
+  });
+
+  it('keeps a manual link even when its feed has auto-link disabled', async () => {
+    const feed = await createFeed(false);
+    const event = await createEvent(feed.id, '2026-07-01T09:00:00.000Z', '2026-07-01T10:00:00.000Z');
+    const item = await createItem('2026-07-01T09:30:00.000Z');
+    await service.link(item.id, event.id);
+
+    await service.autoLinkWindow(WINDOW_START, WINDOW_END);
+
+    const links = await findLinks();
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({ origin: 'manual', status: 'active' });
   });
 
   it('never removes a manual link, even without overlap', async () => {

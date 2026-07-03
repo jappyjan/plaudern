@@ -18,6 +18,8 @@ export const calendarFeedSchema = z.object({
   name: z.string(),
   providerType: calendarProviderTypeSchema,
   enabled: z.boolean(),
+  /** When false, recordings are never auto-linked to this feed's events. */
+  autoLink: z.boolean(),
   color: z.string().nullable(),
   urlMasked: z.string(),
   lastSyncAt: z.string().nullable(),
@@ -40,6 +42,8 @@ export const createCalendarFeedRequestSchema = z.object({
   url: feedUrlSchema,
   color: z.string().max(32).optional(),
   enabled: z.boolean().default(true),
+  /** Omitted => off (the entity default); auto-linking is opt-in per feed. */
+  autoLink: z.boolean().optional(),
 });
 export type CreateCalendarFeedRequest = z.infer<typeof createCalendarFeedRequestSchema>;
 
@@ -49,6 +53,7 @@ export const updateCalendarFeedRequestSchema = z.object({
   url: feedUrlSchema.optional(),
   color: z.string().max(32).nullable().optional(),
   enabled: z.boolean().optional(),
+  autoLink: z.boolean().optional(),
 });
 export type UpdateCalendarFeedRequest = z.infer<typeof updateCalendarFeedRequestSchema>;
 

@@ -59,6 +59,7 @@ export class CalendarFeedsService {
       urlMasked: maskFeedUrl(url),
       color: req.color ?? null,
       enabled: req.enabled,
+      autoLink: req.autoLink ?? false,
     });
     return this.repo.save(created);
   }
@@ -68,6 +69,7 @@ export class CalendarFeedsService {
     if (req.name !== undefined) feed.name = req.name;
     if (req.color !== undefined) feed.color = req.color;
     if (req.enabled !== undefined) feed.enabled = req.enabled;
+    if (req.autoLink !== undefined) feed.autoLink = req.autoLink;
     if (req.url !== undefined) {
       const secret = this.requireSecret();
       const url = normalizeFeedUrl(req.url);
@@ -125,6 +127,7 @@ export class CalendarFeedsService {
       name: feed.name,
       providerType: feed.providerType,
       enabled: feed.enabled,
+      autoLink: feed.autoLink,
       color: feed.color,
       urlMasked: feed.urlMasked,
       lastSyncAt: feed.lastSyncAt,

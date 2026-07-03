@@ -49,6 +49,15 @@ export class CalendarFeedEntity {
   @Column({ type: 'boolean', default: true })
   enabled!: boolean;
 
+  /**
+   * Opt-in automatic recording↔event linking. Off by default: users who want
+   * a feed's events auto-matched to recordings enable it explicitly. Kept off
+   * for e.g. a shared/partner calendar where automatic matching is noise.
+   * Manual linking always works regardless.
+   */
+  @Column({ type: 'boolean', default: false })
+  autoLink!: boolean;
+
   @Column({ type: 'varchar', nullable: true })
   lastSyncAt!: string | null;
 

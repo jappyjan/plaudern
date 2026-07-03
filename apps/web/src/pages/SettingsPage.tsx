@@ -320,6 +320,16 @@ function CalendarFeedsSection() {
     }
   };
 
+  const toggleAutoLink = async (id: string, autoLink: boolean) => {
+    setActionError(null);
+    try {
+      await updateCalendarFeed(id, { autoLink });
+      await refresh();
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
   const remove = async (id: string) => {
     setActionError(null);
     try {
@@ -384,6 +394,14 @@ function CalendarFeedsSection() {
                     }`
                   : 'Not synced yet.'}
               </span>
+              <Switch
+                size="sm"
+                isSelected={feed.autoLink}
+                onValueChange={(autoLink) => void toggleAutoLink(feed.id, autoLink)}
+                classNames={{ label: 'text-xs text-default-500' }}
+              >
+                Auto-link recordings to these events
+              </Switch>
               {feed.lastSyncStatus === 'error' && feed.lastSyncError && (
                 <div className="rounded-medium bg-danger-50 p-2 text-xs text-danger">
                   {feed.lastSyncError}
