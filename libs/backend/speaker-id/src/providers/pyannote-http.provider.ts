@@ -1,10 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type {
   DiarizationInput,
   DiarizationProvider,
   DiarizationResult,
 } from '../diarization.provider';
+import { postJsonToSidecar } from './sidecar-http';
 
 /**
  * Calls the self-hosted pyannote sidecar (apps/speaker-id-ml) over HTTP. The
@@ -14,7 +15,6 @@ import type {
 @Injectable()
 export class PyannoteHttpProvider implements DiarizationProvider {
   readonly id = 'pyannote-sidecar';
-  private readonly logger = new Logger(PyannoteHttpProvider.name);
   private readonly baseUrl: string;
   private readonly token: string;
   private readonly timeoutMs: number;
@@ -27,27 +27,11 @@ export class PyannoteHttpProvider implements DiarizationProvider {
   }
 
   async diarize(input: DiarizationInput): Promise<DiarizationResult> {
-    const res = await fetch(`${this.baseUrl}/diarize`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
-      },
-      body: JSON.stringify({ audio_url: input.audioUrl }),
-      signal: AbortSignal.timeout(this.timeoutMs),
-    });
-
-    if (!res.ok) {
-      const body = await res.text();
-      this.logger.error(`diarization failed: ${res.status} ${body}`);
-      throw new Error(`diarization provider error ${res.status}`);
-    }
-
-    const json = (await res.json()) as {
+    const json = await postJsonToSidecar<{
       duration_seconds: number;
       segments: { start: number; end: number; speaker: string }[];
       speakers: { label: string; embedding: number[]; speaking_seconds: number }[];
-    };
+    }>(`${this.baseUrl}/diarize`, { audio_url: input.audioUrl }, this.token, this.timeoutMs);
     return {
       durationSeconds: json.duration_seconds,
       segments: json.segments,

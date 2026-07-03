@@ -1,10 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type {
   TranscriptionInput,
   TranscriptionProvider,
   TranscriptionResult,
 } from '../transcription.provider';
+import { postJsonToSidecar } from './sidecar-http';
 
 /**
  * Calls the self-hosted ML sidecar (apps/speaker-id-ml) over HTTP. The sidecar
@@ -15,7 +16,6 @@ import type {
 @Injectable()
 export class SidecarTranscriptionProvider implements TranscriptionProvider {
   readonly id = 'whisper-sidecar';
-  private readonly logger = new Logger(SidecarTranscriptionProvider.name);
   private readonly baseUrl: string;
   private readonly token: string;
   private readonly timeoutMs: number;
@@ -30,30 +30,16 @@ export class SidecarTranscriptionProvider implements TranscriptionProvider {
   }
 
   async transcribe(input: TranscriptionInput): Promise<TranscriptionResult> {
-    const res = await fetch(`${this.baseUrl}/transcribe`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
-      },
-      body: JSON.stringify({
-        audio_url: input.audioUrl,
-        language: input.languageHint ?? null,
-      }),
-      signal: AbortSignal.timeout(this.timeoutMs),
-    });
-
-    if (!res.ok) {
-      const body = await res.text();
-      this.logger.error(`transcription failed: ${res.status} ${body}`);
-      throw new Error(`transcription provider error ${res.status}`);
-    }
-
-    const json = (await res.json()) as {
+    const json = await postJsonToSidecar<{
       text: string;
       language?: string;
       segments?: { start: number; end: number; text: string }[];
-    };
+    }>(
+      `${this.baseUrl}/transcribe`,
+      { audio_url: input.audioUrl, language: input.languageHint ?? null },
+      this.token,
+      this.timeoutMs,
+    );
     return {
       text: json.text,
       language: json.language,
