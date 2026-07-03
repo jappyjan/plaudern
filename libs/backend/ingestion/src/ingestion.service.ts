@@ -13,6 +13,15 @@ import { AdapterRegistry, SOURCE_ADAPTERS, type SourceAdapter } from './source-a
 import { buildSourceStorageKey } from './storage-key';
 
 /**
+ * How long a `queued`/`processing` extraction may sit before reprocess treats
+ * it as orphaned (stranded by a crashed/redeployed worker) rather than
+ * genuinely in flight. Healthy jobs settle well within this; anything still
+ * pending past it is reclaimed so a retry can proceed instead of failing with
+ * "already in progress" forever.
+ */
+const STALE_EXTRACTION_MS = 15 * 60 * 1000;
+
+/**
  * Orchestrates the two-phase presigned ingestion (plan §2/§3):
  *   init  -> create immutable envelope + pending payload, return presigned PUT
  *   (client PUTs bytes directly to storage)
@@ -98,14 +107,39 @@ export class IngestionService {
    * replaying its adapter's onCommitted hook (for audio: transcription +
    * diarization). Extractions are append-only, so this enqueues fresh attempts
    * and the old ones stay in history.
+   *
+   * The guard distinguishes genuinely in-flight work from orphaned rows: a
+   * worker sets a row to `processing` at job start and to a terminal state in
+   * its catch, so a healthy job settles quickly. A row still `queued`/
+   * `processing` long after it was appended was almost certainly stranded by a
+   * crashed or redeployed worker — notably BullMQ force-fails a stalled job
+   * without running our processor, so the row never reaches `failed`. Refusing
+   * on those would block every future retry forever (the symptom users hit as
+   * "already in progress" on an item whose transcription shows "failed",
+   * because a sibling diarization row is stuck). So we reclaim stale rows and
+   * replay, while still refusing when work is actually in progress.
    */
   async reprocess(inboxItemId: string): Promise<InboxItemDto> {
     const item = await this.inbox.getItem(DEFAULT_USER_ID, inboxItemId);
     if (!item.source || item.source.uploadStatus !== 'committed') {
       throw new BadRequestException('item has no committed source to reprocess');
     }
-    if (item.extractions.some((e) => e.status === 'queued' || e.status === 'processing')) {
+
+    const pending = item.extractions.filter(
+      (e) => e.status === 'queued' || e.status === 'processing',
+    );
+    const now = Date.now();
+    const isStale = (createdAt: Date | string): boolean =>
+      now - new Date(createdAt).getTime() >= STALE_EXTRACTION_MS;
+
+    if (pending.some((e) => !isStale(e.createdAt))) {
       throw new ConflictException('processing is already in progress for this item');
+    }
+    for (const stale of pending) {
+      await this.inbox.completeExtraction(stale.id, {
+        status: 'failed',
+        error: 'superseded by reprocess (stale in-flight extraction reclaimed)',
+      });
     }
     await this.registry.get(item.sourceType).onCommitted(item);
     return toInboxItemDto(await this.inbox.getItem(DEFAULT_USER_ID, inboxItemId));

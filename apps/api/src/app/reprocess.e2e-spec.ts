@@ -10,9 +10,12 @@ process.env.GEOCODER = 'stub';
 
 import { INestApplication, VersioningType } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import type { Repository } from 'typeorm';
 import request from 'supertest';
 import { InMemoryStorageService, StorageService } from '@plaudern/storage';
 import { InboxService } from '@plaudern/inbox';
+import { ExtractedPayloadEntity } from '@plaudern/persistence';
 import { TRANSCRIPTION_PROVIDER } from '@plaudern/transcription';
 import { DIARIZATION_PROVIDER } from '@plaudern/speaker-id';
 import {
@@ -25,6 +28,7 @@ describe('Reprocess whole pipeline (e2e, Path A)', () => {
   let app: INestApplication;
   let storage: InMemoryStorageService;
   let inbox: InboxService;
+  let extractionRepo: Repository<ExtractedPayloadEntity>;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
@@ -40,6 +44,7 @@ describe('Reprocess whole pipeline (e2e, Path A)', () => {
 
     storage = app.get(StorageService) as InMemoryStorageService;
     inbox = app.get(InboxService);
+    extractionRepo = app.get(getRepositoryToken(ExtractedPayloadEntity));
   });
 
   afterAll(async () => {
@@ -108,6 +113,35 @@ describe('Reprocess whole pipeline (e2e, Path A)', () => {
     await request(app.getHttpServer())
       .post(`/api/v1/ingest/${itemId}/reprocess`)
       .expect(409);
+  });
+
+  it('reclaims a stale in-flight extraction orphaned by a crashed worker', async () => {
+    const itemId = await ingestAudio('e2e-reprocess-stale');
+    const item = await request(app.getHttpServer())
+      .get(`/api/v1/inbox/${itemId}`)
+      .expect(200);
+
+    // Simulate a diarization row stranded in `processing` (e.g. BullMQ
+    // force-failed a stalled job on redeploy without running our processor):
+    // stuck status + a createdAt well past the staleness window.
+    const diar = byKind(item.body.extractions, 'diarization')[0];
+    await inbox.setExtractionStatus(diar.id, 'processing');
+    const stale = new Date(Date.now() - 60 * 60 * 1000);
+    await extractionRepo.update({ id: diar.id }, { createdAt: stale });
+
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/ingest/${itemId}/reprocess`)
+      .expect(201);
+
+    // The stranded row is reclaimed as failed; a fresh pass is appended and
+    // both kinds succeed again.
+    const diarizations = byKind(res.body.extractions, 'diarization');
+    expect(diarizations[0].status).toBe('succeeded');
+    const reclaimed = diarizations.find((e: Extraction) => e.id === diar.id) as
+      | (Extraction & { error: string | null })
+      | undefined;
+    expect(reclaimed?.status).toBe('failed');
+    expect(reclaimed?.error).toContain('superseded by reprocess');
   });
 
   it('404s for an unknown item', async () => {
