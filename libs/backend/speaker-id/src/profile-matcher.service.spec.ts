@@ -104,9 +104,10 @@ describe('ProfileMatcherService.assignSpeakers', () => {
     expect(results[0].voiceProfileId).toBe(profile.id);
     expect(results[0].similarity).toBeGreaterThan(0.9);
     expect(profile.embeddingCount).toBe(2);
-    expect(Math.hypot(...profile.centroid)).toBeCloseTo(1);
+    const centroid = profile.centroid ?? [];
+    expect(Math.hypot(...centroid)).toBeCloseTo(1);
     // Centroid drifted toward the new embedding.
-    expect(profile.centroid[1]).toBeGreaterThan(0);
+    expect(centroid[1]).toBeGreaterThan(0);
   });
 
   it('rejects matches below the threshold', async () => {

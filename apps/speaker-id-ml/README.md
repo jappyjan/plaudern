@@ -24,7 +24,12 @@ The whisper models are ungated — `HUGGING_FACE_TOKEN` is only needed for pyann
 
 The models (~1 GB pyannote + ~0.5 GB whisper `small`) download on first start
 into the `hfcache` volume; later starts are offline. `/health` returns 503
-until both models are loaded.
+until the enabled models are loaded.
+
+> **Running diarization on the hosted pyannoteAI API instead?** Set
+> `SPEAKER_ID_PROVIDER=pyannoteai` on the API and `LOAD_DIARIZATION=false` on
+> this sidecar. It then skips the gated pyannote model entirely (no
+> `HUGGING_FACE_TOKEN` needed) and only transcribes + slices voiceprint clips.
 
 ## Running
 
@@ -76,11 +81,28 @@ product.
 }
 ```
 
+- `POST /voiceprint-clips` with header `Authorization: Bearer $SPEAKER_ID_TOKEN`
+  and body
+  `{ "audio_url": "https://...", "max_seconds": 30, "speakers": [ { "label": "SPEAKER_00", "segments": [ { "start": 0.0, "end": 4.2 } ] } ] }`
+  → per speaker, up to `max_seconds` of their longest segments concatenated into
+  a 16 kHz mono WAV, base64-encoded:
+
+```json
+{ "clips": [ { "label": "SPEAKER_00", "audio_base64": "UklGR..." } ] }
+```
+
+  Used by the `pyannoteai` provider to enroll a voiceprint for a single speaker
+  sliced out of a multi-speaker recording (the hosted API needs clean
+  single-speaker audio and the backend has no ffmpeg). Works with
+  `LOAD_DIARIZATION=false`.
+
 ## Env vars
 
 | Var | Default | Purpose |
 | --- | --- | --- |
-| `HUGGING_FACE_TOKEN` | — | Hugging Face token with accepted pyannote terms (required) |
+| `LOAD_DIARIZATION` | `true` | Load the pyannote model. Set `false` when diarization runs on the pyannoteAI API — skips the model and its HF token |
+| `LOAD_TRANSCRIPTION` | `true` | Load the whisper model |
+| `HUGGING_FACE_TOKEN` | — | Hugging Face token with accepted pyannote terms (required unless `LOAD_DIARIZATION=false`) |
 | `SPEAKER_ID_TOKEN` | — | Shared bearer token; requests are rejected without it when set |
 | `SPEAKER_ID_MODEL` | `pyannote/speaker-diarization-3.1` | Diarization pipeline to load |
 | `WHISPER_MODEL` | `small` | faster-whisper model (`tiny`/`base`/`small`/`medium`/`large-v3` or an HF repo id) |

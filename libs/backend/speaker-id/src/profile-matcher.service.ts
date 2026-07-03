@@ -58,7 +58,8 @@ export class ProfileMatcherService {
     // Profiles with a different embedding dimension (e.g. from another
     // provider) can never match; treat them as absent candidates.
     const candidates = (await this.profiles.find({ where: { userId } })).filter(
-      (p) => p.centroid.length === dim,
+      (p): p is VoiceProfileEntity & { centroid: number[] } =>
+        p.centroid != null && p.centroid.length === dim,
     );
 
     // Greedy assignment over the full similarity matrix, best pairs first.
@@ -91,8 +92,10 @@ export class ProfileMatcherService {
       if (match) {
         profile = match.profile;
         similarity = match.similarity;
+        // Candidates were filtered to non-null centroids, so this branch always
+        // has one; the guard keeps the compiler honest without an assertion.
         profile.centroid = mergeCentroids(
-          profile.centroid,
+          profile.centroid ?? speaker.embedding,
           profile.embeddingCount,
           speaker.embedding,
           1,

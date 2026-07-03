@@ -22,6 +22,7 @@ import { CreateSpeakerTables1720000000004 } from './migrations/1720000000004-Cre
 import { InboxTombstones1720000000005 } from './migrations/1720000000005-InboxTombstones';
 import { CreateCalendarTables1720000000006 } from './migrations/1720000000006-CreateCalendarTables';
 import { CalendarFeedAutoLink1720000000007 } from './migrations/1720000000007-CalendarFeedAutoLink';
+import { PyannoteAiVoiceprints1720000000008 } from './migrations/1720000000008-PyannoteAiVoiceprints';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -48,6 +49,7 @@ export const ALL_MIGRATIONS = [
   InboxTombstones1720000000005,
   CreateCalendarTables1720000000006,
   CalendarFeedAutoLink1720000000007,
+  PyannoteAiVoiceprints1720000000008,
 ];
 
 /**

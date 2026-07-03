@@ -13,8 +13,10 @@ models are ungated.
 """
 
 import asyncio
+import base64
 import logging
 import os
+import subprocess
 import tempfile
 
 import httpx
@@ -30,6 +32,20 @@ DOWNLOAD_TIMEOUT_S = float(os.environ.get("SPEAKER_ID_DOWNLOAD_TIMEOUT_S", "300"
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "small")
 WHISPER_DEVICE = os.environ.get("WHISPER_DEVICE", "auto")
 WHISPER_COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "")
+
+
+def _flag(name: str, default: bool) -> bool:
+    return os.environ.get(name, "true" if default else "false").strip().lower() not in (
+        "false", "0", "no", "off", "",
+    )
+
+
+# When diarization runs on the hosted pyannoteAI API, the local pyannote model
+# is dead weight (~1.5 GB + its HUGGING_FACE_TOKEN). Set LOAD_DIARIZATION=false
+# to skip loading it; the sidecar then only transcribes and extracts voiceprint
+# clips (both of which the pyannoteAI deployment still needs).
+LOAD_DIARIZATION = _flag("LOAD_DIARIZATION", True)
+LOAD_TRANSCRIPTION = _flag("LOAD_TRANSCRIPTION", True)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("speaker-id")
@@ -58,9 +74,28 @@ class TranscribeRequest(BaseModel):
     language: str | None = None
 
 
+class ClipSegment(BaseModel):
+    start: float
+    end: float
+
+
+class ClipSpeaker(BaseModel):
+    label: str
+    segments: list[ClipSegment]
+
+
+class VoiceprintClipsRequest(BaseModel):
+    audio_url: str
+    speakers: list[ClipSpeaker]
+    max_seconds: float = 30.0
+
+
 @app.on_event("startup")
 def load_pipeline() -> None:
     global _pipeline, _device
+    if not LOAD_DIARIZATION:
+        logger.info("LOAD_DIARIZATION=false: skipping pyannote model (diarization runs elsewhere)")
+        return
     import torch
     from pyannote.audio import Pipeline
 
@@ -81,6 +116,9 @@ def load_pipeline() -> None:
 @app.on_event("startup")
 def load_whisper() -> None:
     global _whisper, _whisper_device
+    if not LOAD_TRANSCRIPTION:
+        logger.info("LOAD_TRANSCRIPTION=false: skipping whisper model")
+        return
     import torch
     from faster_whisper import WhisperModel
 
@@ -100,16 +138,16 @@ def load_whisper() -> None:
 
 @app.get("/health")
 def health():
-    if _pipeline is None:
+    if LOAD_DIARIZATION and _pipeline is None:
         raise HTTPException(status_code=503, detail="diarization pipeline not loaded")
-    if _whisper is None:
+    if LOAD_TRANSCRIPTION and _whisper is None:
         raise HTTPException(status_code=503, detail="whisper model not loaded")
     return {
         "status": "ok",
-        "diarization_model": MODEL_NAME,
-        "diarization_device": _device,
-        "transcription_model": WHISPER_MODEL,
-        "transcription_device": _whisper_device,
+        "diarization_model": MODEL_NAME if LOAD_DIARIZATION else None,
+        "diarization_device": _device if LOAD_DIARIZATION else None,
+        "transcription_model": WHISPER_MODEL if LOAD_TRANSCRIPTION else None,
+        "transcription_device": _whisper_device if LOAD_TRANSCRIPTION else None,
     }
 
 
@@ -227,6 +265,78 @@ def _run_whisper(path: str, language: str | None):
         "duration_seconds": round(info.duration, 3),
         "segments": segments,
     }
+
+
+@app.post("/voiceprint-clips")
+async def voiceprint_clips(
+    req: VoiceprintClipsRequest, authorization: str | None = Header(default=None)
+):
+    """Extract one clean single-speaker clip per speaker for voiceprint enrollment.
+
+    The pyannoteAI hosted API creates a voiceprint from clean single-speaker
+    audio but cannot slice a speaker out of a multi-speaker recording — so the
+    backend (which has no ffmpeg) asks this sidecar to do it. Downloads the
+    audio once and returns, per speaker, up to `max_seconds` of their longest
+    segments concatenated into a 16 kHz mono WAV, base64-encoded.
+    """
+    if AUTH_TOKEN and authorization != f"Bearer {AUTH_TOKEN}":
+        raise HTTPException(status_code=401, detail="invalid token")
+
+    with tempfile.NamedTemporaryFile(suffix=".audio", delete=True) as tmp:
+        await _download_audio(req.audio_url, tmp)
+
+        loop = asyncio.get_running_loop()
+        try:
+            clips = await loop.run_in_executor(None, _extract_clips, tmp.name, req)
+        except Exception as err:  # surface ffmpeg errors as a clean 500
+            logger.exception("voiceprint clip extraction failed")
+            raise HTTPException(status_code=500, detail=f"clip extraction failed: {err}")
+
+    return {"clips": clips}
+
+
+def _extract_clips(path: str, req: VoiceprintClipsRequest):
+    clips = []
+    for speaker in req.speakers:
+        # Prefer the longest segments (cleaner, less turn-boundary noise) up to
+        # the cap, then play them back in chronological order.
+        ranges = sorted(speaker.segments, key=lambda s: s.end - s.start, reverse=True)
+        chosen: list[ClipSegment] = []
+        total = 0.0
+        for seg in ranges:
+            if total >= req.max_seconds:
+                break
+            chosen.append(seg)
+            total += max(0.0, seg.end - seg.start)
+        chosen.sort(key=lambda s: s.start)
+        if not chosen:
+            continue
+
+        audio = _ffmpeg_concat(path, chosen)
+        if audio:
+            clips.append({"label": speaker.label, "audio_base64": base64.b64encode(audio).decode()})
+    return clips
+
+
+def _ffmpeg_concat(path: str, segments: list[ClipSegment]) -> bytes:
+    """Trim `segments` from `path` and concat them into a 16 kHz mono WAV (bytes)."""
+    parts = []
+    for i, seg in enumerate(segments):
+        parts.append(
+            f"[0:a]atrim=start={seg.start}:end={seg.end},asetpts=PTS-STARTPTS[a{i}]"
+        )
+    labels = "".join(f"[a{i}]" for i in range(len(segments)))
+    filter_complex = ";".join(parts) + f";{labels}concat=n={len(segments)}:v=0:a=1[out]"
+    result = subprocess.run(
+        [
+            "ffmpeg", "-nostdin", "-loglevel", "error", "-i", path,
+            "-filter_complex", filter_complex,
+            "-map", "[out]", "-ar", "16000", "-ac", "1", "-f", "wav", "pipe:1",
+        ],
+        capture_output=True,
+        check=True,
+    )
+    return result.stdout
 
 
 if __name__ == "__main__":
