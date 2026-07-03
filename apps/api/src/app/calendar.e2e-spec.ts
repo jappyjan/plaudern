@@ -140,10 +140,10 @@ describe('Calendar feeds + linking (e2e)', () => {
   it('creates a feed, auto-syncs it, and never exposes the URL', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/v1/calendar/feeds')
-      .send({ name: 'Work', url: FEED_URL, color: '#3b82f6' })
+      .send({ name: 'Work', url: FEED_URL, color: '#3b82f6', autoLink: true })
       .expect(201);
     feedId = res.body.id;
-    expect(res.body).toMatchObject({ name: 'Work', providerType: 'ics', enabled: true });
+    expect(res.body).toMatchObject({ name: 'Work', providerType: 'ics', enabled: true, autoLink: true });
     expect(JSON.stringify(res.body)).not.toContain('private-token-123');
 
     const feed = await waitForSync(feedId, null);
