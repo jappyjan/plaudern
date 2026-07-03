@@ -191,10 +191,13 @@ MinIO + Redis) using Coolify's magic environment variables:
 Steps: create a **Docker Compose** resource in Coolify pointing at this repo,
 set the compose file to `docker-compose.coolify.yaml`, and set `HUGGING_FACE_TOKEN` in
 the UI (**required** — the ML sidecar handles transcription and diarization;
-see `apps/speaker-id-ml/README.md` for the one-time token setup). Set
-`AUTH_RP_ID` to the web app's domain (no scheme) so passkeys bind to it. Deploy —
-migrations run on boot, then open the web app and register the first account
-(it becomes the owner of any pre-existing data).
+see `apps/speaker-id-ml/README.md` for the one-time token setup). Passkeys
+bind to the web app's domain: `AUTH_RP_ID` defaults to `SERVICE_FQDN_WEB` (the
+domain Coolify assigned to the web service), so it auto-populates; override it
+only for custom setups, and remember that changing the domain later invalidates
+already-registered passkeys (inherent to WebAuthn). Deploy — migrations run on
+boot, then open the web app and register the first account (it becomes the
+owner of any pre-existing data).
 
 To drive the API manually (the curl examples assume `AUTH_DISABLED=true`;
 with auth enabled, sign in via the web app or send the `plaudern_session`

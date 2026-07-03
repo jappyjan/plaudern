@@ -57,9 +57,14 @@ services:
       # (e.g. the Plaud password): Coolify generates & persists it.
       - APP_ENCRYPTION_SECRET=${SERVICE_PASSWORD_APPENCRYPTION}
       # Passkey (WebAuthn) auth: the RP id must be the web app's domain.
-      # Set AUTH_RP_ID to the domain Coolify assigned to the web service
-      # (without scheme), e.g. plaudern.example.com.
-      - AUTH_RP_ID=${AUTH_RP_ID}
+      # SERVICE_FQDN_WEB is the (scheme-less) domain Coolify routes to the
+      # web service, so this auto-populates; override AUTH_RP_ID only for
+      # custom setups. NOTE: if you change the web domain later, passkeys
+      # registered under the old domain stop working — that's inherent to
+      # WebAuthn, not a config problem.
+      - AUTH_RP_ID=${AUTH_RP_ID:-${SERVICE_FQDN_WEB}}
+      # Accepted browser origins; defaults to https://<AUTH_RP_ID> in the
+      # api, so an override is only needed for multi-origin setups.
       - AUTH_ORIGINS=${AUTH_ORIGINS}
       - AUTH_ALLOW_REGISTRATION=${AUTH_ALLOW_REGISTRATION:-true}
       - PLAUD_POLL_INTERVAL_MS=${PLAUD_POLL_INTERVAL_MS:-300000}
