@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Accordion,
-  AccordionItem,
   Button,
   Card,
   CardBody,
@@ -33,6 +31,7 @@ import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import {
   BackIcon,
   CalendarIcon,
+  ChevronDownIcon,
   LinkIcon,
   LocationIcon,
   TrashIcon,
@@ -54,6 +53,7 @@ export function ItemDetailPage() {
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
   const [confirmRerunOpen, setConfirmRerunOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -370,12 +370,21 @@ export function ItemDetailPage() {
 
       {transcription?.status === 'succeeded' && (
         <>
-          <Accordion isCompact>
-            <AccordionItem
-              key="advanced"
-              aria-label="Advanced"
-              title={<span className="text-sm font-semibold">Advanced</span>}
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              aria-expanded={advancedOpen}
+              onClick={() => setAdvancedOpen((open) => !open)}
+              className="flex items-center justify-between py-2 text-left"
             >
+              <span className="text-sm font-semibold">Advanced</span>
+              <ChevronDownIcon
+                className={`h-4 w-4 text-default-500 transition-transform ${
+                  advancedOpen ? 'rotate-180' : ''
+                }`}
+              />
+            </button>
+            {advancedOpen && (
               <div className="flex flex-col gap-2 rounded-medium border border-danger-200 bg-danger-50 p-3">
                 <p className="text-sm text-danger">
                   Reprocessing re-runs transcription and speaker diarization, replacing the
@@ -394,8 +403,8 @@ export function ItemDetailPage() {
                   Reprocess recording
                 </Button>
               </div>
-            </AccordionItem>
-          </Accordion>
+            )}
+          </div>
 
           <Modal isOpen={confirmRerunOpen} onClose={() => !retrying && setConfirmRerunOpen(false)}>
             <ModalContent>
