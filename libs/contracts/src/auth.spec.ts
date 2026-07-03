@@ -1,31 +1,28 @@
 import { authUserSchema, meResponseSchema, usernameSchema } from './auth';
 
-// Must match DEFAULT_USER_ID in @plaudern/persistence. Kept as a literal here
-// so the contracts library stays free of a backend dependency.
-const OWNER_SENTINEL_ID = '00000000-0000-0000-0000-000000000001';
+// The static owner id the buggy build assigned to the first account. It is a
+// valid GUID but NOT a valid RFC-9562 UUID (version nibble 0), and — more to
+// the point — no real account should ever carry a guessable, static id. The
+// schema must keep rejecting it so a regression can't quietly reintroduce it.
+const LEGACY_SENTINEL_ID = '00000000-0000-0000-0000-000000000001';
 
 describe('authUserSchema', () => {
-  it('accepts the fixed owner sentinel id (regression: Zod v4 .uuid() rejected it)', () => {
-    // The first registered account is created with this id. It is a valid GUID
-    // but not a valid RFC-9562 UUID (version nibble 0), so `.uuid()` used to
-    // fail-parse every /auth/me and register/login response for the root user.
-    const parsed = authUserSchema.parse({ id: OWNER_SENTINEL_ID, username: 'jappy' });
-    expect(parsed.id).toBe(OWNER_SENTINEL_ID);
-  });
-
-  it('accepts a random v4 uuid (subsequent accounts)', () => {
+  it('accepts a real random v4 uuid (what every account now gets)', () => {
     const id = '3f1e6a2c-9b7d-4c3a-8e2f-1a2b3c4d5e6f';
-    expect(authUserSchema.parse({ id, username: 'bob' }).id).toBe(id);
+    expect(authUserSchema.parse({ id, username: 'jappy' }).id).toBe(id);
   });
 
-  it('still rejects a non-GUID id', () => {
-    expect(() => authUserSchema.parse({ id: 'not-a-guid', username: 'x' })).toThrow();
+  it('rejects the legacy static owner sentinel id', () => {
+    expect(() => authUserSchema.parse({ id: LEGACY_SENTINEL_ID, username: 'jappy' })).toThrow();
   });
 
-  it('parses the /auth/me envelope for the owner', () => {
-    expect(
-      meResponseSchema.parse({ user: { id: OWNER_SENTINEL_ID, username: 'jappy' } }).user.id,
-    ).toBe(OWNER_SENTINEL_ID);
+  it('rejects a non-uuid id', () => {
+    expect(() => authUserSchema.parse({ id: 'not-a-uuid', username: 'x' })).toThrow();
+  });
+
+  it('parses the /auth/me envelope', () => {
+    const id = 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d';
+    expect(meResponseSchema.parse({ user: { id, username: 'jappy' } }).user.id).toBe(id);
   });
 });
 

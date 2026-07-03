@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -27,6 +27,7 @@ import type { AuthStatusDto, PasskeyDto } from '@plaudern/contracts';
 import {
   DEFAULT_USER_ID,
   PasskeyCredentialEntity,
+  USER_OWNED_DATA_TABLES,
   UserEntity,
 } from '@plaudern/persistence';
 import { resolveAuthConfig } from './auth.config';
@@ -107,21 +108,60 @@ export class AuthService {
     }
     const registrationInfo = await this.verifyAttestation(response, pending.challenge);
 
-    // The count-then-insert race on "first user" or a username collides on the
-    // unique indexes and surfaces as 409 instead of corrupting ownership.
-    const user = this.users.create({
-      id: (await this.users.count()) === 0 ? DEFAULT_USER_ID : randomUUID(),
-      username: pending.username,
-      webauthnUserId: pending.webauthnUserId,
+    // Every account — the first included — gets a fresh random UUID; no user
+    // ever carries the guessable DEFAULT_USER_ID sentinel. The first account
+    // instead *adopts* the pre-auth data by re-pointing the sentinel rows at
+    // its own id. Insert + adopt + credential are one transaction so a failure
+    // can't strand adopted data on an owner with no way to sign in.
+    const user = await this.users.manager.transaction(async (manager) => {
+      const usersRepo = manager.getRepository(UserEntity);
+      const isFirstUser = (await usersRepo.count()) === 0;
+      const entity = usersRepo.create({
+        id: randomUUID(),
+        username: pending.username,
+        webauthnUserId: pending.webauthnUserId,
+      });
+      try {
+        // A username collision trips the unique index and surfaces as 409.
+        await usersRepo.insert(entity);
+      } catch {
+        throw new ConflictException('this username is already taken');
+      }
+      if (isFirstUser) {
+        await this.adoptPreAuthData(entity.id, manager);
+      }
+      await this.saveCredential(
+        entity.id,
+        registrationInfo,
+        response,
+        label,
+        manager.getRepository(PasskeyCredentialEntity),
+      );
+      return entity;
     });
-    try {
-      await this.users.insert(user);
-    } catch {
-      throw new ConflictException('this username is already taken');
-    }
-    await this.saveCredential(user.id, registrationInfo, response, label);
+
     this.logger.log(`registered user '${user.username}' (${user.id})`);
     return toAuthenticatedUser(user);
+  }
+
+  /**
+   * Hands every row still owned by the DEFAULT_USER_ID sentinel (data from the
+   * single-user / unauthenticated era, or an AUTH_DISABLED run) to a real
+   * account. Idempotent — a no-op once no sentinel-owned rows remain — and
+   * driver-agnostic (QueryBuilder, so it runs on both Postgres and sqlite).
+   */
+  async adoptPreAuthData(
+    newOwnerId: string,
+    manager: EntityManager = this.users.manager,
+  ): Promise<void> {
+    for (const table of USER_OWNED_DATA_TABLES) {
+      await manager
+        .createQueryBuilder()
+        .update(table)
+        .set({ userId: newOwnerId })
+        .where('"userId" = :sentinel', { sentinel: DEFAULT_USER_ID })
+        .execute();
+    }
   }
 
   // ------------------------------------------------------------ add passkey
@@ -281,9 +321,10 @@ export class AuthService {
     >,
     response: RegistrationResponseJSON,
     label: string | undefined,
+    credentials: Repository<PasskeyCredentialEntity> = this.credentials,
   ): Promise<PasskeyCredentialEntity> {
     const { credential, credentialDeviceType, credentialBackedUp } = registrationInfo;
-    const row = this.credentials.create({
+    const row = credentials.create({
       id: credential.id,
       userId,
       publicKey: Buffer.from(credential.publicKey).toString('base64url'),
@@ -294,7 +335,7 @@ export class AuthService {
       label: label ?? null,
     });
     try {
-      return await this.credentials.save(row);
+      return await credentials.save(row);
     } catch {
       // Credential ids are globally unique — a collision means it is already
       // registered (to this or another account).

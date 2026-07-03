@@ -19,12 +19,11 @@ export const usernameSchema = z
   );
 
 export const authUserSchema = z.object({
-  // GUID, not the stricter RFC-9562 `.uuid()`: the very first (owner) account
-  // is created with the fixed sentinel id 00000000-0000-0000-0000-000000000001
-  // — a valid GUID, but its version nibble is 0 so Zod v4's `.uuid()` rejects
-  // it, which would fail-parse every /auth/me and register/login response for
-  // the root user.
-  id: z.string().guid(),
+  // Every account — including the very first (owner) one — has a real random
+  // UUID. The old build gave the owner a fixed sentinel id, which this schema
+  // deliberately rejects: `.uuid()` (RFC 9562) is the invariant the backend
+  // must honour, not something to relax.
+  id: z.string().uuid(),
   username: z.string(),
 });
 export type AuthUserDto = z.infer<typeof authUserSchema>;
