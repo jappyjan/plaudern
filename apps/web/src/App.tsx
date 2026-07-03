@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Button } from '@heroui/react';
+import { Button, Spinner } from '@heroui/react';
 import { Link, Route, Routes } from 'react-router-dom';
+import { useAuth } from './auth/AuthContext';
 import { InboxPage } from './pages/InboxPage';
 import { ItemDetailPage } from './pages/ItemDetailPage';
+import { LoginPage } from './pages/LoginPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { CalendarPage } from './pages/CalendarPage';
 import { ContactsPage } from './pages/ContactsPage';
@@ -19,6 +21,7 @@ function initialTheme(): Theme {
 
 export function App() {
   const [theme, setTheme] = useState<Theme>(initialTheme);
+  const { loading, user } = useAuth();
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -29,6 +32,39 @@ export function App() {
       ?.setAttribute('content', theme === 'dark' ? '#000000' : '#ffffff');
   }, [theme]);
 
+  const themeToggle = (
+    <Button
+      isIconOnly
+      variant="light"
+      size="sm"
+      aria-label="Toggle dark mode"
+      onPress={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+    >
+      {theme === 'dark' ? <SunIcon className="h-5 w-5" /> : <MoonIcon className="h-5 w-5" />}
+    </Button>
+  );
+
+  if (loading) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-background text-foreground">
+        <Spinner label="Loading…" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-dvh bg-background text-foreground">
+        <div className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col px-4 pb-8">
+          <header className="flex items-center justify-end py-4">{themeToggle}</header>
+          <main className="flex flex-1 flex-col">
+            <LoginPage />
+          </main>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-dvh bg-background text-foreground">
       <div className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col px-4 pb-8">
@@ -37,15 +73,7 @@ export function App() {
             <Link to="/">Plaudern</Link>
           </h1>
           <div className="flex items-center gap-1">
-            <Button
-              isIconOnly
-              variant="light"
-              size="sm"
-              aria-label="Toggle dark mode"
-              onPress={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            >
-              {theme === 'dark' ? <SunIcon className="h-5 w-5" /> : <MoonIcon className="h-5 w-5" />}
-            </Button>
+            {themeToggle}
             <Button
               as={Link}
               to="/calendar"

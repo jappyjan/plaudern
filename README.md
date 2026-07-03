@@ -15,10 +15,18 @@ the browser. Web first — a mobile app comes later.
 > core, storage, and transcription know nothing about where audio comes from,
 > so the whole slice is verifiable via a generic audio-upload path.
 
-> ⚠️ **No auth.** Plaudern is designed to be self-hosted **per user** and the
-> API/web app are completely unprotected. If you expose them beyond localhost,
-> put your own access control in front (reverse-proxy basic auth, Tailscale,
-> VPN, …).
+> 🔐 **Multi-user, passkey-only auth.** Plaudern supports multiple accounts on
+> one instance, each secured by **passkeys (WebAuthn)** — there are no
+> passwords. Every account is **fully isolated**: inbox items, blobs,
+> transcripts, voice profiles/contacts, calendar feeds & events, links and
+> Plaud settings are all scoped to their owner; nothing is shared between
+> users. The first account to register **adopts all data** created while the
+> instance ran unauthenticated. Registration is open by default (set
+> `AUTH_ALLOW_REGISTRATION=false` to lock it after signing up); set
+> `AUTH_DISABLED=true` to restore the old unauthenticated single-user mode.
+> Passkeys are bound to the serving domain — set `AUTH_RP_ID` (and, when
+> needed, `AUTH_ORIGINS`) when deploying beyond localhost. Note that WebAuthn
+> requires a secure context: `localhost` or HTTPS.
 
 ## Monorepo layout (Nx + pnpm)
 
@@ -186,11 +194,17 @@ MinIO + Redis) using Coolify's magic environment variables:
 Steps: create a **Docker Compose** resource in Coolify pointing at this repo,
 set the compose file to `docker-compose.coolify.yaml`, and set `HUGGING_FACE_TOKEN` in
 the UI (**required** — the ML sidecar handles transcription and diarization;
-see `apps/speaker-id-ml/README.md` for the one-time token setup). Deploy —
-migrations run on boot. Remember: **no auth** — restrict access to the exposed
-domains yourself.
+see `apps/speaker-id-ml/README.md` for the one-time token setup). Passkeys
+bind to the web app's domain: `AUTH_RP_ID` defaults to `SERVICE_FQDN_WEB` (the
+domain Coolify assigned to the web service), so it auto-populates; override it
+only for custom setups, and remember that changing the domain later invalidates
+already-registered passkeys (inherent to WebAuthn). Deploy — migrations run on
+boot, then open the web app and register the first account (it becomes the
+owner of any pre-existing data).
 
-To drive the API manually:
+To drive the API manually (the curl examples assume `AUTH_DISABLED=true`;
+with auth enabled, sign in via the web app or send the `plaudern_session`
+cookie):
 
 ```bash
 # init
@@ -210,3 +224,11 @@ Backend env: `apps/api/.env.example` (DB, S3/MinIO, Redis, sidecar). Key
 switches: `DATABASE_DRIVER` (postgres|sqlite), `STORAGE_DRIVER` (s3|memory),
 `QUEUE_DRIVER` (bull|inline), `SPEAKER_ID_PROVIDER` (pyannote|pyannoteai|off;
 `pyannoteai` needs `PYANNOTEAI_API_KEY`).
+
+Authentication env: `AUTH_RP_ID` (WebAuthn relying-party id = the domain the
+web app is served from; default `localhost`), `AUTH_ORIGINS` (comma-separated
+origins accepted in ceremonies and CORS; defaults to the localhost dev ports,
+or `https://<AUTH_RP_ID>` for a real domain), `AUTH_SESSION_TTL_DAYS` (session
+cookie lifetime, default 30), `AUTH_ALLOW_REGISTRATION` (default `true`; the
+first account can always be created), `AUTH_DISABLED` (default `false`; `true`
+restores the old unauthenticated single-user mode).

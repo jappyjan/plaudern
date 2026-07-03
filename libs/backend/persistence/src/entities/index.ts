@@ -9,3 +9,6 @@ export * from './geocode-cache.entity';
 export * from './calendar-feed.entity';
 export * from './calendar-event.entity';
 export * from './recording-event-link.entity';
+export * from './user.entity';
+export * from './passkey-credential.entity';
+export * from './auth-session.entity';

@@ -6,6 +6,7 @@ process.env.DATABASE_DRIVER = 'sqlite';
 process.env.DATABASE_URL = ':memory:';
 process.env.STORAGE_DRIVER = 'memory';
 process.env.QUEUE_DRIVER = 'inline';
+process.env.AUTH_DISABLED = 'true'; // single-user mode — auth has its own spec
 process.env.GEOCODER = 'stub';
 
 import * as http from 'node:http';
@@ -13,6 +14,7 @@ import { INestApplication, VersioningType } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import type { InboxEvent } from '@plaudern/contracts';
+import { DEFAULT_USER_ID } from '@plaudern/persistence';
 import { InMemoryStorageService, StorageService } from '@plaudern/storage';
 import { InboxEventsService } from '@plaudern/inbox';
 import { TRANSCRIPTION_PROVIDER } from '@plaudern/transcription';
@@ -50,7 +52,7 @@ describe('Inbox events (e2e, Path A)', () => {
 
   it('publishes commit + extraction lifecycle events for an audio ingest', async () => {
     const seen: InboxEvent[] = [];
-    const sub = events.stream().subscribe((e) => seen.push(e));
+    const sub = events.stream(DEFAULT_USER_ID).subscribe((e) => seen.push(e));
 
     const audio = Buffer.from('fake-audio-bytes-for-events');
     const init = await request(app.getHttpServer())
@@ -98,7 +100,7 @@ describe('Inbox events (e2e, Path A)', () => {
 
   it('publishes item.created for inline text ingest', async () => {
     const seen: InboxEvent[] = [];
-    const sub = events.stream().subscribe((e) => seen.push(e));
+    const sub = events.stream(DEFAULT_USER_ID).subscribe((e) => seen.push(e));
 
     const res = await request(app.getHttpServer())
       .post('/api/v1/ingest/text')
@@ -143,7 +145,7 @@ describe('Inbox events (e2e, Path A)', () => {
       });
       emitTimer = setInterval(
         () =>
-          events.emit({
+          events.emit(DEFAULT_USER_ID, {
             type: 'item.created',
             itemId: '11111111-1111-1111-1111-111111111111',
           }),

@@ -55,6 +55,20 @@ services:
       # General-purpose key encrypting secrets stored in Postgres (e.g. the
       # Plaud password) — override in production.
       APP_ENCRYPTION_SECRET: ${APP_ENCRYPTION_SECRET:-change-me}
+      # --- Authentication (passkeys / WebAuthn) ---
+      # The domain the web app is served from; passkeys are cryptographically
+      # bound to it. 'localhost' works locally — set your real domain when
+      # deploying behind a proxy/TLS.
+      AUTH_RP_ID: ${AUTH_RP_ID:-localhost}
+      # Comma-separated origins accepted in WebAuthn ceremonies and CORS.
+      # Empty = localhost dev/prod ports for AUTH_RP_ID=localhost, otherwise
+      # https://<AUTH_RP_ID>.
+      AUTH_ORIGINS: ${AUTH_ORIGINS:-}
+      # 'false' locks the instance to existing accounts (the very first
+      # account can always be created).
+      AUTH_ALLOW_REGISTRATION: ${AUTH_ALLOW_REGISTRATION:-true}
+      # 'true' restores the old unauthenticated single-user mode.
+      AUTH_DISABLED: ${AUTH_DISABLED:-false}
       PLAUD_POLL_INTERVAL_MS: ${PLAUD_POLL_INTERVAL_MS:-300000}
       # Calendar feeds: APP_ENCRYPTION_SECRET also encrypts the feed URLs.
       CALENDAR_POLL_INTERVAL_MS: ${CALENDAR_POLL_INTERVAL_MS:-900000}

@@ -102,14 +102,14 @@ export class InboxService {
       }),
     });
     const saved = await this.items.save(item);
-    this.events.emit({ type: 'item.created', itemId: saved.id });
+    this.events.emit(saved.userId, { type: 'item.created', itemId: saved.id });
     return saved;
   }
 
   /** Finalize the pending upload once the client's direct PUT is confirmed. */
-  async markSourceCommitted(inboxItemId: string, byteSize: number): Promise<void> {
+  async markSourceCommitted(userId: string, inboxItemId: string, byteSize: number): Promise<void> {
     await this.sources.update({ inboxItemId }, { uploadStatus: 'committed', byteSize });
-    this.events.emit({ type: 'item.committed', itemId: inboxItemId });
+    this.events.emit(userId, { type: 'item.committed', itemId: inboxItemId });
   }
 
   /** Append a new derived-artifact row in the `queued` state. */
@@ -125,13 +125,16 @@ export class InboxService {
       status: 'queued',
     });
     const saved = await this.extractions.save(row);
-    this.events.emit({
-      type: 'extraction.updated',
-      itemId: saved.inboxItemId,
-      extractionId: saved.id,
-      kind: saved.kind,
-      status: saved.status,
-    });
+    const ownerId = await this.ownerOf(inboxItemId);
+    if (ownerId) {
+      this.events.emit(ownerId, {
+        type: 'extraction.updated',
+        itemId: saved.inboxItemId,
+        extractionId: saved.id,
+        kind: saved.kind,
+        status: saved.status,
+      });
+    }
     return saved;
   }
 
@@ -168,13 +171,24 @@ export class InboxService {
   private async emitExtractionUpdated(id: string, status: ExtractionStatus): Promise<void> {
     const row = await this.extractions.findOne({ where: { id } });
     if (!row) return;
-    this.events.emit({
+    const ownerId = await this.ownerOf(row.inboxItemId);
+    if (!ownerId) return;
+    this.events.emit(ownerId, {
       type: 'extraction.updated',
       itemId: row.inboxItemId,
       extractionId: row.id,
       kind: row.kind,
       status,
     });
+  }
+
+  /** Owning user of an item — events must be routed to the right stream. */
+  private async ownerOf(inboxItemId: string): Promise<string | null> {
+    const item = await this.items.findOne({
+      select: { id: true, userId: true },
+      where: { id: inboxItemId },
+    });
+    return item?.userId ?? null;
   }
 
   async getItem(userId: string, id: string): Promise<InboxItemEntity> {
@@ -218,7 +232,7 @@ export class InboxService {
       await em.getRepository(InboxItemEntity).delete({ id: item.id });
     });
 
-    this.events.emit({ type: 'item.deleted', itemId: item.id });
+    this.events.emit(userId, { type: 'item.deleted', itemId: item.id });
 
     const results = await Promise.allSettled(
       storageKeys.map((key) => this.storage.deleteObject(key)),
@@ -253,7 +267,8 @@ export class InboxService {
       .take(limit + 1);
 
     if (cursor) {
-      const cursorItem = await this.items.findOne({ where: { id: cursor } });
+      // Scoped to the user so a foreign item id cannot serve as a probe.
+      const cursorItem = await this.items.findOne({ where: { id: cursor, userId } });
       if (cursorItem) {
         qb.andWhere(
           '(item.ingestedAt < :ts OR (item.ingestedAt = :ts AND item.id < :id))',

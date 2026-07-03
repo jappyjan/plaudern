@@ -6,7 +6,7 @@ import {
   type VoiceProfileDetailDto,
   type VoiceProfileListResponse,
 } from '@plaudern/contracts';
-import { DEFAULT_USER_ID } from '@plaudern/persistence';
+import { CurrentUser, type AuthenticatedUser } from '@plaudern/auth';
 import { SpeakerTranscriptService } from './speaker-transcript.service';
 import { VoiceProfilesService } from './voice-profiles.service';
 
@@ -16,25 +16,36 @@ export class SpeakersController {
   constructor(private readonly profiles: VoiceProfilesService) {}
 
   @Get()
-  async list(): Promise<VoiceProfileListResponse> {
-    return { profiles: await this.profiles.list(DEFAULT_USER_ID) };
+  async list(@CurrentUser() user: AuthenticatedUser): Promise<VoiceProfileListResponse> {
+    return { profiles: await this.profiles.list(user.id) };
   }
 
   @Get(':id')
-  async detail(@Param('id') id: string): Promise<VoiceProfileDetailDto> {
-    return this.profiles.detail(DEFAULT_USER_ID, id);
+  async detail(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ): Promise<VoiceProfileDetailDto> {
+    return this.profiles.detail(user.id, id);
   }
 
   @Patch(':id')
-  async update(@Param('id') id: string, @Body() body: unknown): Promise<VoiceProfileDetailDto> {
+  async update(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ): Promise<VoiceProfileDetailDto> {
     const req = updateVoiceProfileRequestSchema.parse(body);
-    return this.profiles.update(DEFAULT_USER_ID, id, req);
+    return this.profiles.update(user.id, id, req);
   }
 
   @Post(':id/merge')
-  async merge(@Param('id') id: string, @Body() body: unknown): Promise<VoiceProfileDetailDto> {
+  async merge(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ): Promise<VoiceProfileDetailDto> {
     const req = mergeVoiceProfilesRequestSchema.parse(body);
-    return this.profiles.merge(DEFAULT_USER_ID, id, req.sourceProfileId);
+    return this.profiles.merge(user.id, id, req.sourceProfileId);
   }
 }
 
@@ -48,7 +59,10 @@ export class SpeakerTranscriptController {
   constructor(private readonly transcripts: SpeakerTranscriptService) {}
 
   @Get(':id/speaker-transcript')
-  async get(@Param('id') id: string): Promise<SpeakerTranscriptDto> {
-    return this.transcripts.getSpeakerTranscript(DEFAULT_USER_ID, id);
+  async get(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ): Promise<SpeakerTranscriptDto> {
+    return this.transcripts.getSpeakerTranscript(user.id, id);
   }
 }

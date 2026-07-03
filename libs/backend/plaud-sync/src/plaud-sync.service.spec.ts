@@ -89,13 +89,13 @@ describe('PlaudSyncService', () => {
   it('does nothing when settings are missing', async () => {
     const { service, fakes } = build();
     fakes.settings.getEntity.mockResolvedValue(null);
-    expect(await service.syncNow()).toEqual({ started: false, alreadyRunning: false });
+    expect(await service.syncNow('user-1')).toEqual({ started: false, alreadyRunning: false });
     expect(fakes.client.listRecordings).not.toHaveBeenCalled();
   });
 
   it('does nothing when sync is disabled', async () => {
     const { service, fakes } = build({ enabled: false });
-    expect(await service.syncNow()).toEqual({ started: false, alreadyRunning: false });
+    expect(await service.syncNow('user-1')).toEqual({ started: false, alreadyRunning: false });
     expect(fakes.client.listRecordings).not.toHaveBeenCalled();
   });
 
@@ -103,9 +103,10 @@ describe('PlaudSyncService', () => {
     const { service, fakes } = build();
     fakes.client.listRecordings.mockResolvedValue([recording('rec-1')]);
 
-    expect(await service.syncNow()).toEqual({ started: true, alreadyRunning: false });
+    expect(await service.syncNow('user-1')).toEqual({ started: true, alreadyRunning: false });
 
     expect(fakes.ingestion.ingestBlob).toHaveBeenCalledWith(
+      'user-1',
       expect.objectContaining({
         sourceType: 'plaud',
         idempotencyKey: 'plaud:rec-1',
@@ -135,7 +136,7 @@ describe('PlaudSyncService', () => {
       Promise.resolve(key === 'plaud:old' ? { id: 'existing' } : null),
     );
 
-    await service.syncNow();
+    await service.syncNow('user-1');
 
     expect(fakes.client.downloadRecording).toHaveBeenCalledTimes(1);
     expect(fakes.client.downloadRecording).toHaveBeenCalledWith('us', 'cached-token', 'new');
@@ -149,7 +150,7 @@ describe('PlaudSyncService', () => {
       Promise.resolve(key === 'plaud:deleted'),
     );
 
-    await service.syncNow();
+    await service.syncNow('user-1');
 
     expect(fakes.client.downloadRecording).toHaveBeenCalledTimes(1);
     expect(fakes.client.downloadRecording).toHaveBeenCalledWith('us', 'cached-token', 'kept');
@@ -164,7 +165,7 @@ describe('PlaudSyncService', () => {
   it('ignores trashed recordings', async () => {
     const { service, fakes } = build();
     fakes.client.listRecordings.mockResolvedValue([recording('trashed', { isTrash: true })]);
-    await service.syncNow();
+    await service.syncNow('user-1');
     expect(fakes.ingestion.ingestBlob).not.toHaveBeenCalled();
     expect(fakes.settings.recordSyncResult).toHaveBeenCalledWith('settings-1', {
       status: 'ok',
@@ -182,7 +183,7 @@ describe('PlaudSyncService', () => {
         : Promise.resolve({ body: Buffer.from('audio'), contentType: 'audio/mpeg' }),
     );
 
-    await service.syncNow();
+    await service.syncNow('user-1');
 
     expect(fakes.ingestion.ingestBlob).toHaveBeenCalledTimes(1);
     expect(fakes.settings.recordSyncResult).toHaveBeenCalledWith('settings-1', {
@@ -194,7 +195,7 @@ describe('PlaudSyncService', () => {
 
   it('logs in when the cached token is missing or expiring soon', async () => {
     const { service, fakes } = build({ accessToken: null, accessTokenExpiresAt: null });
-    await service.syncNow();
+    await service.syncNow('user-1');
     expect(fakes.client.login).toHaveBeenCalledWith('us', 'me@example.com', 'pw');
     expect(fakes.settings.saveToken).toHaveBeenCalledWith(
       'settings-1',
@@ -210,7 +211,7 @@ describe('PlaudSyncService', () => {
       .mockRejectedValueOnce(new PlaudApiError(401, 'revoked'))
       .mockResolvedValueOnce([recording('rec-1')]);
 
-    await service.syncNow();
+    await service.syncNow('user-1');
 
     expect(fakes.client.login).toHaveBeenCalledTimes(1);
     expect(fakes.client.listRecordings).toHaveBeenLastCalledWith('us', 'fresh-token');
@@ -222,7 +223,7 @@ describe('PlaudSyncService', () => {
     fakes.client.listRecordings.mockRejectedValue(new PlaudApiError(500, 'plaud is down'));
 
     // still resolves — the error lands in the sync result, not the caller
-    expect(await service.syncNow()).toEqual({ started: true, alreadyRunning: false });
+    expect(await service.syncNow('user-1')).toEqual({ started: true, alreadyRunning: false });
     expect(fakes.settings.recordSyncResult).toHaveBeenCalledWith('settings-1', {
       status: 'error',
       error: expect.stringContaining('plaud is down'),
@@ -237,8 +238,8 @@ describe('PlaudSyncService', () => {
       new Promise<PlaudRecording[]>((resolve) => (release = resolve)),
     );
 
-    const first = service.syncNow();
-    const second = await service.syncNow();
+    const first = service.syncNow('user-1');
+    const second = await service.syncNow('user-1');
     expect(second).toEqual({ started: false, alreadyRunning: true });
 
     release([]);

@@ -8,8 +8,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * by one path is not forced to synthesise a value for the other. Additive and
  * safe on existing installs — existing rows keep their centroids/embeddings.
  */
-export class PyannoteAiVoiceprints1720000000008 implements MigrationInterface {
-  name = 'PyannoteAiVoiceprints1720000000008';
+export class PyannoteAiVoiceprints1720000000009 implements MigrationInterface {
+  name = 'PyannoteAiVoiceprints1720000000009';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`ALTER TABLE "voice_profiles" ADD "voiceprint" text`);

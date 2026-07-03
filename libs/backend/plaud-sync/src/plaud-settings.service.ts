@@ -7,10 +7,10 @@ import type {
   PlaudSyncStatus,
   UpdatePlaudSettingsRequest,
 } from '@plaudern/contracts';
-import { DEFAULT_USER_ID, PlaudSettingsEntity } from '@plaudern/persistence';
+import { PlaudSettingsEntity } from '@plaudern/persistence';
 import { decryptSecret, encryptSecret } from './crypto';
 
-/** Owns the single Plaud settings row (one per user; single-user today). */
+/** Owns the Plaud settings rows — exactly one per user. */
 @Injectable()
 export class PlaudSettingsService {
   constructor(
@@ -19,8 +19,13 @@ export class PlaudSettingsService {
     private readonly config: ConfigService,
   ) {}
 
-  getEntity(): Promise<PlaudSettingsEntity | null> {
-    return this.repo.findOne({ where: { userId: DEFAULT_USER_ID } });
+  getEntity(userId: string): Promise<PlaudSettingsEntity | null> {
+    return this.repo.findOne({ where: { userId } });
+  }
+
+  /** Every user's enabled settings — the sync scheduler's work list. */
+  listEnabled(): Promise<PlaudSettingsEntity[]> {
+    return this.repo.find({ where: { enabled: true }, order: { createdAt: 'ASC' } });
   }
 
   toDto(entity: PlaudSettingsEntity | null, syncRunning: boolean): PlaudSettingsDto {
@@ -52,16 +57,16 @@ export class PlaudSettingsService {
     };
   }
 
-  async upsert(req: UpdatePlaudSettingsRequest): Promise<PlaudSettingsEntity> {
+  async upsert(userId: string, req: UpdatePlaudSettingsRequest): Promise<PlaudSettingsEntity> {
     const secret = this.requireSecret();
-    const existing = await this.getEntity();
+    const existing = await this.getEntity(userId);
 
     if (!existing) {
       if (!req.password) {
         throw new BadRequestException('password is required when configuring Plaud credentials');
       }
       const created = this.repo.create({
-        userId: DEFAULT_USER_ID,
+        userId,
         email: req.email,
         passwordEncrypted: encryptSecret(req.password, secret),
         region: req.region,

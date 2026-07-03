@@ -8,6 +8,7 @@ process.env.DATABASE_DRIVER = 'sqlite';
 process.env.DATABASE_URL = ':memory:';
 process.env.STORAGE_DRIVER = 'memory';
 process.env.QUEUE_DRIVER = 'inline';
+process.env.AUTH_DISABLED = 'true'; // single-user mode — auth has its own spec
 
 import { INestApplication, VersioningType } from '@nestjs/common';
 import { Test } from '@nestjs/testing';

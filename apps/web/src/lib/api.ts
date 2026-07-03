@@ -53,7 +53,7 @@ import {
  */
 const BASE = '/api/v1';
 
-class ApiError extends Error {
+export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
@@ -62,13 +62,16 @@ class ApiError extends Error {
   }
 }
 
-async function requestJson(path: string, init?: RequestInit): Promise<unknown> {
+/** Fired when any API call comes back 401 — the session ended server-side. */
+export const UNAUTHORIZED_EVENT = 'plaudern:unauthorized';
+
+export async function requestJson(path: string, init?: RequestInit): Promise<unknown> {
   const res = await request(path, init);
   return res.json();
 }
 
 /** For endpoints that reply 204 No Content — `res.json()` would throw there. */
-async function requestVoid(path: string, init?: RequestInit): Promise<void> {
+export async function requestVoid(path: string, init?: RequestInit): Promise<void> {
   await request(path, init);
 }
 
@@ -78,6 +81,11 @@ async function request(path: string, init?: RequestInit): Promise<Response> {
     headers: { 'content-type': 'application/json', ...init?.headers },
   });
   if (!res.ok) {
+    // Auth endpoints handle their own 401s (e.g. the initial "who am I?"
+    // probe); everywhere else a 401 means the session died — tell the app.
+    if (res.status === 401 && !path.startsWith('/auth/')) {
+      window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+    }
     const body = await res.text().catch(() => '');
     throw new ApiError(res.status, `${init?.method ?? 'GET'} ${path} failed (${res.status}): ${body}`);
   }

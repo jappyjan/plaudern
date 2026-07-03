@@ -27,7 +27,8 @@
       "@plaudern/plaud-sync": ["libs/backend/plaud-sync/src/index.ts"],
       "@plaudern/geocoding": ["libs/backend/geocoding/src/index.ts"],
       "@plaudern/speaker-id": ["libs/backend/speaker-id/src/index.ts"],
-      "@plaudern/calendar": ["libs/backend/calendar/src/index.ts"]
+      "@plaudern/calendar": ["libs/backend/calendar/src/index.ts"],
+      "@plaudern/auth": ["libs/backend/auth/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]

@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import type { CalendarSyncNowResponse } from '@plaudern/contracts';
-import { CalendarEventEntity, CalendarFeedEntity, DEFAULT_USER_ID } from '@plaudern/persistence';
+import { CalendarEventEntity, CalendarFeedEntity } from '@plaudern/persistence';
 import { CALENDAR_PROVIDERS, type CalendarProvider, type NormalizedCalendarEvent } from './provider';
 import { CalendarFeedsService } from './calendar-feeds.service';
 import { CalendarLinkService } from './calendar-link.service';
@@ -12,8 +12,9 @@ export const SYNC_WINDOW_FUTURE_DAYS = 90;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Pulls events from every enabled feed into the calendar_events cache, then
- * re-runs the auto-link pass once over the whole window. Mirrors
+ * Pulls events from enabled feeds into the calendar_events cache, then
+ * re-runs the auto-link pass once per affected user. The scheduler syncs
+ * every user's feeds; manual triggers sync only the acting user's. Mirrors
  * PlaudSyncService: in-process mutex, per-feed status, single instance.
  */
 @Injectable()
@@ -34,14 +35,17 @@ export class CalendarSyncService {
     return this.running;
   }
 
-  /** Entry point for the interval, the manual trigger, and feed creation. */
-  async syncNow(): Promise<CalendarSyncNowResponse> {
+  /**
+   * Entry point for the interval (no userId: all users), the manual trigger
+   * and feed creation (userId: just that user's feeds).
+   */
+  async syncNow(userId?: string): Promise<CalendarSyncNowResponse> {
     if (this.running) return { started: false, alreadyRunning: true };
     // Claim the mutex synchronously with the check so concurrent callers
     // can't both pass it before the first await.
     this.running = true;
     try {
-      const enabled = await this.feeds.listEnabled();
+      const enabled = await this.feeds.listEnabled(userId);
       if (enabled.length === 0) return { started: false, alreadyRunning: false };
       await this.runSync(enabled);
       return { started: true, alreadyRunning: false };
@@ -70,12 +74,16 @@ export class CalendarSyncService {
       }
     }
 
-    try {
-      await this.links.autoLinkWindow(windowStart, windowEnd);
-    } catch (err) {
-      this.logger.error(
-        `calendar sync: auto-link pass failed — ${err instanceof Error ? err.message : err}`,
-      );
+    // Auto-linking joins each user's own recordings and events — run it once
+    // per user represented in this sync batch.
+    for (const userId of new Set(feeds.map((feed) => feed.userId))) {
+      try {
+        await this.links.autoLinkWindow(userId, windowStart, windowEnd);
+      } catch (err) {
+        this.logger.error(
+          `calendar sync: auto-link pass failed — ${err instanceof Error ? err.message : err}`,
+        );
+      }
     }
   }
 
@@ -116,7 +124,7 @@ export class CalendarSyncService {
       } else {
         await this.events.save(
           this.events.create({
-            userId: DEFAULT_USER_ID,
+            userId: feed.userId,
             feedId: feed.id,
             externalUid: incoming.externalUid,
             instanceStart: incoming.instanceStart,

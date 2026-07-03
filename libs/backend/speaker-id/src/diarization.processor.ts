@@ -1,6 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InboxService } from '@plaudern/inbox';
-import { DEFAULT_USER_ID } from '@plaudern/persistence';
 import type { DiarizationJob } from './diarization.job';
 import { SPEAKER_IDENTIFIER, type SpeakerIdentifier } from './speaker-identifier';
 
@@ -24,11 +23,14 @@ export class DiarizationProcessor {
   async process(job: DiarizationJob): Promise<void> {
     await this.inbox.setExtractionStatus(job.extractionId, 'processing');
     try {
-      // Presigning happens inside the identifier at run time (not enqueue time)
-      // so queue retries never hold an expired URL, and each provider chooses
-      // the internal vs public endpoint it needs.
+      // Jobs carry only the item id; recover the owner so voice profiles are
+      // matched within — and only within — that user's contact book.
+      const item = await this.inbox.getItemById(job.inboxItemId);
+      if (!item) throw new Error('inbox item no longer exists');
+      // The identifier presigns/uploads the audio at run time (not enqueue
+      // time) so queue retries never hold an expired URL.
       const result = await this.identifier.identify({
-        userId: DEFAULT_USER_ID,
+        userId: item.userId,
         inboxItemId: job.inboxItemId,
         extractionId: job.extractionId,
         storageKey: job.storageKey,
