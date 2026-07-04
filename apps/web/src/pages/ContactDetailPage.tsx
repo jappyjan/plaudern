@@ -241,8 +241,11 @@ export function ContactDetailPage() {
               to={`/items/${recording.inboxItemId}`}
               className="flex items-center justify-between gap-3 rounded-medium p-2 text-sm hover:bg-default-100"
             >
-              <span>{formatDateTime(recording.occurredAt)}</span>
-              <span className="text-xs text-default-500">
+              <span className="truncate">
+                {recording.title ?? formatDateTime(recording.occurredAt)}
+              </span>
+              <span className="shrink-0 text-xs text-default-500">
+                {recording.title && `${formatDateTime(recording.occurredAt)} · `}
                 {formatDuration(recording.speakingSeconds)} spoken
                 {recording.similarity !== null &&
                   ` · ${(recording.similarity * 100).toFixed(0)}% match`}

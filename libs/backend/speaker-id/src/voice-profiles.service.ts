@@ -1,13 +1,15 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import type {
-  UpdateVoiceProfileRequest,
-  VoiceProfileDetailDto,
-  VoiceProfileDto,
+import {
+  summaryPayloadSchema,
+  type UpdateVoiceProfileRequest,
+  type VoiceProfileDetailDto,
+  type VoiceProfileDto,
 } from '@plaudern/contracts';
 import {
   ExtractedPayloadEntity,
+  RecordingMergeEntity,
   SpeakerOccurrenceEntity,
   VoiceProfileEntity,
 } from '@plaudern/persistence';
@@ -31,6 +33,8 @@ export class VoiceProfilesService {
     private readonly occurrences: Repository<SpeakerOccurrenceEntity>,
     @InjectRepository(ExtractedPayloadEntity)
     private readonly extractions: Repository<ExtractedPayloadEntity>,
+    @InjectRepository(RecordingMergeEntity)
+    private readonly merges: Repository<RecordingMergeEntity>,
     private readonly summarization: SummarizationService,
   ) {}
 
@@ -46,6 +50,9 @@ export class VoiceProfilesService {
   async detail(userId: string, id: string): Promise<VoiceProfileDetailDto> {
     const profile = await this.getOwned(userId, id);
     const occurrences = (await this.currentOccurrences([id])).get(id) ?? [];
+    const titleByItem = await this.summaryTitles([
+      ...new Set(occurrences.map((occ) => occ.inboxItemId)),
+    ]);
     return {
       ...this.toDto(profile, occurrences),
       recordings: occurrences
@@ -54,6 +61,7 @@ export class VoiceProfilesService {
         .map((occ) => ({
           inboxItemId: occ.inboxItemId,
           occurredAt: occ.occurredAt,
+          title: titleByItem.get(occ.inboxItemId) ?? null,
           label: occ.label,
           speakingSeconds: occ.speakingSeconds,
           similarity: occ.similarity,
@@ -156,7 +164,10 @@ export class VoiceProfilesService {
 
   /**
    * Occurrences per profile, restricted to each inbox item's latest succeeded
-   * diarization extraction and enriched with the item's occurredAt.
+   * diarization extraction and enriched with the item's occurredAt. Recordings
+   * hidden inside a merged recording are excluded — the merged item carries its
+   * own stitched diarization, so the contact still shows the merged recording
+   * (and reappears with the sources the moment the merge is split).
    */
   private async currentOccurrences(
     profileIds: string[],
@@ -169,6 +180,11 @@ export class VoiceProfilesService {
     if (rows.length === 0) return result;
 
     const itemIds = [...new Set(rows.map((r) => r.inboxItemId))];
+    const hidden = new Set(
+      (
+        await this.merges.find({ select: { sourceItemId: true }, where: { sourceItemId: In(itemIds) } })
+      ).map((link) => link.sourceItemId),
+    );
     const extractionRows = await this.extractions.find({
       where: { inboxItemId: In(itemIds), kind: 'diarization', status: 'succeeded' },
     });
@@ -181,10 +197,39 @@ export class VoiceProfilesService {
 
     for (const row of rows) {
       if (!latestExtractionIds.has(row.extractionId)) continue;
+      if (hidden.has(row.inboxItemId)) continue;
       const list = result.get(row.voiceProfileId) ?? [];
       list.push(Object.assign(row, { occurredAt: row.inboxItem.occurredAt }));
       result.set(row.voiceProfileId, list);
     }
     return result;
+  }
+
+  /**
+   * AI summary title per inbox item, taken from each item's latest succeeded
+   * summary extraction. Items without a (parseable) summary are absent from
+   * the map, so callers fall back to another label.
+   */
+  private async summaryTitles(itemIds: string[]): Promise<Map<string, string>> {
+    const titles = new Map<string, string>();
+    if (itemIds.length === 0) return titles;
+    const rows = await this.extractions.find({
+      where: { inboxItemId: In(itemIds), kind: 'summary', status: 'succeeded' },
+    });
+    const latestByItem = new Map<string, ExtractedPayloadEntity>();
+    for (const row of rows) {
+      const current = latestByItem.get(row.inboxItemId);
+      if (!current || row.createdAt > current.createdAt) latestByItem.set(row.inboxItemId, row);
+    }
+    for (const [itemId, row] of latestByItem) {
+      if (!row.content) continue;
+      try {
+        const parsed = summaryPayloadSchema.safeParse(JSON.parse(row.content));
+        if (parsed.success && parsed.data.title) titles.set(itemId, parsed.data.title);
+      } catch {
+        // Non-JSON / malformed content — leave the item without a title.
+      }
+    }
+    return titles;
   }
 }
