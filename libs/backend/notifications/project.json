@@ -1,0 +1,21 @@
+{
+  "name": "notifications",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/backend/notifications/src",
+  "projectType": "library",
+  "tags": ["scope:backend", "type:feature"],
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc -p libs/backend/notifications/tsconfig.json --noEmit"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "jest --config libs/backend/notifications/jest.config.js"
+      }
+    }
+  }
+}

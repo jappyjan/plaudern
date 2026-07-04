@@ -8,4 +8,5 @@ export * from './summary';
 export * from './events';
 export * from './geocode';
 export * from './calendar';
+export * from './notifications';
 export * from './auth';

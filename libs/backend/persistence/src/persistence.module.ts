@@ -11,8 +11,12 @@ import {
   GeocodeCacheEntity,
   InboxItemEntity,
   InboxTombstoneEntity,
+  NotificationCategoryPreferenceEntity,
+  NotificationDeliveryEntity,
+  NotificationSettingsEntity,
   PasskeyCredentialEntity,
   PlaudSettingsEntity,
+  PushSubscriptionEntity,
   RecordingEventLinkEntity,
   RecordingMergeEntity,
   SourcePayloadEntity,
@@ -38,6 +42,7 @@ import { GoogleCalendarFeeds1720000000013 } from './migrations/1720000000013-Goo
 import { CreateRecordingMerges1720000000014 } from './migrations/1720000000014-CreateRecordingMerges';
 import { ConsentGuardian1720000000015 } from './migrations/1720000000015-ConsentGuardian';
 import { CreateEmailSettings1720000000016 } from './migrations/1720000000016-CreateEmailSettings';
+import { CreateNotificationTables1720000000017 } from './migrations/1720000000017-CreateNotificationTables';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -58,6 +63,10 @@ export const ALL_ENTITIES = [
   AuthSessionEntity,
   SummarizationSettingsEntity,
   ConsentSettingsEntity,
+  NotificationSettingsEntity,
+  NotificationCategoryPreferenceEntity,
+  PushSubscriptionEntity,
+  NotificationDeliveryEntity,
 ];
 
 // Referenced as classes (not a glob) so migrations load identically under
@@ -80,6 +89,7 @@ export const ALL_MIGRATIONS = [
   CreateRecordingMerges1720000000014,
   ConsentGuardian1720000000015,
   CreateEmailSettings1720000000016,
+  CreateNotificationTables1720000000017,
 ];
 
 /**

@@ -16,3 +16,7 @@ export * from './recording-merge.entity';
 export * from './user.entity';
 export * from './passkey-credential.entity';
 export * from './auth-session.entity';
+export * from './notification-settings.entity';
+export * from './notification-category-preference.entity';
+export * from './push-subscription.entity';
+export * from './notification-delivery.entity';
