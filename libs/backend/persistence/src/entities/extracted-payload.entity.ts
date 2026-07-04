@@ -31,6 +31,14 @@ export class ExtractedPayloadEntity {
   @Column({ type: 'varchar' })
   kind!: ExtractionKind;
 
+  /**
+   * Version of the extractor (kind@version) that produced this row. Bumped by
+   * an extractor when its output meaningfully improves; backfill runs use it
+   * to find items still on an older version.
+   */
+  @Column({ type: 'int', default: 1 })
+  version!: number;
+
   @Column({ type: 'varchar' })
   provider!: string;
 

@@ -41,6 +41,7 @@ libs/
     storage/     S3/MinIO abstraction (+ in-memory fake for tests)
     queue/       Generic BullMQ / inline job-queue abstraction
     inbox/        Inbox aggregate + read/delete API
+    extraction/   Declarative extractor DAG: dependencies, per-kind versioning, backfill runs
     ingestion/    Source-adapter registry + presigned upload API
     transcription/ Transcription queue + ElevenLabs Scribe / local Whisper providers
     speaker-id/   Diarization queue + voice-profile matching + contact book API
@@ -56,6 +57,18 @@ docker-compose.yml   Postgres + MinIO + Redis + api + web for local dev
   rather than mutating. Items can be deleted whole (rows + blobs); a tombstone
   of the idempotency key (`inbox_tombstones`) keeps automated syncs (Plaud,
   email-in) from re-importing deleted items.
+- **Extraction-pipeline DAG** (`libs/backend/extraction`): every derived
+  artifact (transcription, diarization, summary, and future kinds) is one
+  **extractor** in a declarative dependency graph. Roots run when a source is
+  committed; dependent extractors are event-driven and fire once their
+  dependencies settle (e.g. summary ← transcription\[succeeded\] +
+  diarization\[settled\]). Each extractor carries a **version** recorded on
+  every appended row, and **backfill runs**
+  (`POST /v1/extractions/backfills` `{kind, occurredFrom?, occurredTo?,
+  force?}`) re-run one kind over past items — skipping items already at the
+  current version unless forced — so the whole memory improves as models
+  improve. `GET /v1/extractions/graph` introspects the graph. All of it rides
+  on the append-only invariant: reprocessing appends rows, never mutates.
 - **Two-phase presigned upload**: `POST /v1/ingest/init` → client PUTs bytes
   directly to S3/MinIO → `POST /v1/ingest/:id/commit`. Large audio never streams
   through Node.

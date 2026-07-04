@@ -31,6 +31,7 @@ export function toExtractedPayloadDto(entity: ExtractedPayloadEntity): Extracted
   return {
     id: entity.id,
     kind: entity.kind,
+    version: entity.version ?? 1,
     provider: entity.provider,
     status: entity.status,
     content: entity.content,

@@ -4,7 +4,7 @@ export * from './summary-context.service';
 export * from './summarization-settings.service';
 export * from './summarization.processor';
 export * from './summarization.service';
+export * from './summary.extractor';
 export * from './summarization.controller';
-export * from './summarization.trigger';
 export * from './summarization.module';
 export * from './providers/openai.provider';

@@ -15,6 +15,13 @@ export interface EnqueueDiarizationParams {
 }
 
 /**
+ * Version of the diarization extractor (kind@version), recorded on every
+ * appended row. Bump when the output meaningfully improves so backfill runs
+ * can catch older items up.
+ */
+export const DIARIZATION_EXTRACTOR_VERSION = 1;
+
+/**
  * Public entry point invoked by ingestion at commit time, mirroring
  * TranscriptionService: appends a `queued` diarization extraction row and
  * hands the job to the queue. No-op when speaker identification is disabled
@@ -47,12 +54,22 @@ export class SpeakerIdService {
     this.disabled = selected === 'off';
   }
 
+  /** Whether speaker identification is configured on this server. */
+  get enabled(): boolean {
+    return !this.disabled;
+  }
+
   async enqueueDiarization(
     inboxItemId: string,
     params: EnqueueDiarizationParams,
   ): Promise<string | null> {
     if (this.disabled) return null;
-    const extraction = await this.inbox.addExtraction(inboxItemId, 'diarization', this.identifier.id);
+    const extraction = await this.inbox.addExtraction(
+      inboxItemId,
+      'diarization',
+      this.identifier.id,
+      DIARIZATION_EXTRACTOR_VERSION,
+    );
     await this.queue.enqueue({
       extractionId: extraction.id,
       inboxItemId,

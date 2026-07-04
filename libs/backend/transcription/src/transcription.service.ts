@@ -19,6 +19,13 @@ export interface EnqueueParams {
 }
 
 /**
+ * Version of the transcription extractor (kind@version), recorded on every
+ * appended row. Bump when the output meaningfully improves (e.g. a better
+ * model) so backfill runs can catch older items up.
+ */
+export const TRANSCRIPTION_EXTRACTOR_VERSION = 1;
+
+/**
  * Public entry point invoked by ingestion at commit time. Appends a `queued`
  * extraction row and hands the job to the queue (plan §2/§5).
  */
@@ -37,6 +44,7 @@ export class TranscriptionService {
       inboxItemId,
       'transcription',
       this.provider.id,
+      TRANSCRIPTION_EXTRACTOR_VERSION,
     );
     await this.queue.enqueue({
       extractionId: extraction.id,

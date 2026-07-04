@@ -16,6 +16,7 @@
     "@plaudern/calendar": "workspace:*",
     "@plaudern/contracts": "workspace:*",
     "@plaudern/email-ingest": "workspace:*",
+    "@plaudern/extraction": "workspace:*",
     "@plaudern/geocoding": "workspace:*",
     "@plaudern/inbox": "workspace:*",
     "@plaudern/ingestion": "workspace:*",

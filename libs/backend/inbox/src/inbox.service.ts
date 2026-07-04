@@ -139,15 +139,21 @@ export class InboxService {
     this.events.emit(userId, { type: 'item.committed', itemId: inboxItemId });
   }
 
-  /** Append a new derived-artifact row in the `queued` state. */
+  /**
+   * Append a new derived-artifact row in the `queued` state. `version` is the
+   * extractor version (kind@version) producing the row; it defaults to 1 for
+   * writers outside the extractor graph (e.g. merge stitching).
+   */
   async addExtraction(
     inboxItemId: string,
     kind: ExtractionKind,
     provider: string,
+    version = 1,
   ): Promise<ExtractedPayloadEntity> {
     const row = this.extractions.create({
       inboxItemId,
       kind,
+      version,
       provider,
       status: 'queued',
     });

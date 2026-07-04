@@ -10,3 +10,4 @@ export * from './geocode';
 export * from './calendar';
 export * from './notifications';
 export * from './auth';
+export * from './extraction';

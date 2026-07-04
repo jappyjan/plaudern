@@ -55,6 +55,8 @@ export type SourcePayloadDto = z.infer<typeof sourcePayloadSchema>;
 export const extractedPayloadSchema = z.object({
   id: z.string().uuid(),
   kind: extractionKindSchema,
+  /** Version of the extractor (kind@version) that produced this row. */
+  version: z.number().int().positive(),
   provider: z.string(),
   status: extractionStatusSchema,
   content: z.string().nullable(),

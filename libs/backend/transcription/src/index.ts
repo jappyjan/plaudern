@@ -2,6 +2,7 @@ export * from './transcription.provider';
 export * from './transcription.job';
 export * from './transcription.processor';
 export * from './transcription.service';
+export * from './transcription.extractor';
 export * from './transcription.controller';
 export * from './transcription.module';
 export * from './providers/elevenlabs.provider';

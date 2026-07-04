@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { TranscriptionService } from '@plaudern/transcription';
-import { SpeakerIdService } from '@plaudern/speaker-id';
+import { ExtractionPipelineService } from '@plaudern/extraction';
 import { AudioSourceAdapter } from './audio-source.adapter';
 
 /**
@@ -11,7 +10,7 @@ import { AudioSourceAdapter } from './audio-source.adapter';
 export class GenericAudioAdapter extends AudioSourceAdapter {
   readonly sourceType = 'audio' as const;
 
-  constructor(transcription: TranscriptionService, speakerId: SpeakerIdService) {
-    super(transcription, speakerId);
+  constructor(pipeline: ExtractionPipelineService) {
+    super(pipeline);
   }
 }

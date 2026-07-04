@@ -8,6 +8,7 @@ import {
   ConsentSettingsEntity,
   EmailSettingsEntity,
   ExtractedPayloadEntity,
+  ExtractionRunEntity,
   GeocodeCacheEntity,
   InboxItemEntity,
   InboxTombstoneEntity,
@@ -43,11 +44,13 @@ import { CreateRecordingMerges1720000000014 } from './migrations/1720000000014-C
 import { ConsentGuardian1720000000015 } from './migrations/1720000000015-ConsentGuardian';
 import { CreateEmailSettings1720000000016 } from './migrations/1720000000016-CreateEmailSettings';
 import { CreateNotificationTables1720000000017 } from './migrations/1720000000017-CreateNotificationTables';
+import { ExtractionDag1720000000018 } from './migrations/1720000000018-ExtractionDag';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
   SourcePayloadEntity,
   ExtractedPayloadEntity,
+  ExtractionRunEntity,
   InboxTombstoneEntity,
   PlaudSettingsEntity,
   EmailSettingsEntity,
@@ -90,6 +93,7 @@ export const ALL_MIGRATIONS = [
   ConsentGuardian1720000000015,
   CreateEmailSettings1720000000016,
   CreateNotificationTables1720000000017,
+  ExtractionDag1720000000018,
 ];
 
 /**

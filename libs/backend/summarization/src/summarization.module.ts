@@ -15,7 +15,7 @@ import {
   SummarizationController,
   SummarizationSettingsController,
 } from './summarization.controller';
-import { SummarizationTrigger } from './summarization.trigger';
+import { SummaryExtractor } from './summary.extractor';
 
 @Module({
   imports: [
@@ -47,9 +47,9 @@ import { SummarizationTrigger } from './summarization.trigger';
           : new InlineJobQueue(processor),
     },
     SummarizationService,
-    SummarizationTrigger,
+    SummaryExtractor,
   ],
   controllers: [SummarizationController, SummarizationSettingsController],
-  exports: [SummarizationService],
+  exports: [SummarizationService, SummaryExtractor],
 })
 export class SummarizationModule {}
