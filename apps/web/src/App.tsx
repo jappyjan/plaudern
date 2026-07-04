@@ -11,8 +11,18 @@ import { ContactsPage } from './pages/ContactsPage';
 import { ContactDetailPage } from './pages/ContactDetailPage';
 import { TopicsPage } from './pages/TopicsPage';
 import { TopicDetailPage } from './pages/TopicDetailPage';
+import { EntitiesPage } from './pages/EntitiesPage';
+import { EntityDetailPage } from './pages/EntityDetailPage';
 import { SharePage } from './pages/SharePage';
-import { CalendarIcon, GearIcon, MoonIcon, PeopleIcon, SunIcon, TagIcon } from './components/icons';
+import {
+  CalendarIcon,
+  EntitiesIcon,
+  GearIcon,
+  MoonIcon,
+  PeopleIcon,
+  SunIcon,
+  TagIcon,
+} from './components/icons';
 import { BottomNav } from './components/BottomNav';
 
 export type Theme = 'light' | 'dark';
@@ -113,6 +123,16 @@ export function App() {
               </Button>
               <Button
                 as={Link}
+                to="/entities"
+                isIconOnly
+                variant="light"
+                size="sm"
+                aria-label="Entities"
+              >
+                <EntitiesIcon className="h-5 w-5" />
+              </Button>
+              <Button
+                as={Link}
                 to="/settings"
                 isIconOnly
                 variant="light"
@@ -132,6 +152,8 @@ export function App() {
               <Route path="/contacts/:id" element={<ContactDetailPage />} />
               <Route path="/topics" element={<TopicsPage />} />
               <Route path="/topics/:id" element={<TopicDetailPage />} />
+              <Route path="/entities" element={<EntitiesPage />} />
+              <Route path="/entities/:id" element={<EntityDetailPage />} />
               {/* PWA share-target landing (manifest share_target → GET /share). */}
               <Route path="/share" element={<SharePage />} />
               <Route

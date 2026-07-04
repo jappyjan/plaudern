@@ -88,6 +88,16 @@ import {
   type TopicItemsResponse,
   type TopicListResponse,
   type UpdateTopicRequest,
+  entityListResponseSchema,
+  entityDetailWithRelationsSchema,
+  entityNeighborhoodResponseSchema,
+  entityConnectResponseSchema,
+  type EntityListResponse,
+  type EntityDetailWithRelationsDto,
+  type EntityNeighborhoodResponse,
+  type EntityConnectResponse,
+  type EntityType,
+  type RelationType,
 } from '@plaudern/contracts';
 
 /**
@@ -410,6 +420,58 @@ export async function mergeSpeakers(
       body: JSON.stringify({ sourceProfileId }),
     }),
   );
+}
+
+/**
+ * The per-user entity registry / knowledge graph. Unreferenced ghost rows are
+ * hidden by default (the API's own default); pass `includeUnreferenced` to show
+ * entities no current extraction mentions any more.
+ */
+export async function listEntities(
+  type?: EntityType,
+  includeUnreferenced = false,
+): Promise<EntityListResponse> {
+  const query = new URLSearchParams();
+  if (type) query.set('type', type);
+  if (includeUnreferenced) query.set('includeUnreferenced', 'true');
+  const suffix = query.toString() ? `?${query}` : '';
+  return entityListResponseSchema.parse(await requestJson(`/entities${suffix}`));
+}
+
+/** One registry entity with its mentions (recordings) and aggregated relation edges. */
+export async function getEntity(id: string): Promise<EntityDetailWithRelationsDto> {
+  return entityDetailWithRelationsSchema.parse(await requestJson(`/entities/${id}`));
+}
+
+/** One hop of the graph around an entity: its edges plus the connected entities. */
+export async function getEntityNeighborhood(
+  id: string,
+  relationType?: RelationType,
+): Promise<EntityNeighborhoodResponse> {
+  const query = new URLSearchParams();
+  if (relationType) query.set('relationType', relationType);
+  const suffix = query.toString() ? `?${query}` : '';
+  return entityNeighborhoodResponseSchema.parse(
+    await requestJson(`/entities/${id}/neighborhood${suffix}`),
+  );
+}
+
+/**
+ * The subgraph connecting 2–3 entities: shortest paths from the first id to
+ * each of the others. Pass `includeCooccurrence=false` to traverse only
+ * LLM-evidenced edges.
+ *
+ * Not called by any page yet — this is the client for the upcoming graph-view
+ * feature.
+ */
+export async function connectEntities(
+  ids: string[],
+  opts?: { maxDepth?: number; includeCooccurrence?: boolean },
+): Promise<EntityConnectResponse> {
+  const query = new URLSearchParams({ ids: ids.join(',') });
+  if (opts?.maxDepth !== undefined) query.set('maxDepth', String(opts.maxDepth));
+  if (opts?.includeCooccurrence === false) query.set('includeCooccurrence', 'false');
+  return entityConnectResponseSchema.parse(await requestJson(`/entities/graph/connect?${query}`));
 }
 
 export async function listCalendarFeeds(): Promise<CalendarFeedsResponse> {

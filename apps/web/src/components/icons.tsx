@@ -153,6 +153,17 @@ export function TrashIcon({ className }: IconProps) {
   );
 }
 
+export function EntitiesIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="5" cy="6" r="3" />
+      <circle cx="19" cy="6" r="3" />
+      <circle cx="12" cy="18" r="3" />
+      <path d="M7.5 7.5 10.5 15.8M16.5 7.5 13.5 15.8M8 6h8" />
+    </svg>
+  );
+}
+
 export function BackIcon({ className }: IconProps) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
