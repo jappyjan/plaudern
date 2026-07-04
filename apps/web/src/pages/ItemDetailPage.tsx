@@ -13,6 +13,8 @@ import {
   ModalFooter,
   ModalHeader,
   Spinner,
+  Tab,
+  Tabs,
 } from '@heroui/react';
 import type { CalendarEventDto, InboxItemDto } from '@plaudern/contracts';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -30,6 +32,7 @@ import { AudioPlayer } from '../components/AudioPlayer';
 import { latestTranscription, TranscriptionChip } from '../components/TranscriptionChip';
 import { LinkEventModal } from '../components/calendar/LinkEventModal';
 import { SpeakerTranscript } from '../components/SpeakerTranscript';
+import { SummaryView } from '../components/SummaryView';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import {
   BackIcon,
@@ -60,6 +63,10 @@ export function ItemDetailPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [linkedEvents, setLinkedEvents] = useState<CalendarEventDto[] | null>(null);
   const [linkPickerOpen, setLinkPickerOpen] = useState(false);
+  // Which tab is shown; defaults to the summary once one exists, else the
+  // transcript. Null until the item loads so we can pick the default; a manual
+  // switch afterwards sticks (SSE refetches never override it).
+  const [tab, setTab] = useState<string | null>(null);
 
   const refetch = useCallback(() => {
     if (!id) return;
@@ -95,6 +102,14 @@ export function ItemDetailPage() {
   useEffect(() => {
     void refreshEvents();
   }, [refreshEvents]);
+
+  // Pick the initial tab once the item is known: prefer the summary when it's
+  // ready, otherwise start on the transcript.
+  useEffect(() => {
+    if (!item || tab !== null) return;
+    const summary = item.extractions.find((e) => e.kind === 'summary');
+    setTab(summary?.status === 'succeeded' ? 'summary' : 'transcript');
+  }, [item, tab]);
 
   const unlinkEvent = async (eventId: string) => {
     if (!id) return;
@@ -216,38 +231,60 @@ export function ItemDetailPage() {
       )}
 
       <Card>
-        <CardHeader className="flex items-center justify-between pb-0">
-          <h2 className="text-sm font-semibold">Transcription</h2>
-          <TranscriptionChip item={item} />
-        </CardHeader>
         <CardBody>
-          {!transcription && (
-            <p className="text-sm text-default-500">No transcription for this item.</p>
-          )}
-          {transcription && ['queued', 'processing'].includes(transcription.status) && (
-            <div className="flex items-center gap-2 text-sm text-default-500">
-              <Spinner size="sm" /> Transcribing…
-            </div>
-          )}
-          {transcription?.status === 'succeeded' && (
-            <SpeakerTranscript itemId={item.id} transcription={transcription} />
-          )}
-          {transcription?.status === 'failed' && (
-            <div className="flex flex-col gap-2">
-              <p className="text-sm text-danger">{transcription.error ?? 'Transcription failed.'}</p>
-              <Button
-                size="sm"
-                color="primary"
-                variant="flat"
-                className="self-start"
-                isLoading={retrying}
-                onPress={reprocess}
-              >
-                Reprocess
-              </Button>
-              {retryError && <p className="text-xs text-danger">{retryError}</p>}
-            </div>
-          )}
+          <Tabs
+            aria-label="Recording views"
+            variant="underlined"
+            selectedKey={tab ?? 'transcript'}
+            onSelectionChange={(key) => setTab(String(key))}
+          >
+            <Tab key="summary" title="Summary">
+              <div className="pt-2">
+                <SummaryView itemId={item.id} />
+              </div>
+            </Tab>
+            <Tab
+              key="transcript"
+              title={
+                <div className="flex items-center gap-2">
+                  <span>Transcript</span>
+                  <TranscriptionChip item={item} />
+                </div>
+              }
+            >
+              <div className="flex flex-col gap-2 pt-2">
+                {!transcription && (
+                  <p className="text-sm text-default-500">No transcription for this item.</p>
+                )}
+                {transcription && ['queued', 'processing'].includes(transcription.status) && (
+                  <div className="flex items-center gap-2 text-sm text-default-500">
+                    <Spinner size="sm" /> Transcribing…
+                  </div>
+                )}
+                {transcription?.status === 'succeeded' && (
+                  <SpeakerTranscript itemId={item.id} transcription={transcription} />
+                )}
+                {transcription?.status === 'failed' && (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-sm text-danger">
+                      {transcription.error ?? 'Transcription failed.'}
+                    </p>
+                    <Button
+                      size="sm"
+                      color="primary"
+                      variant="flat"
+                      className="self-start"
+                      isLoading={retrying}
+                      onPress={reprocess}
+                    >
+                      Reprocess
+                    </Button>
+                    {retryError && <p className="text-xs text-danger">{retryError}</p>}
+                  </div>
+                )}
+              </div>
+            </Tab>
+          </Tabs>
         </CardBody>
       </Card>
 

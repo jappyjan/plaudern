@@ -17,6 +17,7 @@ import {
   plaudSyncNowResponseSchema,
   plaudTestConnectionResponseSchema,
   speakerTranscriptSchema,
+  summarySchema,
   voiceProfileDetailSchema,
   voiceProfileListResponseSchema,
   type CalendarEventDetailDto,
@@ -40,6 +41,7 @@ import {
   type ItemEventsResponse,
   type LinkResponse,
   type SpeakerTranscriptDto,
+  type SummaryDto,
   type UpdateCalendarFeedRequest,
   type UpdatePlaudSettingsRequest,
   type UpdateVoiceProfileRequest,
@@ -178,6 +180,18 @@ export async function triggerPlaudSync(): Promise<PlaudSyncNowResponse> {
 
 export async function getSpeakerTranscript(itemId: string): Promise<SpeakerTranscriptDto> {
   return speakerTranscriptSchema.parse(await requestJson(`/inbox/${itemId}/speaker-transcript`));
+}
+
+/** AI-generated title + Markdown summary (and speaker roster for mentions). */
+export async function getSummary(itemId: string): Promise<SummaryDto> {
+  return summarySchema.parse(await requestJson(`/inbox/${itemId}/summary`));
+}
+
+/** Manually (re)generate the summary; returns the refreshed (in-flight) summary. */
+export async function retrySummary(itemId: string): Promise<SummaryDto> {
+  return summarySchema.parse(
+    await requestJson(`/inbox/${itemId}/summary/retry`, { method: 'POST' }),
+  );
 }
 
 export async function listSpeakers(): Promise<VoiceProfileListResponse> {

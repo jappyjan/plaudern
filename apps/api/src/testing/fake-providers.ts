@@ -9,6 +9,11 @@ import type {
   DiarizationProvider,
   DiarizationResult,
 } from '@plaudern/speaker-id';
+import type {
+  SummarizationInput,
+  SummarizationProvider,
+  SummarizationResult,
+} from '@plaudern/summarization';
 
 /**
  * Deterministic test double, injected via overrideProvider(TRANSCRIPTION_PROVIDER).
@@ -64,6 +69,35 @@ export class FakeDiarizationProvider implements DiarizationProvider {
         { label: 'SPEAKER_00', embedding: constant, speakingSeconds: 2 },
         { label: 'SPEAKER_01', embedding: hashed, speakingSeconds: 2 },
       ],
+    };
+  }
+}
+
+/**
+ * Deterministic test double, injected via overrideProvider(SUMMARIZATION_PROVIDER).
+ * Echoes the roster back as `@[LABEL]` mentions so tests can assert the whole
+ * transcribe → diarize → summarize chain and mention resolution end to end.
+ */
+export class FakeSummarizationProvider implements SummarizationProvider {
+  readonly id = 'fake-summarization';
+  readonly enabled = true;
+
+  async summarize(input: SummarizationInput): Promise<SummarizationResult> {
+    const mentions = input.speakers.map((s) => `@[${s.label}]`).join(' and ');
+    const markdown = [
+      '## Summary',
+      mentions ? `Speakers: ${mentions}.` : 'No speakers detected.',
+      '',
+      '```mermaid',
+      'flowchart TD',
+      '  A[Start] --> B[End]',
+      '```',
+    ].join('\n');
+    return {
+      title: 'Test summary title',
+      layout: input.speakers.length > 1 ? 'meeting' : 'note',
+      markdown,
+      model: 'fake-model',
     };
   }
 }

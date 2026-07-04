@@ -5,6 +5,7 @@ import { StorageModule } from '@plaudern/storage';
 import { AuthModule } from '@plaudern/auth';
 import { InboxModule } from '@plaudern/inbox';
 import { TranscriptionModule } from '@plaudern/transcription';
+import { SummarizationModule } from '@plaudern/summarization';
 import { IngestionModule } from '@plaudern/ingestion';
 import { PlaudSyncModule } from '@plaudern/plaud-sync';
 import { SpeakerIdModule } from '@plaudern/speaker-id';
@@ -22,6 +23,7 @@ import { HealthController } from './health.controller';
     AuthModule,
     InboxModule,
     TranscriptionModule,
+    SummarizationModule,
     IngestionModule,
     PlaudSyncModule,
     SpeakerIdModule,
