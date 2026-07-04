@@ -164,7 +164,14 @@ export function parseEntitiesResponse(content: string): ExtractedEntity[] {
   return entities;
 }
 
-function extractJsonObject(content: string): Record<string, unknown> {
+/**
+ * Recover the JSON object from an LLM reply: tolerate code-fence wrapping and
+ * surrounding prose. Shared with the relations provider.
+ */
+export function extractJsonObject(
+  content: string,
+  what = 'entity extraction',
+): Record<string, unknown> {
   const trimmed = content.trim();
   const unfenced = trimmed
     .replace(/^```(?:json)?\s*/i, '')
@@ -189,5 +196,5 @@ function extractJsonObject(content: string): Record<string, unknown> {
       /* fall through */
     }
   }
-  throw new Error('entity extraction response was not valid JSON');
+  throw new Error(`${what} response was not valid JSON`);
 }

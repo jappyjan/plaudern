@@ -135,6 +135,25 @@ export class EntitiesRegistryService {
   }
 
   /**
+   * The registry entities mentioned by the item's latest succeeded `entities`
+   * extraction — the legal relation endpoints for the `relations` extractor.
+   */
+  async entitiesForItem(userId: string, inboxItemId: string): Promise<EntityRegistryEntity[]> {
+    const extractionRows = await this.extractions.find({
+      where: { inboxItemId, kind: 'entities', status: 'succeeded' },
+    });
+    const latest = extractionRows
+      .slice()
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+    if (!latest) return [];
+    const mentions = await this.mentions.find({ where: { extractionId: latest.id } });
+    if (mentions.length === 0) return [];
+    return this.entities.find({
+      where: { id: In(mentions.map((m) => m.entityId)), userId },
+    });
+  }
+
+  /**
    * Find or create the registry row for (userId, type, normalizedName),
    * accreting any new surface forms as aliases and (re)linking a `person` to a
    * matching named voice profile.
