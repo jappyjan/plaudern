@@ -101,6 +101,31 @@ services:
       # known voices into recordings they aren't in; 50 is pyannoteAI's
       # recommended strict floor. Raise toward 70 for stricter matching.
       - PYANNOTEAI_MATCH_THRESHOLD=${PYANNOTEAI_MATCH_THRESHOLD:-50}
+      # Email-in (mailbox): every user gets an inbox+<token>@<domain> address;
+      # mail sent there becomes an inbox item. Set EMAIL_INBOUND_DOMAIN to the
+      # domain your inbound mail relay (SES, Mailgun, Postmark, a self-hosted
+      # Postfix, ...) receives for, and configure the relay to POST raw MIME to
+      # https://<api-domain>/api/v1/webhooks/email with the x-webhook-secret
+      # header set to EMAIL_WEBHOOK_SECRET (Coolify generates & persists it —
+      # copy the value into your relay's config). Domain empty = feature off.
+      - EMAIL_INBOUND_DOMAIN=${EMAIL_INBOUND_DOMAIN:-}
+      - EMAIL_WEBHOOK_SECRET=${SERVICE_PASSWORD_EMAILWEBHOOK}
+      # Outbound notifications — email channel via SMTP (any relay works).
+      # SMTP_HOST empty = channel off; the settings UI shows it unconfigured.
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-Plaudern <notifications@plaudern.local>}
+      # true = implicit TLS (set it when using port 465), false = STARTTLS.
+      - SMTP_SECURE=${SMTP_SECURE:-false}
+      # Outbound notifications — web-push channel. Generate a key pair once
+      # with `npx web-push generate-vapid-keys` and paste both here. Keys
+      # empty = channel off.
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
+      # Contact URI (mailto: or https:) sent to push services, per VAPID spec.
+      - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:admin@plaudern.local}
       # Native Google Calendar (optional): set these in Coolify to enable it.
       # REDIRECT_URI must be your API's public URL + /v1/calendar/google/callback.
       - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
