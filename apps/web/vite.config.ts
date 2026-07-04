@@ -21,6 +21,8 @@ export default defineConfig({
         skipWaiting: true,
         // The SPA fallback must never swallow backend routes.
         navigateFallbackDenylist: [/^\/api\//],
+        // Web-push + notificationclick handlers for the notification engine.
+        importScripts: ['/push-sw.js'],
       },
     }),
   ],

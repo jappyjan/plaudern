@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Checkbox, Input, Select, SelectItem, Spinner, Switch } from '@heroui/react';
 import {
+  NOTIFICATION_CATEGORY_DESCRIPTIONS,
+  NOTIFICATION_CATEGORY_LABELS,
+  NOTIFICATION_CHANNEL_LABELS,
+  notificationChannelSchema,
+  type NotificationCategoryPreference,
+  type NotificationChannel,
+  type NotificationPreferencesDto,
+  type QuietHours,
   SUMMARY_LANGUAGE_LABELS,
   summaryLanguagePreferenceSchema,
   type CalendarFeedsResponse,
@@ -19,6 +27,7 @@ import {
   deleteCalendarFeed,
   getConsentSettings,
   getEmailSettings,
+  getNotificationPreferences,
   getGoogleAuthUrl,
   getGooglePending,
   getPlaudSettings,
@@ -27,6 +36,7 @@ import {
   purgeAllData,
   reconnectGoogle,
   rotateEmailToken,
+  sendTestNotification,
   testCalendarFeed,
   testPlaudConnection,
   triggerCalendarSync,
@@ -34,9 +44,11 @@ import {
   updateCalendarFeed,
   updateConsentSettings,
   updateEmailSettings,
+  updateNotificationPreferences,
   updatePlaudSettings,
   updateSummarizationSettings,
 } from '../lib/api';
+import { disablePush, enablePush, isPushSupported } from '../lib/push';
 import { formatDateTime } from '../lib/format';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { MoonIcon, SunIcon } from '../components/icons';
@@ -291,6 +303,8 @@ export function SettingsPage({
 
       <ConsentSection />
 
+      <NotificationsSection />
+
       <CalendarFeedsSection />
 
       <DangerZoneSection
@@ -480,6 +494,278 @@ function SummarizationSection() {
   );
 }
 
+/**
+ * Proactive-notification preferences: per-category channel opt-in, frequency
+ * caps, quiet hours, the email delivery address, plus enabling web push on this
+ * device and firing a test notification. Backed by the notification engine
+ * (ATT-661).
+ */
+function NotificationsSection() {
+  const [prefs, setPrefs] = useState<NotificationPreferencesDto | null>(null);
+  const [timezone, setTimezone] = useState('UTC');
+  const [emailAddress, setEmailAddress] = useState('');
+  const [quietHours, setQuietHours] = useState<QuietHours>({
+    enabled: true,
+    start: '22:00',
+    end: '07:00',
+  });
+  const [categories, setCategories] = useState<NotificationCategoryPreference[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushMsg, setPushMsg] = useState<string | null>(null);
+  const [testMsg, setTestMsg] = useState<string | null>(null);
+
+  const apply = useCallback((next: NotificationPreferencesDto) => {
+    setPrefs(next);
+    setTimezone(next.timezone);
+    setEmailAddress(next.emailAddress ?? '');
+    setQuietHours(next.quietHours);
+    setCategories(next.categories);
+  }, []);
+
+  useEffect(() => {
+    getNotificationPreferences()
+      .then(apply)
+      .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setLoaded(true));
+  }, [apply]);
+
+  const setCategoryChannel = (
+    category: string,
+    channel: NotificationChannel,
+    on: boolean,
+  ) => {
+    setCategories((prev) =>
+      prev.map((c) =>
+        c.category === category
+          ? {
+              ...c,
+              channels: on
+                ? [...new Set([...c.channels, channel])]
+                : c.channels.filter((ch) => ch !== channel),
+            }
+          : c,
+      ),
+    );
+  };
+
+  const setCategoryCap = (category: string, value: string) => {
+    const parsed = value.trim() === '' ? null : Math.max(0, Math.floor(Number(value)));
+    setCategories((prev) =>
+      prev.map((c) =>
+        c.category === category
+          ? { ...c, maxPerDay: parsed !== null && Number.isFinite(parsed) ? parsed : null }
+          : c,
+      ),
+    );
+  };
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      apply(
+        await updateNotificationPreferences({
+          timezone,
+          emailAddress: emailAddress.trim() === '' ? null : emailAddress.trim(),
+          quietHours,
+          categories,
+        }),
+      );
+      setSaved(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const togglePush = async (enable: boolean) => {
+    setPushBusy(true);
+    setPushMsg(null);
+    try {
+      if (enable) {
+        await enablePush();
+        setPushMsg('Web push enabled on this device.');
+      } else {
+        await disablePush();
+        setPushMsg('Web push disabled on this device.');
+      }
+      apply(await getNotificationPreferences());
+    } catch (cause) {
+      setPushMsg(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const sendTest = async () => {
+    setTestMsg(null);
+    try {
+      const result = await sendTestNotification({});
+      const parts = result.channels.map((c) => `${c.channel}: ${c.status}`);
+      setTestMsg(`Test dispatch (${result.outcome}) — ${parts.join(', ') || 'no channels'}`);
+    } catch (cause) {
+      setTestMsg(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  const channelConfigured = (channel: NotificationChannel): boolean =>
+    prefs?.channelStatus[channel] ?? false;
+
+  return (
+    <div className="flex flex-col gap-4 border-t border-default-200 pt-6">
+      <div>
+        <h2 className="text-lg font-semibold">Notifications</h2>
+        <p className="text-sm text-default-500">
+          Proactive briefings, nudges and digests are delivered through a shared engine. Choose
+          which channels each category may use, cap how often each can fire, and set quiet hours —
+          nothing is sent while you sleep or beyond your caps.
+        </p>
+      </div>
+
+      {!loaded ? (
+        <Spinner size="sm" />
+      ) : (
+        <>
+          <Input
+            type="text"
+            label="Timezone"
+            description="IANA name (e.g. Europe/Berlin) — quiet hours are evaluated here."
+            value={timezone}
+            onValueChange={setTimezone}
+          />
+
+          <Input
+            type="email"
+            label="Email delivery address"
+            description="Where email notifications are sent. Leave empty to disable email delivery."
+            value={emailAddress}
+            onValueChange={setEmailAddress}
+          />
+
+          <div className="flex flex-col gap-3 rounded-medium bg-default-50 p-4">
+            <Switch
+              isSelected={quietHours.enabled}
+              onValueChange={(enabled) => setQuietHours((q) => ({ ...q, enabled }))}
+            >
+              Quiet hours
+            </Switch>
+            <div className="flex gap-3">
+              <Input
+                type="time"
+                label="From"
+                isDisabled={!quietHours.enabled}
+                value={quietHours.start}
+                onValueChange={(start) => setQuietHours((q) => ({ ...q, start }))}
+              />
+              <Input
+                type="time"
+                label="To"
+                isDisabled={!quietHours.enabled}
+                value={quietHours.end}
+                onValueChange={(end) => setQuietHours((q) => ({ ...q, end }))}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            {categories.map((cat) => (
+              <div
+                key={cat.category}
+                className="flex flex-col gap-2 rounded-medium border border-default-200 p-4"
+              >
+                <div>
+                  <p className="font-medium">
+                    {NOTIFICATION_CATEGORY_LABELS[
+                      cat.category as keyof typeof NOTIFICATION_CATEGORY_LABELS
+                    ] ?? cat.category}
+                  </p>
+                  <p className="text-sm text-default-500">
+                    {NOTIFICATION_CATEGORY_DESCRIPTIONS[
+                      cat.category as keyof typeof NOTIFICATION_CATEGORY_DESCRIPTIONS
+                    ] ?? ''}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-4">
+                  {notificationChannelSchema.options.map((channel) => (
+                    <Checkbox
+                      key={channel}
+                      isSelected={cat.channels.includes(channel)}
+                      isDisabled={!channelConfigured(channel)}
+                      onValueChange={(on) => setCategoryChannel(cat.category, channel, on)}
+                    >
+                      {NOTIFICATION_CHANNEL_LABELS[channel]}
+                      {!channelConfigured(channel) && (
+                        <span className="text-default-400"> (unavailable)</span>
+                      )}
+                    </Checkbox>
+                  ))}
+                  <Input
+                    type="number"
+                    size="sm"
+                    className="max-w-[10rem]"
+                    label="Max / day"
+                    placeholder="∞"
+                    min={0}
+                    value={cat.maxPerDay === null ? '' : String(cat.maxPerDay)}
+                    onValueChange={(v) => setCategoryCap(cat.category, v)}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Button color="primary" isLoading={saving} onPress={() => void save()}>
+              Save
+            </Button>
+            {isPushSupported() && (
+              <>
+                <Button
+                  variant="flat"
+                  isLoading={pushBusy}
+                  isDisabled={!channelConfigured('web_push')}
+                  onPress={() => void togglePush(true)}
+                >
+                  Enable push on this device
+                </Button>
+                <Button
+                  variant="flat"
+                  isDisabled={pushBusy}
+                  onPress={() => void togglePush(false)}
+                >
+                  Disable push
+                </Button>
+              </>
+            )}
+            <Button variant="flat" onPress={() => void sendTest()}>
+              Send test notification
+            </Button>
+          </div>
+
+          {prefs && (
+            <p className="text-xs text-default-400">
+              {prefs.pushSubscriptionCount} device(s) subscribed · channels configured:{' '}
+              {notificationChannelSchema.options
+                .filter((c) => channelConfigured(c))
+                .map((c) => NOTIFICATION_CHANNEL_LABELS[c])
+                .join(', ') || 'none'}
+            </p>
+          )}
+          {error && <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">{error}</div>}
+          {saved && !error && <span className="text-sm text-success">Saved.</span>}
+          {pushMsg && <span className="text-sm text-default-600">{pushMsg}</span>}
+          {testMsg && <span className="text-sm text-default-600">{testMsg}</span>}
+        </>
+      )}
+    </div>
+  );
+}
 /**
  * Consent guardian policy (§ 201 StGB). When auto-delete is on, a recording is
  * deleted whole as soon as diarization detects a voice marked as having

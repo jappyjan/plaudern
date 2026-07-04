@@ -65,6 +65,15 @@ import {
   type UpdateVoiceProfileRequest,
   type VoiceProfileDetailDto,
   type VoiceProfileListResponse,
+  notificationDispatchResultSchema,
+  notificationPreferencesSchema,
+  vapidPublicKeyResponseSchema,
+  type NotificationDispatchResult,
+  type NotificationPreferencesDto,
+  type RegisterPushSubscriptionRequest,
+  type SendTestNotificationRequest,
+  type UpdateNotificationPreferencesRequest,
+  type VapidPublicKeyResponse,
 } from '@plaudern/contracts';
 
 /**
@@ -299,6 +308,49 @@ export async function updateConsentSettings(
 ): Promise<ConsentSettingsDto> {
   return consentSettingsSchema.parse(
     await requestJson('/settings/consent', { method: 'PUT', body: JSON.stringify(req) }),
+  );
+}
+
+export async function getNotificationPreferences(): Promise<NotificationPreferencesDto> {
+  return notificationPreferencesSchema.parse(await requestJson('/notifications/preferences'));
+}
+
+export async function updateNotificationPreferences(
+  req: UpdateNotificationPreferencesRequest,
+): Promise<NotificationPreferencesDto> {
+  return notificationPreferencesSchema.parse(
+    await requestJson('/notifications/preferences', {
+      method: 'PUT',
+      body: JSON.stringify(req),
+    }),
+  );
+}
+
+export async function getVapidPublicKey(): Promise<VapidPublicKeyResponse> {
+  return vapidPublicKeyResponseSchema.parse(await requestJson('/notifications/push/public-key'));
+}
+
+export async function registerPushSubscription(
+  req: RegisterPushSubscriptionRequest,
+): Promise<void> {
+  await requestVoid('/notifications/push/subscriptions', {
+    method: 'POST',
+    body: JSON.stringify(req),
+  });
+}
+
+export async function unregisterPushSubscription(endpoint: string): Promise<void> {
+  await requestVoid('/notifications/push/subscriptions', {
+    method: 'DELETE',
+    body: JSON.stringify({ endpoint }),
+  });
+}
+
+export async function sendTestNotification(
+  req: SendTestNotificationRequest,
+): Promise<NotificationDispatchResult> {
+  return notificationDispatchResultSchema.parse(
+    await requestJson('/notifications/test', { method: 'POST', body: JSON.stringify(req) }),
   );
 }
 

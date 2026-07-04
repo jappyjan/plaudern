@@ -19,6 +19,7 @@
     "@plaudern/geocoding": "workspace:*",
     "@plaudern/inbox": "workspace:*",
     "@plaudern/ingestion": "workspace:*",
+    "@plaudern/notifications": "workspace:*",
     "@plaudern/persistence": "workspace:*",
     "@plaudern/plaud-sync": "workspace:*",
     "@plaudern/speaker-id": "workspace:*",
