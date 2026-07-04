@@ -46,7 +46,8 @@ export function buildMcpServer(userId: string, tools: McpToolsService): McpServe
         'recordings, notes and web clips). Returns the best-matching snippets with the ' +
         'id of the item each came from — pass that id to get_item for the full content.',
       inputSchema: {
-        query: z.string().min(1).describe('Natural-language search query.'),
+        // Bounded like other free-text inputs (cf. ingestWebRequestSchema's url cap).
+        query: z.string().min(1).max(4096).describe('Natural-language search query.'),
         limit: z
           .number()
           .int()
@@ -107,7 +108,8 @@ export function buildMcpServer(userId: string, tools: McpToolsService): McpServe
         'Capture a plain-text note into the user\'s memory (it is processed like any ' +
         'other item and becomes searchable). Returns the id of the created item.',
       inputSchema: {
-        text: z.string().min(1).describe('The note text to capture.'),
+        // Generous but bounded — a note, not a document dump (web-clip text caps at 1M).
+        text: z.string().min(1).max(100_000).describe('The note text to capture.'),
         occurredAt: z
           .string()
           .datetime()
