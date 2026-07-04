@@ -19,6 +19,7 @@ export const USER_OWNED_DATA_TABLES = [
   'inbox_items',
   'plaud_settings',
   'email_settings',
+  'mcp_tokens',
   'voice_profiles',
   'calendar_feeds',
   'calendar_events',
