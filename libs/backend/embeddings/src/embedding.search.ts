@@ -68,6 +68,12 @@ export class EmbeddingSearchService {
    * Native pgvector nearest-neighbour: one best chunk per item via DISTINCT ON,
    * then ordered by distance across items. Uses cosine distance (`<=>`), which
    * the HNSW index (`vector_cosine_ops`) accelerates.
+   *
+   * No dimension guard is needed here (unlike the in-memory path): the column
+   * is a fixed-dimension `vector(N)` (frozen by the `…019-CreateEmbeddingChunks`
+   * migration), so every stored row has exactly N dims — Postgres rejects any
+   * other insert. The query vector matches too, because it comes from the same
+   * provider that produced the stored rows.
    */
   private async searchPostgres(
     userId: string,
