@@ -43,19 +43,29 @@ export class SummaryContextService {
       return { input: null, speakers: [] };
     }
 
-    let roster: SummarySpeakerDto[] = [];
+    const roster: SummarySpeakerDto[] = [];
+    // Labels of speakers redacted for consent — their diarized segments must be
+    // kept out of the transcript fed to the model so future summaries never
+    // mention them (§ 201 StGB guardian, ATT-663).
+    const redactedLabels = new Set<string>();
     if (diarization?.status === 'succeeded') {
       const rows = await this.occurrences.find({
         where: { extractionId: diarization.id },
         relations: { voiceProfile: true },
       });
       rows.sort((a, b) => a.label.localeCompare(b.label));
-      roster = rows.map((row) => ({
-        profileId: row.voiceProfileId,
-        name: row.voiceProfile.name,
-        label: row.label,
-        status: row.voiceProfile.status,
-      }));
+      for (const row of rows) {
+        if (row.voiceProfile.redacted) {
+          redactedLabels.add(row.label);
+          continue;
+        }
+        roster.push({
+          profileId: row.voiceProfileId,
+          name: row.voiceProfile.name,
+          label: row.label,
+          status: row.voiceProfile.status,
+        });
+      }
     }
 
     const speakerByLabel = new Map(roster.map((s) => [s.label, s]));
@@ -64,6 +74,7 @@ export class SummaryContextService {
       transcription.segments ?? null,
       diarization?.status === 'succeeded' ? diarization.segments ?? null : null,
       speakerByLabel,
+      redactedLabels,
     );
 
     const speakers: SummarizationSpeaker[] = roster.map((s, index) => ({
@@ -129,11 +140,12 @@ export function buildTranscriptText(
   transcriptSegments: ExtractionSegment[] | null,
   diarizationSegments: ExtractionSegment[] | null,
   speakerByLabel: Map<string, { label: string }>,
+  redactedLabels: Set<string> = new Set(),
 ): string {
   const canAttribute =
     (transcriptSegments?.length ?? 0) > 0 &&
     (diarizationSegments?.length ?? 0) > 0 &&
-    speakerByLabel.size > 0;
+    (speakerByLabel.size > 0 || redactedLabels.size > 0);
   if (!canAttribute) return content;
 
   const byLabel = new Map<string, { start: number; end: number }[]>();
@@ -155,6 +167,8 @@ export function buildTranscriptText(
         bestLabel = label;
       }
     }
+    // Redacted speaker: drop the segment entirely so it never reaches the model.
+    if (bestLabel && redactedLabels.has(bestLabel)) continue;
     const text = (seg.text ?? '').trim();
     if (!text) continue;
     const prev = lines[lines.length - 1];

@@ -11,6 +11,7 @@ import {
   SpeakerOccurrenceEntity,
   VoiceProfileEntity,
 } from '@plaudern/persistence';
+import { SummarizationService } from '@plaudern/summarization';
 
 interface OccurrenceWithItem extends SpeakerOccurrenceEntity {
   occurredAt: string;
@@ -30,6 +31,7 @@ export class VoiceProfilesService {
     private readonly occurrences: Repository<SpeakerOccurrenceEntity>,
     @InjectRepository(ExtractedPayloadEntity)
     private readonly extractions: Repository<ExtractedPayloadEntity>,
+    private readonly summarization: SummarizationService,
   ) {}
 
   async list(userId: string): Promise<VoiceProfileDto[]> {
@@ -71,8 +73,28 @@ export class VoiceProfilesService {
       profile.status = 'confirmed';
     }
     if (req.status === 'confirmed') profile.status = 'confirmed';
+    if (req.consentStatus !== undefined) profile.consentStatus = req.consentStatus;
+
+    const redactionChanged = req.redacted !== undefined && req.redacted !== profile.redacted;
+    if (req.redacted !== undefined) profile.redacted = req.redacted;
+
     await this.profiles.save(profile);
+
+    // Redaction affects every summary this speaker appears in. The transcript
+    // read model recomputes at read time, but stored summaries do not — so
+    // regenerate them (best-effort) whenever redaction is toggled.
+    if (redactionChanged) {
+      const itemIds = await this.itemIdsForProfile(id);
+      await this.summarization.regenerateForItems(itemIds);
+    }
+
     return this.detail(userId, id);
+  }
+
+  /** Distinct inbox items whose latest diarization currently links this profile. */
+  private async itemIdsForProfile(profileId: string): Promise<string[]> {
+    const occurrences = (await this.currentOccurrences([profileId])).get(profileId) ?? [];
+    return [...new Set(occurrences.map((o) => o.inboxItemId))];
   }
 
   /** Merge `sourceId` into `targetId` (occurrences re-linked, source deleted). */
@@ -93,6 +115,14 @@ export class VoiceProfilesService {
       // when the target has none.
       if (!target.voiceprint && source.voiceprint) target.voiceprint = source.voiceprint;
       if (!target.name && source.name) target.name = source.name;
+      // Consent is a safety property: the merged person inherits the stricter
+      // of the two states so a merge never silently un-redacts a declined voice.
+      if (source.redacted) target.redacted = true;
+      if (source.consentStatus === 'declined' || target.consentStatus === 'declined') {
+        target.consentStatus = 'declined';
+      } else if (target.consentStatus === 'unknown' && source.consentStatus === 'consented') {
+        target.consentStatus = 'consented';
+      }
       await manager.save(target);
       await manager.delete(VoiceProfileEntity, { id: source.id });
     });
@@ -115,6 +145,8 @@ export class VoiceProfilesService {
       id: profile.id,
       name: profile.name,
       status: profile.status,
+      consentStatus: profile.consentStatus,
+      redacted: profile.redacted,
       recordingCount: itemIds.size,
       totalSpeakingSeconds: occurrences.reduce((sum, o) => sum + o.speakingSeconds, 0),
       lastHeardAt,

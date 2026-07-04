@@ -5,6 +5,7 @@ import {
   AuthSessionEntity,
   CalendarEventEntity,
   CalendarFeedEntity,
+  ConsentSettingsEntity,
   ExtractedPayloadEntity,
   GeocodeCacheEntity,
   InboxItemEntity,
@@ -34,6 +35,7 @@ import { CreateSummarizationSettings1720000000011 } from './migrations/172000000
 import { DropEmbeddingColumns1720000000012 } from './migrations/1720000000012-DropEmbeddingColumns';
 import { GoogleCalendarFeeds1720000000013 } from './migrations/1720000000013-GoogleCalendarFeeds';
 import { CreateRecordingMerges1720000000014 } from './migrations/1720000000014-CreateRecordingMerges';
+import { ConsentGuardian1720000000015 } from './migrations/1720000000015-ConsentGuardian';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -52,6 +54,7 @@ export const ALL_ENTITIES = [
   PasskeyCredentialEntity,
   AuthSessionEntity,
   SummarizationSettingsEntity,
+  ConsentSettingsEntity,
 ];
 
 // Referenced as classes (not a glob) so migrations load identically under
@@ -72,6 +75,7 @@ export const ALL_MIGRATIONS = [
   DropEmbeddingColumns1720000000012,
   GoogleCalendarFeeds1720000000013,
   CreateRecordingMerges1720000000014,
+  ConsentGuardian1720000000015,
 ];
 
 /**

@@ -45,27 +45,43 @@ export class SpeakerTranscriptService {
 
     let speakers: SpeakerTranscriptDto['speakers'] = [];
     let speakerByLabel = new Map<string, TranscriptSpeakerDto>();
+    // Speakers redacted for consent are removed from `speakers`/`segments` and
+    // surfaced separately so the UI can show (and undo) the redaction. Their
+    // labels are dropped from segment attribution below (§ 201 StGB, ATT-663).
+    const redactedSpeakers: TranscriptSpeakerDto[] = [];
+    const redactedLabels = new Set<string>();
     if (diarization?.status === 'succeeded') {
       const rows = await this.occurrences.find({
         where: { extractionId: diarization.id },
         relations: { voiceProfile: true },
       });
       rows.sort((a, b) => a.label.localeCompare(b.label));
-      speakers = rows.map((row) => ({
-        profileId: row.voiceProfileId,
-        name: row.voiceProfile.name,
-        label: row.label,
-        status: row.voiceProfile.status,
-        speakingSeconds: row.speakingSeconds,
-        similarity: row.similarity,
-      }));
-      speakerByLabel = new Map(
-        speakers.map(({ profileId, name, label, status }) => [
-          label,
-          { profileId, name, label, status },
-        ]),
-      );
+      for (const row of rows) {
+        const identity: TranscriptSpeakerDto = {
+          profileId: row.voiceProfileId,
+          name: row.voiceProfile.name,
+          label: row.label,
+          status: row.voiceProfile.status,
+          consentStatus: row.voiceProfile.consentStatus,
+        };
+        if (row.voiceProfile.redacted) {
+          redactedLabels.add(row.label);
+          redactedSpeakers.push(identity);
+          continue;
+        }
+        speakers.push({
+          ...identity,
+          speakingSeconds: row.speakingSeconds,
+          similarity: row.similarity,
+        });
+        speakerByLabel.set(row.label, identity);
+      }
     }
+
+    // A recording needs review when a still-present speaker has not consented.
+    const needsConsentReview = speakers.some(
+      (s) => s.consentStatus === 'unknown' || s.consentStatus === 'declined',
+    );
 
     const canSegment =
       text !== null &&
@@ -78,12 +94,15 @@ export class SpeakerTranscriptService {
         transcription!.segments!,
         diarization!.segments!,
         speakerByLabel,
+        redactedLabels,
       );
       return {
         mode: 'segmented',
         text,
         segments,
         speakers,
+        redactedSpeakers,
+        needsConsentReview,
         diarizationStatus: diarization?.status ?? null,
       };
     }
@@ -93,6 +112,8 @@ export class SpeakerTranscriptService {
       text,
       segments: [],
       speakers,
+      redactedSpeakers,
+      needsConsentReview,
       diarizationStatus: diarization?.status ?? null,
     };
   }
@@ -116,6 +137,7 @@ export function attributeSegments(
   transcriptSegments: ExtractionSegment[],
   diarizationSegments: ExtractionSegment[],
   speakerByLabel: Map<string, TranscriptSpeakerDto>,
+  redactedLabels: Set<string> = new Set(),
 ): SpeakerTranscriptSegmentDto[] {
   const byLabel = new Map<string, { start: number; end: number }[]>();
   for (const seg of diarizationSegments) {
@@ -125,23 +147,28 @@ export function attributeSegments(
     byLabel.set(seg.speaker, list);
   }
 
-  const attributed = transcriptSegments.map((seg) => {
-    let bestLabel: string | null = null;
-    let bestOverlap = 0;
-    for (const [label, windows] of byLabel) {
-      const overlap = overlapSeconds(seg.start, seg.end, windows);
-      if (overlap > bestOverlap) {
-        bestOverlap = overlap;
-        bestLabel = label;
+  const attributed = transcriptSegments
+    .map((seg) => {
+      let bestLabel: string | null = null;
+      let bestOverlap = 0;
+      for (const [label, windows] of byLabel) {
+        const overlap = overlapSeconds(seg.start, seg.end, windows);
+        if (overlap > bestOverlap) {
+          bestOverlap = overlap;
+          bestLabel = label;
+        }
       }
-    }
-    return {
-      start: seg.start,
-      end: seg.end,
-      text: seg.text ?? '',
-      speaker: bestLabel ? (speakerByLabel.get(bestLabel) ?? null) : null,
-    };
-  });
+      return {
+        start: seg.start,
+        end: seg.end,
+        text: seg.text ?? '',
+        speaker: bestLabel ? (speakerByLabel.get(bestLabel) ?? null) : null,
+        redacted: bestLabel !== null && redactedLabels.has(bestLabel),
+      };
+    })
+    // Drop segments spoken by a redacted speaker: their words leave the read model.
+    .filter((seg) => !seg.redacted)
+    .map(({ redacted: _redacted, ...seg }) => seg);
 
   const coalesced: SpeakerTranscriptSegmentDto[] = [];
   for (const seg of attributed) {

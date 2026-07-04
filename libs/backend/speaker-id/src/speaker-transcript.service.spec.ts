@@ -17,12 +17,14 @@ const alice: TranscriptSpeakerDto = {
   name: 'Alice',
   label: 'SPEAKER_00',
   status: 'confirmed',
+  consentStatus: 'consented',
 };
 const bob: TranscriptSpeakerDto = {
   profileId: 'p-bob',
   name: null,
   label: 'SPEAKER_01',
   status: 'unconfirmed',
+  consentStatus: 'unknown',
 };
 const speakerByLabel = new Map([
   ['SPEAKER_00', alice],
@@ -130,7 +132,13 @@ describe('SpeakerTranscriptService.getSpeakerTranscript', () => {
     embedding: [1],
     speakingSeconds: 4,
     similarity: 0.9,
-    voiceProfile: { id: 'p-alice', name: 'Alice', status: 'confirmed' },
+    voiceProfile: {
+      id: 'p-alice',
+      name: 'Alice',
+      status: 'confirmed',
+      consentStatus: 'consented',
+      redacted: false,
+    },
   } as unknown as SpeakerOccurrenceEntity;
 
   it('returns segmented mode when transcript and diarization align', async () => {
@@ -155,6 +163,78 @@ describe('SpeakerTranscriptService.getSpeakerTranscript', () => {
     expect(result.segments[0].speaker?.name).toBe('Alice');
     expect(result.speakers).toHaveLength(1);
     expect(result.diarizationStatus).toBe('succeeded');
+  });
+
+  it('flags an unknown-consent speaker for review', async () => {
+    const unknownConsent = {
+      ...occurrence,
+      voiceProfile: { ...(occurrence.voiceProfile as object), consentStatus: 'unknown' },
+    } as unknown as SpeakerOccurrenceEntity;
+    const service = build(
+      [
+        extraction({
+          id: 'ext-t',
+          content: 'hello',
+          segments: [{ start: 0, end: 4, text: 'hello' }],
+        }),
+        extraction({
+          id: 'ext-d',
+          kind: 'diarization',
+          segments: [{ start: 0, end: 4, speaker: 'SPEAKER_00' }],
+        }),
+      ],
+      [unknownConsent],
+    );
+    const result = await service.getSpeakerTranscript('u', 'item-1');
+    expect(result.needsConsentReview).toBe(true);
+    expect(result.speakers[0].consentStatus).toBe('unknown');
+  });
+
+  it('excludes a redacted speaker from segments and lists them separately', async () => {
+    const redactedBob = {
+      id: 'occ-2',
+      extractionId: 'ext-d',
+      inboxItemId: 'item-1',
+      voiceProfileId: 'p-bob',
+      label: 'SPEAKER_01',
+      speakingSeconds: 4,
+      similarity: 0.8,
+      voiceProfile: {
+        id: 'p-bob',
+        name: 'Bob',
+        status: 'confirmed',
+        consentStatus: 'declined',
+        redacted: true,
+      },
+    } as unknown as SpeakerOccurrenceEntity;
+    const service = build(
+      [
+        extraction({
+          id: 'ext-t',
+          content: 'hello there',
+          segments: [
+            { start: 0, end: 4, text: 'hello' },
+            { start: 4, end: 8, text: 'there' },
+          ],
+        }),
+        extraction({
+          id: 'ext-d',
+          kind: 'diarization',
+          segments: [
+            { start: 0, end: 4, speaker: 'SPEAKER_00' },
+            { start: 4, end: 8, speaker: 'SPEAKER_01' },
+          ],
+        }),
+      ],
+      [occurrence, redactedBob],
+    );
+    const result = await service.getSpeakerTranscript('u', 'item-1');
+    expect(result.speakers.map((s) => s.profileId)).toEqual(['p-alice']);
+    expect(result.redactedSpeakers.map((s) => s.profileId)).toEqual(['p-bob']);
+    // Bob's segment ("there") is dropped; only Alice's remains.
+    expect(result.segments).toHaveLength(1);
+    expect(result.segments[0].speaker?.profileId).toBe('p-alice');
+    expect(result.segments.some((s) => s.text.includes('there'))).toBe(false);
   });
 
   it('falls back to flat mode (with speaker chips) when the transcript has no segments', async () => {

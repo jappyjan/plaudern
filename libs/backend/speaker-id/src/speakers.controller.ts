@@ -1,7 +1,9 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Put } from '@nestjs/common';
 import {
   mergeVoiceProfilesRequestSchema,
+  updateConsentSettingsRequestSchema,
   updateVoiceProfileRequestSchema,
+  type ConsentSettingsDto,
   type InboxItemDto,
   type SpeakerTranscriptDto,
   type VoiceProfileDetailDto,
@@ -9,6 +11,7 @@ import {
 } from '@plaudern/contracts';
 import { CurrentUser, type AuthenticatedUser } from '@plaudern/auth';
 import { InboxService, toInboxItemDto } from '@plaudern/inbox';
+import { ConsentSettingsService } from './consent-settings.service';
 import { SpeakerIdService } from './speaker-id.service';
 import { SpeakerTranscriptService } from './speaker-transcript.service';
 import { VoiceProfilesService } from './voice-profiles.service';
@@ -81,5 +84,29 @@ export class SpeakerTranscriptController {
   ): Promise<InboxItemDto> {
     await this.speakerId.retryDiarization(user.id, id);
     return toInboxItemDto(await this.inbox.getItem(user.id, id));
+  }
+}
+
+/** Per-user consent-guardian policy (§ 201 StGB, ATT-663). */
+@Controller({ path: 'settings/consent', version: '1' })
+export class ConsentSettingsController {
+  constructor(private readonly settings: ConsentSettingsService) {}
+
+  @Get()
+  get(@CurrentUser() user: AuthenticatedUser): Promise<ConsentSettingsDto> {
+    return this.settings.getDto(user.id);
+  }
+
+  @Put()
+  update(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: unknown,
+  ): Promise<ConsentSettingsDto> {
+    // No global ZodError filter exists, so a raw .parse() would surface as 500.
+    const parsed = updateConsentSettingsRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues[0]?.message ?? 'invalid settings');
+    }
+    return this.settings.upsert(user.id, parsed.data);
   }
 }

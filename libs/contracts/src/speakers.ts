@@ -9,11 +9,27 @@ import { extractionStatusSchema } from './inbox';
 export const voiceProfileStatusSchema = z.enum(['unconfirmed', 'confirmed']);
 export type VoiceProfileStatus = z.infer<typeof voiceProfileStatusSchema>;
 
+/**
+ * Recording-consent state for a person (§ 201 StGB guardian). `unknown` until
+ * the user records whether this person knows they are being recorded;
+ * `declined` means they did not consent and their speech should be kept out of
+ * every read model (redacted, or the whole item deleted).
+ */
+export const consentStatusSchema = z.enum(['unknown', 'consented', 'declined']);
+export type ConsentStatus = z.infer<typeof consentStatusSchema>;
+
 export const voiceProfileSchema = z.object({
   id: z.string().uuid(),
   /** null => unnamed; the UI renders a placeholder like "Speaker N". */
   name: z.string().nullable(),
   status: voiceProfileStatusSchema,
+  /** Whether this person consented to being recorded. */
+  consentStatus: consentStatusSchema,
+  /**
+   * When true, this speaker's diarized segments are excluded from every read
+   * model (transcripts, summaries, search). The immutable source is untouched.
+   */
+  redacted: z.boolean(),
   recordingCount: z.number().int().nonnegative(),
   totalSpeakingSeconds: z.number().nonnegative(),
   lastHeardAt: z.string().nullable(),
@@ -46,6 +62,10 @@ export const updateVoiceProfileRequestSchema = z.object({
   name: z.string().min(1).max(120).optional(),
   /** Confirm-only; profiles cannot be un-confirmed. */
   status: z.literal('confirmed').optional(),
+  /** Record whether this person consented to being recorded. */
+  consentStatus: consentStatusSchema.optional(),
+  /** Toggle read-model redaction of this speaker's segments. */
+  redacted: z.boolean().optional(),
 });
 export type UpdateVoiceProfileRequest = z.infer<typeof updateVoiceProfileRequestSchema>;
 
@@ -60,6 +80,8 @@ export const transcriptSpeakerSchema = z.object({
   name: z.string().nullable(),
   label: z.string(),
   status: voiceProfileStatusSchema,
+  /** Recording-consent state, so the UI can prompt for unknown/declined voices. */
+  consentStatus: consentStatusSchema,
 });
 export type TranscriptSpeakerDto = z.infer<typeof transcriptSpeakerSchema>;
 
@@ -86,7 +108,32 @@ export const speakerTranscriptSchema = z.object({
       similarity: z.number().nullable(),
     }),
   ),
+  /**
+   * Speakers whose segments were removed from this read model because they are
+   * redacted. Listed separately (not in `speakers`/`segments`) so the UI can
+   * show that redaction happened and offer to undo it.
+   */
+  redactedSpeakers: z.array(transcriptSpeakerSchema),
+  /**
+   * True when a listed (non-redacted) speaker has `unknown` or `declined`
+   * consent — the recording needs a "does this person know they're being
+   * recorded?" review.
+   */
+  needsConsentReview: z.boolean(),
   /** Latest diarization extraction status; lets the UI poll while in flight. */
   diarizationStatus: extractionStatusSchema.nullable(),
 });
 export type SpeakerTranscriptDto = z.infer<typeof speakerTranscriptSchema>;
+
+/** Per-user consent-guardian policy settings. */
+export const consentSettingsSchema = z.object({
+  /**
+   * When true, a recording is deleted whole as soon as diarization detects a
+   * voice whose consent is `declined`. Enforced at the API layer (charter §1).
+   */
+  autoDeleteDeclined: z.boolean(),
+});
+export type ConsentSettingsDto = z.infer<typeof consentSettingsSchema>;
+
+export const updateConsentSettingsRequestSchema = consentSettingsSchema;
+export type UpdateConsentSettingsRequest = z.infer<typeof updateConsentSettingsRequestSchema>;

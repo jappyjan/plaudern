@@ -4,6 +4,7 @@ export * from './extracted-payload.entity';
 export * from './inbox-tombstone.entity';
 export * from './plaud-settings.entity';
 export * from './summarization-settings.entity';
+export * from './consent-settings.entity';
 export * from './voice-profile.entity';
 export * from './speaker-occurrence.entity';
 export * from './geocode-cache.entity';

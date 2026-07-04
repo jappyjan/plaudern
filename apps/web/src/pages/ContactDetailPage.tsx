@@ -10,12 +10,19 @@ import {
   SelectItem,
   Spinner,
 } from '@heroui/react';
-import type { VoiceProfileDetailDto, VoiceProfileDto } from '@plaudern/contracts';
+import type { ConsentStatus, VoiceProfileDetailDto, VoiceProfileDto } from '@plaudern/contracts';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { getSpeaker, listSpeakers, mergeSpeakers, updateSpeaker } from '../lib/api';
 import { speakerColor, speakerDisplayName } from '../lib/speakerColors';
 import { formatDateTime, formatDuration } from '../lib/format';
 import { BackIcon } from '../components/icons';
+
+/** Chip colour per consent state — declined is a warning the user should see. */
+const CONSENT_COLOR: Record<ConsentStatus, 'default' | 'success' | 'danger'> = {
+  unknown: 'default',
+  consented: 'success',
+  declined: 'danger',
+};
 
 /** One person from the contact book: identity + every recording they appear in. */
 export function ContactDetailPage() {
@@ -94,6 +101,14 @@ export function ContactDetailPage() {
                 >
                   {profile.status}
                 </Chip>
+                <Chip size="sm" variant="flat" color={CONSENT_COLOR[profile.consentStatus]}>
+                  consent: {profile.consentStatus}
+                </Chip>
+                {profile.redacted && (
+                  <Chip size="sm" variant="flat" color="danger">
+                    redacted
+                  </Chip>
+                )}
                 <span>
                   {profile.recordingCount} recording{profile.recordingCount === 1 ? '' : 's'} ·{' '}
                   {formatDuration(profile.totalSpeakingSeconds)} of speech
@@ -127,6 +142,53 @@ export function ContactDetailPage() {
               >
                 Confirm
               </Button>
+            )}
+          </div>
+
+          {/* Consent guardian (§ 201 StGB): record whether this person knows
+              they're being recorded, and redact their speech if not. */}
+          <div className="flex flex-col gap-2 rounded-medium bg-default-50 p-3">
+            <p className="text-xs font-semibold text-default-600">Recording consent</p>
+            <p className="text-xs text-default-500">
+              Recording someone's confidential speech without consent is a criminal offence in
+              Germany (§ 201 StGB). Record whether this person knows they're being recorded.
+            </p>
+            <div className="flex flex-wrap items-end gap-2">
+              <Select
+                size="sm"
+                label="Consent"
+                className="max-w-48"
+                isDisabled={busy}
+                selectedKeys={[profile.consentStatus]}
+                onSelectionChange={(keys) => {
+                  const next = [...keys][0];
+                  if (
+                    (next === 'unknown' || next === 'consented' || next === 'declined') &&
+                    next !== profile.consentStatus
+                  ) {
+                    void run(() => updateSpeaker(id, { consentStatus: next }));
+                  }
+                }}
+              >
+                <SelectItem key="unknown">Unknown</SelectItem>
+                <SelectItem key="consented">Consented</SelectItem>
+                <SelectItem key="declined">Declined</SelectItem>
+              </Select>
+              <Button
+                size="sm"
+                variant="flat"
+                color={profile.redacted ? 'default' : 'danger'}
+                isDisabled={busy}
+                onPress={() => run(() => updateSpeaker(id, { redacted: !profile.redacted }))}
+              >
+                {profile.redacted ? 'Un-redact speaker' : 'Redact this speaker'}
+              </Button>
+            </div>
+            {profile.redacted && (
+              <p className="text-xs text-default-500">
+                This person's segments are excluded from all transcripts, summaries and search. The
+                original recordings are untouched.
+              </p>
             )}
           </div>
 

@@ -20,6 +20,7 @@ import {
   plaudSettingsSchema,
   plaudSyncNowResponseSchema,
   plaudTestConnectionResponseSchema,
+  consentSettingsSchema,
   speakerTranscriptSchema,
   summarizationSettingsSchema,
   summarySchema,
@@ -48,10 +49,12 @@ import {
   type PlaudTestConnectionResponse,
   type ItemEventsResponse,
   type LinkResponse,
+  type ConsentSettingsDto,
   type SpeakerTranscriptDto,
   type SummarizationSettingsDto,
   type SummaryDto,
   type UpdateCalendarFeedRequest,
+  type UpdateConsentSettingsRequest,
   type UpdateSummarizationSettingsRequest,
   type UpdatePlaudSettingsRequest,
   type UpdateVoiceProfileRequest,
@@ -244,6 +247,18 @@ export async function updateSummarizationSettings(
 ): Promise<SummarizationSettingsDto> {
   return summarizationSettingsSchema.parse(
     await requestJson('/settings/summarization', { method: 'PUT', body: JSON.stringify(req) }),
+  );
+}
+
+export async function getConsentSettings(): Promise<ConsentSettingsDto> {
+  return consentSettingsSchema.parse(await requestJson('/settings/consent'));
+}
+
+export async function updateConsentSettings(
+  req: UpdateConsentSettingsRequest,
+): Promise<ConsentSettingsDto> {
+  return consentSettingsSchema.parse(
+    await requestJson('/settings/consent', { method: 'PUT', body: JSON.stringify(req) }),
   );
 }
 
