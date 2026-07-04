@@ -216,6 +216,27 @@ export async function retryDiarization(id: string): Promise<InboxItemDto> {
   );
 }
 
+/** Re-generate semantic embeddings only; returns the refreshed item. */
+export async function retryEmbeddings(id: string): Promise<InboxItemDto> {
+  return inboxItemSchema.parse(
+    await requestJson(`/inbox/${id}/embeddings/retry`, { method: 'POST' }),
+  );
+}
+
+/** Re-run entity extraction only; relations re-run automatically afterwards. */
+export async function retryEntities(id: string): Promise<InboxItemDto> {
+  return inboxItemSchema.parse(
+    await requestJson(`/inbox/${id}/entities/retry`, { method: 'POST' }),
+  );
+}
+
+/** Re-run relation extraction only (needs a completed entity extraction). */
+export async function retryRelations(id: string): Promise<InboxItemDto> {
+  return inboxItemSchema.parse(
+    await requestJson(`/inbox/${id}/relations/retry`, { method: 'POST' }),
+  );
+}
+
 /** Reverse-geocode coordinates to a place (label/city null when unavailable). */
 export async function getPlaceName(lat: number, lon: number): Promise<GeocodeResponse> {
   const query = new URLSearchParams({ lat: String(lat), lon: String(lon) });
