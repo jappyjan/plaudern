@@ -148,6 +148,30 @@ export class SummarizationService {
     };
   }
 
+  /**
+   * Best-effort regeneration of summaries for a set of items — used when a
+   * change outside the extraction pipeline (e.g. redacting a speaker for
+   * consent) should be reflected in the summary. No-op when summarization is
+   * disabled, and never throws: a failed regeneration must not break the caller
+   * (the redaction itself has already taken effect on the transcript read model).
+   */
+  async regenerateForItems(inboxItemIds: string[]): Promise<void> {
+    if (!this.provider.enabled) return;
+    for (const inboxItemId of inboxItemIds) {
+      try {
+        const item = await this.inbox.getItemById(inboxItemId);
+        if (!item) continue;
+        const transcription = latestOfKind(item.extractions ?? [], 'transcription');
+        if (transcription?.status !== 'succeeded') continue;
+        const summary = latestOfKind(item.extractions ?? [], 'summary');
+        if (summary && ACTIVE_STATUSES.includes(summary.status)) continue;
+        await this.enqueue(inboxItemId);
+      } catch {
+        // Best-effort: swallow so redaction still succeeds.
+      }
+    }
+  }
+
   private async enqueue(inboxItemId: string): Promise<string> {
     const extraction = await this.inbox.addExtraction(inboxItemId, 'summary', this.provider.id);
     await this.queue.enqueue({ extractionId: extraction.id, inboxItemId });

@@ -4,20 +4,26 @@ import { InboxModule } from '@plaudern/inbox';
 import { PersistenceModule } from '@plaudern/persistence';
 import { BullJobQueue, InlineJobQueue, redisConnectionFromConfig } from '@plaudern/queue';
 import { StorageModule } from '@plaudern/storage';
+import { SummarizationModule } from '@plaudern/summarization';
 import { DIARIZATION_QUEUE } from './diarization.job';
 import { PyannoteAiClient } from './providers/pyannoteai-client';
 import { PyannoteAiSpeakerIdentifier } from './identifiers/pyannoteai.identifier';
 import { CLIP_EXTRACTOR, FfmpegClipExtractor } from './clip-extractor';
 import { VoiceprintMatcherService } from './voiceprint-matcher.service';
+import { ConsentSettingsService } from './consent-settings.service';
 import { DiarizationProcessor } from './diarization.processor';
 import { SpeakerIdService } from './speaker-id.service';
 import { SpeakerTranscriptService } from './speaker-transcript.service';
 import { VoiceProfilesService } from './voice-profiles.service';
-import { SpeakersController, SpeakerTranscriptController } from './speakers.controller';
+import {
+  ConsentSettingsController,
+  SpeakersController,
+  SpeakerTranscriptController,
+} from './speakers.controller';
 
 @Module({
-  imports: [ConfigModule, InboxModule, PersistenceModule, StorageModule],
-  controllers: [SpeakersController, SpeakerTranscriptController],
+  imports: [ConfigModule, InboxModule, PersistenceModule, StorageModule, SummarizationModule],
+  controllers: [SpeakersController, SpeakerTranscriptController, ConsentSettingsController],
   providers: [
     // Singleton hosted-API client, shared by the identifier (diarize/identify)
     // and the voiceprint matcher (enrollment). Tests override it with a fake.
@@ -53,6 +59,7 @@ import { SpeakersController, SpeakerTranscriptController } from './speakers.cont
     SpeakerIdService,
     VoiceProfilesService,
     SpeakerTranscriptService,
+    ConsentSettingsService,
   ],
   exports: [SpeakerIdService],
 })

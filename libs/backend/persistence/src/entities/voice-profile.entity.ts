@@ -6,7 +6,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import type { VoiceProfileStatus } from '@plaudern/contracts';
+import type { ConsentStatus, VoiceProfileStatus } from '@plaudern/contracts';
 
 /**
  * A persistent "person" derived from a voice. Auto-created as `unconfirmed` the
@@ -30,6 +30,20 @@ export class VoiceProfileEntity {
 
   @Column({ type: 'varchar', default: 'unconfirmed' })
   status!: VoiceProfileStatus;
+
+  /**
+   * Recording-consent state (§ 201 StGB guardian). `unknown` until the user
+   * records whether this person consented to being recorded.
+   */
+  @Column({ type: 'varchar', default: 'unknown' })
+  consentStatus!: ConsentStatus;
+
+  /**
+   * When true, this speaker's diarized segments are excluded from every derived
+   * read model (transcript, summary, search). The immutable source stays sealed.
+   */
+  @Column({ type: 'boolean', default: false })
+  redacted!: boolean;
 
   /**
    * Opaque pyannoteAI voiceprint used for server-side /identify matching.

@@ -1,5 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { InboxService } from '@plaudern/inbox';
+import { SpeakerOccurrenceEntity } from '@plaudern/persistence';
+import { ConsentSettingsService } from './consent-settings.service';
 import type { DiarizationJob } from './diarization.job';
 import { PyannoteAiSpeakerIdentifier } from './identifiers/pyannoteai.identifier';
 
@@ -16,6 +20,9 @@ export class DiarizationProcessor {
   constructor(
     private readonly inbox: InboxService,
     private readonly identifier: PyannoteAiSpeakerIdentifier,
+    private readonly consentSettings: ConsentSettingsService,
+    @InjectRepository(SpeakerOccurrenceEntity)
+    private readonly occurrences: Repository<SpeakerOccurrenceEntity>,
   ) {}
 
   async process(job: DiarizationJob): Promise<void> {
@@ -40,6 +47,10 @@ export class DiarizationProcessor {
       });
       const speakerCount = new Set(result.segments.map((s) => s.speaker)).size;
       this.logger.log(`diarized inbox item ${job.inboxItemId}: ${speakerCount} speaker(s)`);
+
+      // Consent guardian (§ 201 StGB): if this recording contains a declined
+      // voice and the owner enabled auto-delete, delete the item whole.
+      await this.enforceConsentPolicy(item.userId, job.inboxItemId, job.extractionId);
     } catch (err) {
       const message = (err as Error).message;
       this.logger.error(`diarization failed for ${job.inboxItemId}: ${message}`);
@@ -48,6 +59,35 @@ export class DiarizationProcessor {
         error: message,
       });
       throw err;
+    }
+  }
+
+  /**
+   * Enforce the per-user auto-delete policy for declined voices. Runs after a
+   * successful diarization; guarded so a policy failure never fails the job (the
+   * diarization already succeeded and must not be retried for this).
+   */
+  private async enforceConsentPolicy(
+    userId: string,
+    inboxItemId: string,
+    extractionId: string,
+  ): Promise<void> {
+    try {
+      if (!(await this.consentSettings.autoDeleteDeclined(userId))) return;
+      const rows = await this.occurrences.find({
+        where: { extractionId },
+        relations: { voiceProfile: true },
+      });
+      const declined = rows.some((r) => r.voiceProfile?.consentStatus === 'declined');
+      if (!declined) return;
+      this.logger.warn(
+        `auto-deleting inbox item ${inboxItemId}: contains a declined-consent voice (policy on)`,
+      );
+      await this.inbox.deleteItem(userId, inboxItemId);
+    } catch (err) {
+      this.logger.error(
+        `consent auto-delete check failed for ${inboxItemId}: ${(err as Error).message}`,
+      );
     }
   }
 }

@@ -16,6 +16,7 @@ import {
   createCalendarFeed,
   createGoogleFeeds,
   deleteCalendarFeed,
+  getConsentSettings,
   getGoogleAuthUrl,
   getGooglePending,
   getPlaudSettings,
@@ -28,6 +29,7 @@ import {
   triggerCalendarSync,
   triggerPlaudSync,
   updateCalendarFeed,
+  updateConsentSettings,
   updatePlaudSettings,
   updateSummarizationSettings,
 } from '../lib/api';
@@ -281,6 +283,8 @@ export function SettingsPage({
 
       <SummarizationSection />
 
+      <ConsentSection />
+
       <CalendarFeedsSection />
 
       <DangerZoneSection
@@ -349,6 +353,72 @@ function SummarizationSection() {
           <SelectItem key={code}>{SUMMARY_LANGUAGE_LABELS[code]}</SelectItem>
         ))}
       </Select>
+
+      {error && (
+        <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">{error}</div>
+      )}
+      {saved && !error && <span className="text-sm text-success">Saved.</span>}
+    </div>
+  );
+}
+
+/**
+ * Consent guardian policy (§ 201 StGB). When auto-delete is on, a recording is
+ * deleted whole as soon as diarization detects a voice marked as having
+ * declined consent in the contact book. Enforced at the API layer.
+ */
+function ConsentSection() {
+  const [autoDelete, setAutoDelete] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    getConsentSettings()
+      .then((s) => setAutoDelete(s.autoDeleteDeclined))
+      .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setLoaded(true));
+  }, []);
+
+  const save = async (next: boolean) => {
+    setAutoDelete(next);
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      await updateConsentSettings({ autoDeleteDeclined: next });
+      setSaved(true);
+    } catch (cause) {
+      setAutoDelete(!next);
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4 border-t border-default-200 pt-6">
+      <div>
+        <h2 className="text-lg font-semibold">Consent guardian</h2>
+        <p className="text-sm text-default-500">
+          Recording confidential speech without consent is a criminal offence in Germany
+          (§ 201 StGB). Mark each person's consent in the contact book; redacted speakers are kept
+          out of every transcript, summary and search.
+        </p>
+      </div>
+
+      <Switch
+        isSelected={autoDelete}
+        isDisabled={!loaded || saving}
+        onValueChange={(next) => void save(next)}
+      >
+        Auto-delete recordings that contain a declined voice
+      </Switch>
+      <p className="text-xs text-default-500">
+        When on, a new recording is deleted whole as soon as speaker identification detects someone
+        marked as having declined consent. This cannot be undone.
+      </p>
 
       {error && (
         <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">{error}</div>

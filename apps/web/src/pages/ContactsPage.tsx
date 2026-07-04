@@ -74,6 +74,23 @@ export function ContactsPage() {
                   </p>
                 </div>
               </div>
+              <div className="flex shrink-0 items-center gap-1">
+                {profile.consentStatus === 'declined' && (
+                  <Chip size="sm" variant="flat" color="danger">
+                    declined
+                  </Chip>
+                )}
+                {profile.consentStatus === 'consented' && (
+                  <Chip size="sm" variant="flat" color="success">
+                    consented
+                  </Chip>
+                )}
+                {profile.redacted && (
+                  <Chip size="sm" variant="flat" color="danger">
+                    redacted
+                  </Chip>
+                )}
+              </div>
             </CardBody>
           </Card>
         ))}
