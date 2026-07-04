@@ -85,6 +85,23 @@ services:
       - TOPICS_API_KEY=${SUMMARIZATION_API_KEY}
       - TOPICS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
       - TOPICS_MODEL=${TOPICS_MODEL:-deepseek-chat}
+      # Semantic search / memory embeddings. Unlike entities & topics, this
+      # CANNOT reuse the summarization key: DeepSeek (and ElevenLabs) expose no
+      # /embeddings endpoint, so a dedicated OpenAI-compatible provider is
+      # required. Fill in EMBEDDINGS_API_KEY in Coolify to enable it (defaults
+      # target OpenAI text-embedding-3-small). Leave it empty to keep the step
+      # disabled. For a keyless local option, point EMBEDDINGS_BASE_URL at an
+      # Ollama server and set EMBEDDINGS_ENABLED=true instead of a key.
+      # IMPORTANT: EMBEDDINGS_DIMENSIONS is frozen into the pgvector column on
+      # the first boot/migration — set it correctly BEFORE the first deploy
+      # (1536 for text-embedding-3-small, 768 for nomic-embed-text). Changing it
+      # later needs a manual migration.
+      - EMBEDDINGS_API_KEY=${EMBEDDINGS_API_KEY}
+      - EMBEDDINGS_ENABLED=${EMBEDDINGS_ENABLED:-false}
+      - EMBEDDINGS_BASE_URL=${EMBEDDINGS_BASE_URL:-https://api.openai.com/v1}
+      - EMBEDDINGS_MODEL=${EMBEDDINGS_MODEL:-text-embedding-3-small}
+      - EMBEDDINGS_DIMENSIONS=${EMBEDDINGS_DIMENSIONS:-1536}
+      - EMBEDDINGS_TIMEOUT_MS=${EMBEDDINGS_TIMEOUT_MS:-120000}
       # Transcription: the hosted ElevenLabs Scribe API — fill in
       # ELEVENLABS_API_KEY (get one at elevenlabs.io). Audio bytes are uploaded
       # to ElevenLabs directly (storage stays private).
