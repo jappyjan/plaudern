@@ -110,6 +110,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      # Migrations must apply cleanly before the API starts; a failed migration
+      # fails the deploy here instead of the API booting and serving 500s.
+      api-migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       minio-init:
@@ -119,6 +123,28 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+
+  # One-shot migration gate. Runs pending TypeORM migrations against Postgres
+  # and exits (0 on success, non-zero on failure); the `api` service waits for
+  # it via service_completed_successfully. This makes a broken or un-appliable
+  # migration fail the deploy loudly, instead of the API booting and returning
+  # 500s per request — the failure mode behind the missing `autoLink` column.
+  # Same image as `api`; only the command differs.
+  api-migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    # Explicit: Coolify injects `unless-stopped` on services without a restart
+    # policy, which would make this one-shot container restart forever and hang
+    # the deploy on the api's service_completed_successfully condition.
+    restart: 'no'
+    command: ['node', 'dist/server/apps/api/src/migrate.js']
+    environment:
+      - DATABASE_DRIVER=postgres
+      - DATABASE_URL=postgres://${SERVICE_USER_POSTGRES}:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/plaudern
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   postgres:
     # pgvector/pgvector ships the `vector` extension used by embedding_chunks
