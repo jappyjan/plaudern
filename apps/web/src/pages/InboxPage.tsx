@@ -4,9 +4,10 @@ import type { InboxItemDto } from '@plaudern/contracts';
 import { getItem, listInbox, mergeItems } from '../lib/api';
 import { useInboxEvents } from '../hooks/useInboxEvents';
 import { InboxItemCard } from '../components/InboxItemCard';
+import { NoteModal } from '../components/NoteModal';
 import { RecordModal } from '../components/RecordModal';
 import { UploadButton } from '../components/UploadButton';
-import { MicIcon } from '../components/icons';
+import { MicIcon, TextIcon } from '../components/icons';
 
 const PAGE_SIZE = 20;
 
@@ -24,6 +25,7 @@ export function InboxPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [recordOpen, setRecordOpen] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
   // Multi-select for merging recordings.
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -137,6 +139,15 @@ export function InboxPage() {
               Record
             </Button>
             <UploadButton onSaved={() => void refresh()} />
+            <Button
+              variant="flat"
+              size="lg"
+              className="flex-1"
+              startContent={<TextIcon className="h-5 w-5" />}
+              onPress={() => setNoteOpen(true)}
+            >
+              Note
+            </Button>
           </>
         )}
         {mergeableCount >= 2 && (
@@ -221,6 +232,11 @@ export function InboxPage() {
       <RecordModal
         isOpen={recordOpen}
         onClose={() => setRecordOpen(false)}
+        onSaved={() => void refresh()}
+      />
+      <NoteModal
+        isOpen={noteOpen}
+        onClose={() => setNoteOpen(false)}
         onSaved={() => void refresh()}
       />
     </div>
