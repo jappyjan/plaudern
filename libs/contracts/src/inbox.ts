@@ -32,6 +32,9 @@ export const extractionKindSchema = z.enum([
   // LLM extraction of typed relations between an item's entities (plus weak
   // implicit co-occurrence edges) — the knowledge graph proper.
   'relations',
+  // LLM extraction of the user's own self-directed intentions ("book the
+  // dentist"), deduplicated semantically into a per-user task list (JJ-35).
+  'tasks',
 ]);
 export type ExtractionKind = z.infer<typeof extractionKindSchema>;
 
