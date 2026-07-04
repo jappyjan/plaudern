@@ -13,6 +13,7 @@ import { TopicsPage } from './pages/TopicsPage';
 import { TopicDetailPage } from './pages/TopicDetailPage';
 import { EntitiesPage } from './pages/EntitiesPage';
 import { EntityDetailPage } from './pages/EntityDetailPage';
+import { GraphViewPage } from './pages/GraphViewPage';
 import { SearchPage } from './pages/SearchPage';
 import { SharePage } from './pages/SharePage';
 import {
@@ -155,6 +156,7 @@ export function App() {
               <Route path="/topics" element={<TopicsPage />} />
               <Route path="/topics/:id" element={<TopicDetailPage />} />
               <Route path="/entities" element={<EntitiesPage />} />
+              <Route path="/entities/graph" element={<GraphViewPage />} />
               <Route path="/entities/:id" element={<EntityDetailPage />} />
               {/* PWA share-target landing (manifest share_target → GET /share). */}
               <Route path="/share" element={<SharePage />} />
