@@ -114,17 +114,27 @@ export function EntityDetailPage() {
             </Chip>
           </div>
 
-          {entity.voiceProfileId && (
+          <div className="flex flex-wrap gap-2">
             <Button
               as={Link}
-              to={`/contacts/${entity.voiceProfileId}`}
+              to={`/entities/graph?seed=${entity.id}`}
               size="sm"
               variant="flat"
-              className="self-start"
+              color="primary"
             >
-              View linked contact
+              View in graph
             </Button>
-          )}
+            {entity.voiceProfileId && (
+              <Button
+                as={Link}
+                to={`/contacts/${entity.voiceProfileId}`}
+                size="sm"
+                variant="flat"
+              >
+                View linked contact
+              </Button>
+            )}
+          </div>
 
           {entity.aliases.length > 0 && (
             <div className="flex flex-col gap-1">

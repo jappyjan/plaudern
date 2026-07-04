@@ -6,6 +6,7 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "dependencies": {
+    "@nestjs/config": "^4.0.0",
     "@plaudern/auth": "workspace:*",
     "@plaudern/commitments": "workspace:*",
     "@plaudern/contracts": "workspace:*",

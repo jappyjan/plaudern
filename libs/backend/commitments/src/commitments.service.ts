@@ -39,6 +39,12 @@ const ACTIVE_STATUSES: ExtractionStatus[] = ['queued', 'processing'];
  */
 export const COMMITMENTS_EXTRACTOR_VERSION = 1;
 
+/** Caps on model output so one recording can't flood the table or store huge strings. */
+const MAX_COMMITMENTS_PER_ITEM = 50;
+const MAX_DESCRIPTION_CHARS = 500;
+const MAX_COUNTERPARTY_CHARS = 200;
+const MAX_QUOTE_CHARS = 1_000;
+
 /**
  * Owns the commitment-extraction pipeline step (JJ-36). WHEN it runs is decided
  * by the extraction DAG (`CommitmentsExtractor` + the generic pipeline in
@@ -127,59 +133,76 @@ export class CommitmentsService {
     extracted: ExtractedCommitment[],
   ): Promise<number> {
     // Collapse duplicates within the batch first (same direction + normalized
-    // description), keeping the first occurrence.
+    // description), keeping the first occurrence, and clamp adversarial/verbose
+    // model output so a single recording can't flood the table or store
+    // unbounded strings.
     const byKey = new Map<string, ExtractedCommitment>();
     for (const raw of extracted) {
-      const description = raw.description.trim();
+      const description = clamp(raw.description, MAX_DESCRIPTION_CHARS);
       if (!description) continue;
       const key = `${raw.direction}:${normalize(description)}`;
       if (!byKey.has(key)) byKey.set(key, { ...raw, description });
+      if (byKey.size >= MAX_COMMITMENTS_PER_ITEM) break;
     }
     if (byKey.size === 0) return 0;
 
     const personByName = await this.personEntities(userId);
     let count = 0;
-    for (const raw of byKey.values()) {
-      const normalizedDescription = normalize(raw.description);
-      const counterpartyName = raw.counterparty.trim();
-      const counterpartyEntityId = counterpartyName
-        ? personByName.get(normalize(counterpartyName)) ?? null
-        : null;
-      const dueIso = resolveDueDate(raw.duePhrase, occurredAt ?? null);
+    // One transaction for the whole batch so a mid-loop failure can't leave the
+    // item with a half-written commitment set.
+    await this.commitments.manager.transaction(async (em) => {
+      const repo = em.getRepository(CommitmentEntity);
+      for (const raw of byKey.values()) {
+        const normalizedDescription = normalize(raw.description);
+        const counterpartyName = clamp(raw.counterparty, MAX_COUNTERPARTY_CHARS);
+        const counterpartyEntityId = counterpartyName
+          ? personByName.get(normalize(counterpartyName)) ?? null
+          : null;
+        const dueIso = resolveDueDate(raw.duePhrase, occurredAt ?? null);
+        const fields = {
+          extractionId,
+          description: raw.description,
+          counterpartyName,
+          counterpartyEntityId,
+          dueDate: dueIso,
+          sourceTimestamp: raw.sourceTimestamp ?? null,
+          sourceQuote: raw.sourceQuote ? clamp(raw.sourceQuote, MAX_QUOTE_CHARS) : null,
+        };
 
-      const existing = await this.commitments.findOne({
-        where: { inboxItemId, direction: raw.direction, normalizedDescription },
-      });
-      if (existing) {
-        existing.extractionId = extractionId;
-        existing.description = raw.description;
-        existing.counterpartyName = counterpartyName;
-        existing.counterpartyEntityId = counterpartyEntityId;
-        existing.dueDate = dueIso;
-        existing.sourceTimestamp = raw.sourceTimestamp ?? null;
-        existing.sourceQuote = raw.sourceQuote ?? null;
-        // status is deliberately left untouched — it is the user's to advance.
-        await this.commitments.save(existing);
-      } else {
-        await this.commitments.save(
-          this.commitments.create({
-            userId,
-            inboxItemId,
-            extractionId,
-            direction: raw.direction,
-            counterpartyName,
-            counterpartyEntityId,
-            description: raw.description,
-            normalizedDescription,
-            dueDate: dueIso,
-            status: 'open',
-            sourceTimestamp: raw.sourceTimestamp ?? null,
-            sourceQuote: raw.sourceQuote ?? null,
-          }),
-        );
+        const existing = await repo.findOne({
+          where: { inboxItemId, direction: raw.direction, normalizedDescription },
+        });
+        if (existing) {
+          // status is deliberately left untouched — it is the user's to advance.
+          Object.assign(existing, fields);
+          await repo.save(existing);
+        } else {
+          try {
+            await repo.save(
+              repo.create({
+                userId,
+                inboxItemId,
+                direction: raw.direction,
+                normalizedDescription,
+                status: 'open',
+                ...fields,
+              }),
+            );
+          } catch (err) {
+            // Lost a race on the unique index (concurrent worker/backfill on the
+            // same item) — re-read the winner and update it instead of failing.
+            if (!isUniqueViolation(err)) throw err;
+            const winner = await repo.findOne({
+              where: { inboxItemId, direction: raw.direction, normalizedDescription },
+            });
+            if (!winner) throw err;
+            Object.assign(winner, fields);
+            await repo.save(winner);
+          }
+        }
+        count += 1;
       }
-      count += 1;
-    }
+    });
     return count;
   }
 
@@ -290,6 +313,28 @@ function iso(value: Date | string | null | undefined): string | null {
 /** Normalization key: lowercased, whitespace-collapsed. Dedupe + name matching. */
 export function normalize(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/** Trim + hard-cap a model-supplied string so stored values stay bounded. */
+function clamp(value: string, maxChars: number): string {
+  const trimmed = value.trim();
+  return trimmed.length > maxChars ? trimmed.slice(0, maxChars) : trimmed;
+}
+
+/**
+ * Whether a save failed on a unique index, across the drivers we run on:
+ * Postgres surfaces SQLSTATE 23505, better-sqlite3 a SQLITE_CONSTRAINT* code /
+ * "UNIQUE constraint failed" message. Anything else must propagate.
+ */
+function isUniqueViolation(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const driverError = (err as { driverError?: unknown }).driverError ?? err;
+  if (!driverError || typeof driverError !== 'object') return false;
+  const code = (driverError as { code?: unknown }).code;
+  if (code === '23505') return true;
+  if (typeof code === 'string' && code.startsWith('SQLITE_CONSTRAINT')) return true;
+  const message = (driverError as { message?: unknown }).message;
+  return typeof message === 'string' && message.includes('UNIQUE constraint failed');
 }
 
 function latestOfKind(
