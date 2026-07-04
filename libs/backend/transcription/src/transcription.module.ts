@@ -5,6 +5,7 @@ import { BullJobQueue, InlineJobQueue, redisConnectionFromConfig } from '@plaude
 import { TRANSCRIPTION_PROVIDER } from './transcription.provider';
 import { TRANSCRIPTION_QUEUE } from './transcription.job';
 import { ElevenLabsTranscriptionProvider } from './providers/elevenlabs.provider';
+import { WhisperTranscriptionProvider } from './providers/whisper.provider';
 import { TranscriptionProcessor } from './transcription.processor';
 import { TranscriptionService } from './transcription.service';
 import { TranscriptionController } from './transcription.controller';
@@ -12,9 +13,28 @@ import { TranscriptionController } from './transcription.controller';
 @Module({
   imports: [ConfigModule, InboxModule],
   providers: [
-    // Transcription always runs on the hosted ElevenLabs Scribe API. The DI
-    // token stays as the seam tests override with fakes.
-    { provide: TRANSCRIPTION_PROVIDER, useClass: ElevenLabsTranscriptionProvider },
+    ElevenLabsTranscriptionProvider,
+    WhisperTranscriptionProvider,
+    // TRANSCRIPTION_PROVIDER selects the backend: 'elevenlabs' (default, hosted
+    // Scribe API) or 'whisper' (self-hosted Whisper-compatible HTTP server —
+    // the local-model tier that keeps sensitive audio off the network, see
+    // ATT-662/ATT-687). Tests override this DI token with fakes.
+    {
+      provide: TRANSCRIPTION_PROVIDER,
+      inject: [ConfigService, ElevenLabsTranscriptionProvider, WhisperTranscriptionProvider],
+      useFactory: (
+        config: ConfigService,
+        elevenlabs: ElevenLabsTranscriptionProvider,
+        whisper: WhisperTranscriptionProvider,
+      ) => {
+        const selected = config.get<string>('TRANSCRIPTION_PROVIDER', 'elevenlabs');
+        if (selected === 'whisper') return whisper;
+        if (selected === 'elevenlabs') return elevenlabs;
+        throw new Error(
+          `unknown TRANSCRIPTION_PROVIDER '${selected}' (expected 'elevenlabs' or 'whisper')`,
+        );
+      },
+    },
     TranscriptionProcessor,
     {
       provide: TRANSCRIPTION_QUEUE,

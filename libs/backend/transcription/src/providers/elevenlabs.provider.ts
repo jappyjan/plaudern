@@ -5,7 +5,7 @@ import type {
   TranscriptionProvider,
   TranscriptionResult,
 } from '../transcription.provider';
-import { postMultipartForJson } from './elevenlabs-http';
+import { downloadBytes, postMultipartForJson } from './http-helpers';
 
 /** One entry in ElevenLabs Scribe's `words` array (word-level granularity). */
 interface ScribeWord {
@@ -74,7 +74,7 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
       );
     }
 
-    const bytes = await this.download(input.audioUrl);
+    const bytes = await downloadBytes(input.audioUrl, this.downloadTimeoutMs);
 
     const fields = [
       { name: 'model_id', value: this.model },
@@ -98,6 +98,7 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
       },
       { 'xi-api-key': this.apiKey },
       this.timeoutMs,
+      'ElevenLabs',
     );
 
     const segments = wordsToSegments(json.words ?? []);
@@ -107,20 +108,6 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
       segments: segments.length > 0 ? segments : undefined,
       raw: json,
     };
-  }
-
-  private async download(url: string): Promise<Buffer> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.downloadTimeoutMs);
-    try {
-      const res = await fetch(url, { signal: controller.signal });
-      if (!res.ok) {
-        throw new Error(`could not download audio: ${res.status}`);
-      }
-      return Buffer.from(await res.arrayBuffer());
-    } finally {
-      clearTimeout(timer);
-    }
   }
 }
 

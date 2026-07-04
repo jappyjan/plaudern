@@ -33,7 +33,11 @@ const LAYOUT_GUIDE: Record<SummaryLayout, string> = {
 /**
  * Summarizes via an OpenAI-compatible `/chat/completions` endpoint. Defaults to
  * DeepSeek (`deepseek-chat`) — the cheapest capable option — but any provider
- * exposing the OpenAI schema works by overriding SUMMARIZATION_BASE_URL/MODEL.
+ * exposing the OpenAI schema works by overriding SUMMARIZATION_BASE_URL/MODEL,
+ * including a **local Ollama** server (`SUMMARIZATION_BASE_URL=http://localhost:11434/v1`,
+ * `SUMMARIZATION_MODEL=llama3.1` or whichever model is pulled) — the
+ * local-model tier that keeps sensitive transcripts off the network (see
+ * ATT-662/ATT-687).
  *
  * The transcript never leaves our infra except to the configured LLM endpoint,
  * which the operator chooses; no audio is sent, only text.
@@ -46,6 +50,7 @@ export class OpenAiSummarizationProvider implements SummarizationProvider {
   private readonly apiKey: string;
   private readonly model: string;
   private readonly timeoutMs: number;
+  private readonly explicitlyEnabled: boolean;
 
   constructor(config: ConfigService) {
     this.baseUrl = config
@@ -54,29 +59,36 @@ export class OpenAiSummarizationProvider implements SummarizationProvider {
     this.apiKey = config.get<string>('SUMMARIZATION_API_KEY', '');
     this.model = config.get<string>('SUMMARIZATION_MODEL', 'deepseek-chat');
     this.timeoutMs = Number(config.get<string>('SUMMARIZATION_TIMEOUT_MS', String(2 * 60_000)));
+    // Cloud endpoints are gated on an API key — an empty key means "disabled"
+    // (documented in .env.example). Keyless local OpenAI-compatible servers
+    // (Ollama, llama.cpp, ...) have no key to set, so they opt in explicitly
+    // instead of being forced to configure a throwaway one.
+    this.explicitlyEnabled = config.get<string>('SUMMARIZATION_ENABLED', 'false') === 'true';
     this.id = `openai:${this.model}`;
   }
 
   get enabled(): boolean {
-    return this.apiKey.length > 0;
+    return this.apiKey.length > 0 || this.explicitlyEnabled;
   }
 
   async summarize(input: SummarizationInput): Promise<SummarizationResult> {
     if (!this.enabled) {
       throw new Error(
-        'SUMMARIZATION_API_KEY is not set — cannot summarize with the OpenAI-compatible provider',
+        'summarization is disabled — set SUMMARIZATION_API_KEY (cloud endpoints) or ' +
+          'SUMMARIZATION_ENABLED=true (keyless local endpoints such as Ollama) to enable it',
       );
     }
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
+      const headers: Record<string, string> = { 'content-type': 'application/json' };
+      // Most local servers (Ollama, llama.cpp) ignore auth entirely; only send
+      // the header when a key was actually configured.
+      if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
       const res = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${this.apiKey}`,
-        },
+        headers,
         body: JSON.stringify({
           model: this.model,
           temperature: 0.3,
