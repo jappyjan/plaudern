@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button, Card, CardBody, Chip } from '@heroui/react';
 import { summaryPayloadSchema, type InboxItemDto, type SourceType } from '@plaudern/contracts';
 import { useNavigate } from 'react-router-dom';
@@ -50,6 +50,9 @@ function itemTitle(item: InboxItemDto): string {
   return `${item.sourceType} note`;
 }
 
+/** How long a press must be held to count as a long press. */
+const LONG_PRESS_MS = 500;
+
 export function InboxItemCard({
   item,
   onDeleted,
@@ -57,6 +60,7 @@ export function InboxItemCard({
   selected = false,
   selectionDisabled = false,
   onToggleSelect,
+  onLongPress,
 }: {
   item: InboxItemDto;
   onDeleted: (id: string) => void;
@@ -66,6 +70,8 @@ export function InboxItemCard({
   /** In selection mode, items that cannot be merged are dimmed and inert. */
   selectionDisabled?: boolean;
   onToggleSelect?: (id: string) => void;
+  /** Long-pressing the card enters selection mode with this item selected. */
+  onLongPress?: (id: string) => void;
 }) {
   const navigate = useNavigate();
   const tags = item.metadata?.tags as Record<string, unknown> | undefined;
@@ -77,6 +83,41 @@ export function InboxItemCard({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Long-press detection on top of the card's press handling. When the timer
+  // fires we flag it so the onPress that follows pointer-up is swallowed
+  // instead of navigating (or toggling the just-made selection back off).
+  const longPressTimer = useRef<number | null>(null);
+  const longPressFired = useRef(false);
+
+  const startLongPress = () => {
+    if (!onLongPress) return;
+    longPressTimer.current = window.setTimeout(() => {
+      longPressTimer.current = null;
+      longPressFired.current = true;
+      onLongPress(item.id);
+    }, LONG_PRESS_MS);
+  };
+
+  // Fires on release AND when the press is cancelled (e.g. scrolling away).
+  const cancelLongPress = () => {
+    if (longPressTimer.current !== null) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handlePress = () => {
+    if (longPressFired.current) {
+      longPressFired.current = false;
+      return;
+    }
+    if (selectable) {
+      if (!selectionDisabled) onToggleSelect?.(item.id);
+    } else {
+      navigate(`/items/${item.id}`);
+    }
+  };
 
   const confirmDelete = async () => {
     setDeleting(true);
@@ -95,15 +136,19 @@ export function InboxItemCard({
   return (
     // The card is a <button> (isPressable), so the delete trigger is an
     // absolutely-positioned sibling — nesting buttons is invalid HTML.
-    <div className={`relative w-full ${selectable && selectionDisabled ? 'opacity-40' : ''}`}>
+    <div
+      className={`relative w-full ${selectable && selectionDisabled ? 'opacity-40' : ''}`}
+      // Long-pressing must not pop the browser context menu or text selection.
+      onContextMenu={onLongPress ? (event) => event.preventDefault() : undefined}
+    >
       <Card
         isPressable={!selectable || !selectionDisabled}
-        onPress={() =>
-          selectable
-            ? !selectionDisabled && onToggleSelect?.(item.id)
-            : navigate(`/items/${item.id}`)
-        }
-        className={`w-full ${selected ? 'outline outline-2 outline-primary' : ''}`}
+        onPress={handlePress}
+        onPressStart={startLongPress}
+        onPressEnd={cancelLongPress}
+        className={`w-full ${selected ? 'outline outline-2 outline-primary' : ''} ${
+          onLongPress ? 'select-none [-webkit-touch-callout:none]' : ''
+        }`}
       >
         <CardBody className="gap-1 py-2.5 pr-12">
           {/* Main line: the title gets the full row width. */}

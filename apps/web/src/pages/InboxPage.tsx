@@ -6,7 +6,7 @@ import { useInboxEvents } from '../hooks/useInboxEvents';
 import { InboxItemCard } from '../components/InboxItemCard';
 import { NoteModal } from '../components/NoteModal';
 import { RecordModal } from '../components/RecordModal';
-import { UploadButton } from '../components/UploadButton';
+import { UploadFab } from '../components/UploadButton';
 import { MicIcon, TextIcon } from '../components/icons';
 
 const PAGE_SIZE = 20;
@@ -122,57 +122,31 @@ export function InboxPage() {
     }
   };
 
+  // Long-pressing a mergeable recording enters selection mode with it selected.
+  const enterSelectMode = (id: string) => {
+    setSelectMode(true);
+    setSelected((existing) => {
+      const next = new Set(existing);
+      next.add(id);
+      return next;
+    });
+  };
+
   const mergeableCount = items?.filter(isMergeable).length ?? 0;
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex gap-3">
-        {!selectMode && (
-          <>
-            <Button
-              color="danger"
-              size="lg"
-              className="flex-1"
-              startContent={<MicIcon className="h-5 w-5" />}
-              onPress={() => setRecordOpen(true)}
-            >
-              Record
-            </Button>
-            <UploadButton onSaved={() => void refresh()} />
-            <Button
-              variant="flat"
-              size="lg"
-              className="flex-1"
-              startContent={<TextIcon className="h-5 w-5" />}
-              onPress={() => setNoteOpen(true)}
-            >
-              Note
-            </Button>
-          </>
-        )}
-        {mergeableCount >= 2 && (
-          <Button
-            variant="flat"
-            size="lg"
-            className={selectMode ? 'flex-1' : ''}
-            onPress={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
-          >
-            {selectMode ? 'Cancel' : 'Select'}
-          </Button>
-        )}
-        {selectMode && (
-          <Button
-            color="primary"
-            size="lg"
-            className="flex-1"
-            isDisabled={selected.size < 2}
-            isLoading={merging}
-            onPress={() => void mergeSelected()}
-          >
-            Merge {selected.size >= 2 ? `${selected.size} recordings` : 'recordings'}
-          </Button>
-        )}
-      </div>
+    // Bottom padding keeps the last cards reachable above the floating actions.
+    <div className="flex flex-col gap-6 pb-28">
+      {!selectMode && (
+        <Button
+          color="danger"
+          size="lg"
+          startContent={<MicIcon className="h-5 w-5" />}
+          onPress={() => setRecordOpen(true)}
+        >
+          Record
+        </Button>
+      )}
 
       {mergeError && (
         <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">
@@ -180,11 +154,17 @@ export function InboxPage() {
         </div>
       )}
 
-      {selectMode && (
+      {selectMode ? (
         <p className="text-sm text-default-500">
           Pick at least two recordings to combine them into one. The originals are kept and can be
           restored by splitting the merged recording.
         </p>
+      ) : (
+        mergeableCount >= 2 && (
+          <p className="text-xs text-default-400">
+            Tip: press and hold a recording to select several and merge them.
+          </p>
+        )
       )}
 
       {loadError && (
@@ -215,6 +195,7 @@ export function InboxPage() {
               selected={selected.has(item.id)}
               selectionDisabled={!isMergeable(item)}
               onToggleSelect={toggleSelect}
+              onLongPress={mergeableCount >= 2 && isMergeable(item) ? enterSelectMode : undefined}
               onDeleted={(id) =>
                 setItems((existing) => existing?.filter((i) => i.id !== id) ?? existing)
               }
@@ -227,6 +208,43 @@ export function InboxPage() {
         <Button variant="flat" isLoading={loadingMore} onPress={loadMore}>
           Load more
         </Button>
+      )}
+
+      {/* Thumb-reachable floating actions, kept above the bottom tab bar. */}
+      {!selectMode && (
+        <div className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] right-4 z-30 flex flex-col items-end gap-3 md:bottom-8">
+          <UploadFab onSaved={() => void refresh()} />
+          <Button
+            isIconOnly
+            radius="full"
+            size="lg"
+            aria-label="New note"
+            className="h-14 w-14 bg-content2 shadow-large"
+            onPress={() => setNoteOpen(true)}
+          >
+            <TextIcon className="h-6 w-6" />
+          </Button>
+        </div>
+      )}
+
+      {/* Selection mode replaces the FABs with a floating merge bar. */}
+      {selectMode && (
+        <div className="fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 px-4 md:bottom-8">
+          <div className="mx-auto flex w-full max-w-2xl items-center gap-3 rounded-large bg-content1 p-3 shadow-large">
+            <Button variant="flat" onPress={exitSelectMode}>
+              Cancel
+            </Button>
+            <Button
+              color="primary"
+              className="flex-1"
+              isDisabled={selected.size < 2}
+              isLoading={merging}
+              onPress={() => void mergeSelected()}
+            >
+              Merge {selected.size >= 2 ? `${selected.size} recordings` : 'recordings'}
+            </Button>
+          </div>
+        </div>
       )}
 
       <RecordModal
