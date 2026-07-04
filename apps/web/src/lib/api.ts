@@ -98,6 +98,15 @@ import {
   type EntityConnectResponse,
   type EntityType,
   type RelationType,
+  commitmentSchema,
+  commitmentListResponseSchema,
+  itemCommitmentsResponseSchema,
+  type CommitmentDto,
+  type CommitmentDirection,
+  type CommitmentListResponse,
+  type CommitmentStatus,
+  type ItemCommitmentsResponse,
+  type UpdateCommitmentStatusRequest,
 } from '@plaudern/contracts';
 
 /**
@@ -635,6 +644,40 @@ export async function getItemTopics(itemId: string): Promise<ItemTopicsResponse>
 export async function retryItemTopics(itemId: string): Promise<ItemTopicsResponse> {
   return itemTopicsResponseSchema.parse(
     await requestJson(`/inbox/${itemId}/topics/retry`, { method: 'POST' }),
+  );
+}
+
+/** An item's extracted commitments plus the extraction pipeline status. */
+export async function getItemCommitments(itemId: string): Promise<ItemCommitmentsResponse> {
+  return itemCommitmentsResponseSchema.parse(await requestJson(`/inbox/${itemId}/commitments`));
+}
+
+/** Re-run commitment extraction for an item; returns the refreshed read model. */
+export async function retryItemCommitments(itemId: string): Promise<ItemCommitmentsResponse> {
+  return itemCommitmentsResponseSchema.parse(
+    await requestJson(`/inbox/${itemId}/commitments/retry`, { method: 'POST' }),
+  );
+}
+
+/** The user's commitments across all recordings, optionally filtered. */
+export async function listCommitments(filters?: {
+  direction?: CommitmentDirection;
+  status?: CommitmentStatus;
+}): Promise<CommitmentListResponse> {
+  const query = new URLSearchParams();
+  if (filters?.direction) query.set('direction', filters.direction);
+  if (filters?.status) query.set('status', filters.status);
+  const suffix = query.toString() ? `?${query}` : '';
+  return commitmentListResponseSchema.parse(await requestJson(`/commitments${suffix}`));
+}
+
+/** Advance a commitment's lifecycle status (open → fulfilled / dismissed). */
+export async function updateCommitmentStatus(
+  id: string,
+  req: UpdateCommitmentStatusRequest,
+): Promise<CommitmentDto> {
+  return commitmentSchema.parse(
+    await requestJson(`/commitments/${id}`, { method: 'PATCH', body: JSON.stringify(req) }),
   );
 }
 

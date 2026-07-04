@@ -23,6 +23,7 @@ import {
   retryDiarization,
   retryEmbeddings,
   retryEntities,
+  retryItemCommitments,
   retryRelations,
   retrySummary,
   retryTranscription,
@@ -36,6 +37,7 @@ import { LinkEventModal } from '../components/calendar/LinkEventModal';
 import { SpeakerTranscript } from '../components/SpeakerTranscript';
 import { SummaryView } from '../components/SummaryView';
 import { ItemTopicsCard } from '../components/ItemTopicsCard';
+import { ItemCommitmentsCard } from '../components/ItemCommitmentsCard';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import {
   BackIcon,
@@ -59,6 +61,7 @@ type ReprocessStep =
   | 'embeddings'
   | 'entities'
   | 'relations'
+  | 'commitments'
   | 'all';
 
 /**
@@ -120,6 +123,15 @@ const REPROCESS_STEPS: {
     description: 'Re-derive the knowledge-graph relations between entities.',
     action: 'Re-relate',
     run: (id) => retryRelations(id),
+  },
+  {
+    key: 'commitments',
+    label: 'Commitments',
+    description: 'Re-extract promises in both directions (what you owe ↔ owed to you).',
+    action: 'Re-extract',
+    run: async (id) => {
+      await retryItemCommitments(id);
+    },
   },
   {
     key: 'all',
@@ -409,6 +421,8 @@ export function ItemDetailPage() {
       </Card>
 
       <ItemTopicsCard itemId={item.id} />
+
+      <ItemCommitmentsCard itemId={item.id} />
 
       <Card>
         <CardHeader className="flex items-center justify-between pb-0">

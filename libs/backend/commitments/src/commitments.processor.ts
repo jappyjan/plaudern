@@ -1,0 +1,73 @@
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { InboxService } from '@plaudern/inbox';
+import type { CommitmentExtractionPayload } from '@plaudern/contracts';
+import {
+  COMMITMENT_EXTRACTION_PROVIDER,
+  type CommitmentExtractionProvider,
+} from './commitments.provider';
+import { CommitmentContextService } from './commitment-context';
+import { CommitmentsService } from './commitments.service';
+import type { CommitmentExtractionJob } from './commitments.job';
+
+/**
+ * Executes one commitment-extraction job: rebuild the speaker-attributed
+ * transcript from the item's latest transcription + diarization, run the LLM
+ * provider, then resolve relative due dates and upsert the commitments into the
+ * user-scoped `commitments` table (preserving user statuses on re-runs). The
+ * parent `commitments` extraction row records provenance in `content`. Shared
+ * by the inline and BullMQ queues.
+ */
+@Injectable()
+export class CommitmentsProcessor {
+  private readonly logger = new Logger(CommitmentsProcessor.name);
+
+  constructor(
+    private readonly inbox: InboxService,
+    private readonly context: CommitmentContextService,
+    private readonly service: CommitmentsService,
+    @Inject(COMMITMENT_EXTRACTION_PROVIDER)
+    private readonly provider: CommitmentExtractionProvider,
+  ) {}
+
+  async process(job: CommitmentExtractionJob): Promise<void> {
+    await this.inbox.setExtractionStatus(job.extractionId, 'processing');
+    try {
+      const item = await this.inbox.getItemById(job.inboxItemId);
+      if (!item) throw new Error('inbox item no longer exists');
+
+      const input = await this.context.build(item);
+      if (!input) {
+        throw new Error('no succeeded transcription to extract commitments from');
+      }
+
+      const result = await this.provider.extract(input);
+      const commitmentCount = await this.service.persist(
+        item.userId,
+        item.id,
+        job.extractionId,
+        input.occurredAt,
+        result.commitments,
+      );
+
+      const payload: CommitmentExtractionPayload = {
+        model: result.model ?? this.provider.id,
+        commitmentCount,
+      };
+      await this.inbox.completeExtraction(job.extractionId, {
+        status: 'succeeded',
+        content: JSON.stringify(payload),
+      });
+      this.logger.log(
+        `extracted ${commitmentCount} commitment(s) from inbox item ${job.inboxItemId}`,
+      );
+    } catch (err) {
+      const message = (err as Error).message;
+      this.logger.error(`commitment extraction failed for ${job.inboxItemId}: ${message}`);
+      await this.inbox.completeExtraction(job.extractionId, {
+        status: 'failed',
+        error: message,
+      });
+      throw err;
+    }
+  }
+}

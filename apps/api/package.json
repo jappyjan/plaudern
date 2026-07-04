@@ -14,6 +14,7 @@
     "@nestjs/typeorm": "11.0.3",
     "@plaudern/auth": "workspace:*",
     "@plaudern/calendar": "workspace:*",
+    "@plaudern/commitments": "workspace:*",
     "@plaudern/contracts": "workspace:*",
     "@plaudern/email-ingest": "workspace:*",
     "@plaudern/embeddings": "workspace:*",

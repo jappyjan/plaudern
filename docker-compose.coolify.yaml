@@ -85,6 +85,9 @@ services:
       - TOPICS_API_KEY=${SUMMARIZATION_API_KEY}
       - TOPICS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
       - TOPICS_MODEL=${TOPICS_MODEL:-deepseek-chat}
+      - COMMITMENTS_API_KEY=${SUMMARIZATION_API_KEY}
+      - COMMITMENTS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
+      - COMMITMENTS_MODEL=${COMMITMENTS_MODEL:-deepseek-chat}
       # Transcription: the hosted ElevenLabs Scribe API — fill in
       # ELEVENLABS_API_KEY (get one at elevenlabs.io). Audio bytes are uploaded
       # to ElevenLabs directly (storage stays private).

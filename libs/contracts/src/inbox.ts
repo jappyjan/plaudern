@@ -32,6 +32,9 @@ export const extractionKindSchema = z.enum([
   // LLM extraction of typed relations between an item's entities (plus weak
   // implicit co-occurrence edges) — the knowledge graph proper.
   'relations',
+  // LLM extraction of promissory commitments in both directions (what I owe ↔
+  // what others owe me), resolved against the recording time (JJ-36).
+  'commitments',
 ]);
 export type ExtractionKind = z.infer<typeof extractionKindSchema>;
 

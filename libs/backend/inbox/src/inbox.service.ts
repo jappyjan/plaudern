@@ -8,6 +8,7 @@ import type {
   SourceType,
 } from '@plaudern/contracts';
 import {
+  CommitmentEntity,
   EmbeddingChunkEntity,
   EntityMentionEntity,
   EntityRegistryEntity,
@@ -290,6 +291,7 @@ export class InboxService {
       await em.getRepository(EntityRelationEntity).delete({ inboxItemId: item.id });
       await em.getRepository(EntityMentionEntity).delete({ inboxItemId: item.id });
       await em.getRepository(ItemTopicEntity).delete({ inboxItemId: item.id });
+      await em.getRepository(CommitmentEntity).delete({ inboxItemId: item.id });
       await em.getRepository(ExtractedPayloadEntity).delete({ inboxItemId: item.id });
       await em.getRepository(SourcePayloadEntity).delete({ inboxItemId: item.id });
       await em.getRepository(InboxItemEntity).delete({ id: item.id });
@@ -347,6 +349,7 @@ export class InboxService {
         await em.getRepository(EntityRelationEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(EntityMentionEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(ItemTopicEntity).delete({ inboxItemId: In(itemIds) });
+        await em.getRepository(CommitmentEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(ExtractedPayloadEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(SourcePayloadEntity).delete({ inboxItemId: In(itemIds) });
       }

@@ -5,6 +5,7 @@ import {
   AuthSessionEntity,
   CalendarEventEntity,
   CalendarFeedEntity,
+  CommitmentEntity,
   ConsentSettingsEntity,
   EmailSettingsEntity,
   EmbeddingChunkEntity,
@@ -57,6 +58,7 @@ import { CreateEntityRegistry1720000000020 } from './migrations/1720000000020-Cr
 import { CreateTopics1720000000021 } from './migrations/1720000000021-CreateTopics';
 import { CreateMcpTokens1720000000022 } from './migrations/1720000000022-CreateMcpTokens';
 import { CreateEntityRelations1720000000023 } from './migrations/1720000000023-CreateEntityRelations';
+import { CreateCommitments1720000000025 } from './migrations/1720000000025-CreateCommitments';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -68,6 +70,7 @@ export const ALL_ENTITIES = [
   EntityMentionEntity,
   TopicEntity,
   ItemTopicEntity,
+  CommitmentEntity,
   EntityRelationEntity,
   InboxTombstoneEntity,
   PlaudSettingsEntity,
@@ -118,6 +121,7 @@ export const ALL_MIGRATIONS = [
   CreateTopics1720000000021,
   CreateMcpTokens1720000000022,
   CreateEntityRelations1720000000023,
+  CreateCommitments1720000000025,
 ];
 
 /**
