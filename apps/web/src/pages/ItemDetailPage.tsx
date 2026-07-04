@@ -303,7 +303,7 @@ export function ItemDetailPage() {
         </div>
       </div>
 
-      {sourceUrl && item.sourceType !== 'text' && (
+      {sourceUrl && item.sourceType !== 'text' && item.sourceType !== 'web' && (
         <Card>
           <CardBody>
             {/* Presigned GET straight from object storage. */}
@@ -445,6 +445,20 @@ export function ItemDetailPage() {
           )}
           {item.source?.originalFilename && (
             <DetailRow label="File" value={item.source.originalFilename} />
+          )}
+          {typeof item.metadata?.url === 'string' && (
+            <div className="flex items-start justify-between gap-4">
+              <span className="text-default-500">Source page</span>
+              <a
+                href={item.metadata.url}
+                target="_blank"
+                rel="noreferrer"
+                className="flex min-w-0 items-center gap-1 text-primary"
+              >
+                <LinkIcon className="h-4 w-4 shrink-0" />
+                <span className="truncate break-all">{item.metadata.url}</span>
+              </a>
+            </div>
           )}
           {item.source && <DetailRow label="Type" value={item.source.contentType} />}
           {item.source && item.source.byteSize > 0 && (

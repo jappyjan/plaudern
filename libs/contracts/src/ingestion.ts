@@ -41,3 +41,26 @@ export const ingestTextRequestSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 export type IngestTextRequest = z.infer<typeof ingestTextRequestSchema>;
+
+/**
+ * Web clipping / share-target ingestion (`sources/web`). The client shares a
+ * URL (plus optional title and readable-mode text snapshot); the server stores
+ * the snapshot as the immutable source payload — fetching and extracting the
+ * page itself when the client didn't provide one — so the clip survives link
+ * rot. Inline like text: no presigned upload round-trip.
+ */
+export const ingestWebRequestSchema = z.object({
+  url: z.string().url().max(4096),
+  /** Page title as shared by the client (falls back to the extracted <title>). */
+  title: z.string().max(1024).optional(),
+  /** Client-captured readable-mode text snapshot (e.g. from a browser extension). */
+  text: z.string().max(1_000_000).optional(),
+  occurredAt: z.string().datetime(),
+  idempotencyKey: z.string().min(1),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+export type IngestWebRequest = z.infer<typeof ingestWebRequestSchema>;
+
+/** How the stored snapshot text for a web clip was obtained. */
+export const webSnapshotSourceSchema = z.enum(['client', 'server', 'none']);
+export type WebSnapshotSource = z.infer<typeof webSnapshotSourceSchema>;

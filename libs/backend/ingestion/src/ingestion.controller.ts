@@ -1,9 +1,11 @@
-import { Body, Controller, Param, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Param, Post } from '@nestjs/common';
 import {
   ingestInitRequestSchema,
   ingestTextRequestSchema,
+  ingestWebRequestSchema,
   type IngestInitResponse,
   type IngestTextRequest,
+  type IngestWebRequest,
   type InboxItemDto,
 } from '@plaudern/contracts';
 import { CurrentUser, type AuthenticatedUser } from '@plaudern/auth';
@@ -50,5 +52,20 @@ export class IngestionController {
   ): Promise<InboxItemDto> {
     const req: IngestTextRequest = ingestTextRequestSchema.parse(body);
     return this.ingestion.ingestText(user.id, req);
+  }
+
+  /** Web clip / share-target ingestion (`sources/web`) — inline like text. */
+  @Post('web')
+  async web(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: unknown,
+  ): Promise<InboxItemDto> {
+    // No global ZodError filter exists, so a raw .parse() would surface as 500.
+    const parsed = ingestWebRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues[0]?.message ?? 'invalid web clip request');
+    }
+    const req: IngestWebRequest = parsed.data;
+    return this.ingestion.ingestWeb(user.id, req);
   }
 }

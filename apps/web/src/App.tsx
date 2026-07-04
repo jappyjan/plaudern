@@ -9,6 +9,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { CalendarPage } from './pages/CalendarPage';
 import { ContactsPage } from './pages/ContactsPage';
 import { ContactDetailPage } from './pages/ContactDetailPage';
+import { SharePage } from './pages/SharePage';
 import { CalendarIcon, GearIcon, MoonIcon, PeopleIcon, SunIcon } from './components/icons';
 import { BottomNav } from './components/BottomNav';
 
@@ -114,6 +115,8 @@ export function App() {
             <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/contacts" element={<ContactsPage />} />
             <Route path="/contacts/:id" element={<ContactDetailPage />} />
+            {/* PWA share-target landing (manifest share_target → GET /share). */}
+            <Route path="/share" element={<SharePage />} />
             <Route
               path="/settings"
               element={
