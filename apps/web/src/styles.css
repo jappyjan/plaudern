@@ -9,6 +9,18 @@
     -webkit-text-size-adjust: 100%;
   }
 
+  /* iOS 26 Safari paints position:fixed elements at a stale offset while the
+     document scrolls (WebKit bug 297779), so the bottom nav drifted up
+     mid-page. Pin the document and let the app shell (h-dvh in App.tsx)
+     scroll an inner container instead — the layout viewport never moves, so
+     fixed overlays (bottom nav, FAB, upload bar) stay glued to the screen
+     edges. */
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
+
   /* Remove the 300ms double-tap-to-zoom delay on interactive elements. */
   a,
   button,
