@@ -10,8 +10,9 @@ import { CalendarPage } from './pages/CalendarPage';
 import { ContactsPage } from './pages/ContactsPage';
 import { ContactDetailPage } from './pages/ContactDetailPage';
 import { CalendarIcon, GearIcon, MoonIcon, PeopleIcon, SunIcon } from './components/icons';
+import { BottomNav } from './components/BottomNav';
 
-type Theme = 'light' | 'dark';
+export type Theme = 'light' | 'dark';
 
 function initialTheme(): Theme {
   const stored = localStorage.getItem('theme');
@@ -68,7 +69,7 @@ export function App() {
   return (
     <div className="min-h-dvh bg-background text-foreground">
       <div className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col px-4 pb-8">
-        <header className="flex items-center justify-between py-4">
+        <header className="hidden items-center justify-between py-4 md:flex">
           <h1 className="text-xl font-bold">
             <Link to="/">Plaudern</Link>
           </h1>
@@ -106,17 +107,26 @@ export function App() {
             </Button>
           </div>
         </header>
-        <main className="flex-1">
+        <main className="flex-1 pt-4 pb-[calc(5rem+env(safe-area-inset-bottom))] md:pt-0 md:pb-0">
           <Routes>
             <Route path="/" element={<InboxPage />} />
             <Route path="/items/:id" element={<ItemDetailPage />} />
             <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/contacts" element={<ContactsPage />} />
             <Route path="/contacts/:id" element={<ContactDetailPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
+            <Route
+              path="/settings"
+              element={
+                <SettingsPage
+                  theme={theme}
+                  onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                />
+              }
+            />
           </Routes>
         </main>
       </div>
+      <BottomNav />
     </div>
   );
 }
