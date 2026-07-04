@@ -3,13 +3,16 @@ import type {
   IngestInitRequest,
   IngestInitResponse,
   IngestTextRequest,
+  IngestWebRequest,
   InboxItemDto,
   SourceType,
+  WebSnapshotSource,
 } from '@plaudern/contracts';
 import { InboxService, toInboxItemDto } from '@plaudern/inbox';
 import { StorageService } from '@plaudern/storage';
 import { AdapterRegistry, SOURCE_ADAPTERS, type SourceAdapter } from './source-adapter';
 import { buildSourceStorageKey } from './storage-key';
+import { WebPageSnapshotService } from './web/web-page-snapshot.service';
 
 /**
  * How long a `queued`/`processing` extraction may sit before reprocess treats
@@ -36,6 +39,7 @@ export class IngestionService {
   constructor(
     private readonly inbox: InboxService,
     private readonly storage: StorageService,
+    private readonly webSnapshots: WebPageSnapshotService,
     @Inject(SOURCE_ADAPTERS) adapters: SourceAdapter[],
   ) {
     this.registry = new AdapterRegistry(adapters);
@@ -163,6 +167,67 @@ export class IngestionService {
     });
 
     await this.registry.get('text').onCommitted(item);
+    return toInboxItemDto(await this.inbox.getItem(userId, item.id));
+  }
+
+  /**
+   * Web clip ingestion (`sources/web`, VISION §2): a shared URL plus optional
+   * title/readable-text snapshot become an immediately-committed item whose
+   * source payload is the readable-mode text (link-rot insurance). Snapshot
+   * resolution order:
+   *   1. client-provided text (e.g. a browser extension's readable capture),
+   *   2. server-side fetch + readability extraction of the URL,
+   *   3. graceful fallback: store just the URL.
+   * The fetch happens at ingest time because sources are immutable — the
+   * snapshot must be sealed into the payload, not appended later.
+   */
+  async ingestWeb(userId: string, req: IngestWebRequest): Promise<InboxItemDto> {
+    const existing = await this.inbox.findByIdempotencyKey(userId, req.idempotencyKey);
+    if (existing) return toInboxItemDto(await this.inbox.getItem(userId, existing.id));
+
+    let title = req.title?.trim() || null;
+    let snapshotText = req.text?.trim() || null;
+    let snapshotSource: WebSnapshotSource = snapshotText ? 'client' : 'none';
+
+    if (!snapshotText) {
+      const extracted = await this.webSnapshots.snapshot(req.url);
+      if (extracted) {
+        snapshotText = extracted.text;
+        snapshotSource = 'server';
+        title ??= extracted.title;
+      }
+    }
+
+    // The payload always exists: the snapshot when we have one, else the bare
+    // URL — an item without a source blob would break the inbox invariants.
+    const payloadParts = [req.url];
+    if (title) payloadParts.push(title);
+    if (snapshotText) payloadParts.push(snapshotText);
+    const payload = payloadParts.join('\n\n');
+
+    const storageKey = buildSourceStorageKey(userId, 'text/plain');
+    await this.storage.putObject(storageKey, payload, 'text/plain');
+
+    const baseMetadata = req.metadata ?? {};
+    const baseTags = (baseMetadata.tags as Record<string, unknown> | undefined) ?? {};
+    const item = await this.inbox.createCommittedItem({
+      userId,
+      deviceId: null,
+      sourceType: 'web',
+      occurredAt: req.occurredAt,
+      idempotencyKey: req.idempotencyKey,
+      storageKey,
+      contentType: 'text/plain',
+      byteSize: Buffer.byteLength(payload),
+      metadata: {
+        ...baseMetadata,
+        url: req.url,
+        web: { snapshotSource },
+        tags: title ? { ...baseTags, title } : baseTags,
+      },
+    });
+
+    await this.registry.get('web').onCommitted(item);
     return toInboxItemDto(await this.inbox.getItem(userId, item.id));
   }
 

@@ -38,6 +38,8 @@ import {
   type GooglePendingResponse,
   type IngestInitRequest,
   type IngestInitResponse,
+  type IngestTextRequest,
+  type IngestWebRequest,
   type InboxItemDto,
   type InboxListResponse,
   type InboxPurgeResponse,
@@ -190,6 +192,24 @@ export async function ingestInit(req: IngestInitRequest): Promise<IngestInitResp
 export async function ingestCommit(inboxItemId: string): Promise<InboxItemDto> {
   return inboxItemSchema.parse(
     await requestJson(`/ingest/${inboxItemId}/commit`, { method: 'POST' }),
+  );
+}
+
+/** Save an inline text note as an immediately-committed inbox item. */
+export async function ingestText(req: IngestTextRequest): Promise<InboxItemDto> {
+  return inboxItemSchema.parse(
+    await requestJson('/ingest/text', { method: 'POST', body: JSON.stringify(req) }),
+  );
+}
+
+/**
+ * Save a web clip (`sources/web`): a shared URL plus optional title/text.
+ * The server fetches a readable-text snapshot of the page when no text is
+ * provided and gracefully falls back to storing just the URL.
+ */
+export async function ingestWeb(req: IngestWebRequest): Promise<InboxItemDto> {
+  return inboxItemSchema.parse(
+    await requestJson('/ingest/web', { method: 'POST', body: JSON.stringify(req) }),
   );
 }
 

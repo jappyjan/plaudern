@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { deleteInboxItem } from '../lib/api';
 import { formatDateTime, formatDuration } from '../lib/format';
 import { usePlaceName } from '../hooks/usePlaceName';
-import { AudioIcon, FileIcon, LocationIcon, MicIcon, TextIcon, TrashIcon } from './icons';
+import { AudioIcon, FileIcon, LinkIcon, LocationIcon, MicIcon, TextIcon, TrashIcon } from './icons';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 import { TranscriptionChip } from './TranscriptionChip';
 
@@ -17,6 +17,8 @@ function SourceIcon({ sourceType }: { sourceType: SourceType }) {
       return <AudioIcon className={className} />;
     case 'text':
       return <TextIcon className={className} />;
+    case 'web':
+      return <LinkIcon className={className} />;
     default:
       return <FileIcon className={className} />;
   }
