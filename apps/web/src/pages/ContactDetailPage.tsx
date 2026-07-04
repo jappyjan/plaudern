@@ -3,7 +3,6 @@ import {
   Button,
   Card,
   CardBody,
-  CardHeader,
   Chip,
   Input,
   Select,
@@ -15,7 +14,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { getSpeaker, listSpeakers, mergeSpeakers, updateSpeaker } from '../lib/api';
 import { speakerColor, speakerDisplayName } from '../lib/speakerColors';
 import { formatDateTime, formatDuration } from '../lib/format';
-import { BackIcon } from '../components/icons';
+import { DocumentList, DocumentRow } from '../components/DocumentRow';
+import { AudioIcon, BackIcon } from '../components/icons';
 
 /** Chip colour per consent state — declined is a warning the user should see. */
 const CONSENT_COLOR: Record<ConsentStatus, 'default' | 'success' | 'danger'> = {
@@ -225,35 +225,29 @@ export function ContactDetailPage() {
         </CardBody>
       </Card>
 
-      <Card>
-        <CardHeader className="pb-0">
-          <h2 className="text-sm font-semibold">Recordings</h2>
-        </CardHeader>
-        <CardBody className="gap-2">
-          {profile.recordings.length === 0 && (
-            <p className="text-sm text-default-500">
-              This voice does not appear in any current recording.
-            </p>
-          )}
-          {profile.recordings.map((recording) => (
-            <Link
-              key={`${recording.inboxItemId}-${recording.label}`}
-              to={`/items/${recording.inboxItemId}`}
-              className="flex flex-col gap-1 rounded-medium p-2 text-sm hover:bg-default-100"
-            >
-              <span className="truncate font-medium">
-                {recording.title ?? formatDateTime(recording.occurredAt)}
-              </span>
-              <span className="text-xs text-default-500">
+      <DocumentList
+        title="Recordings"
+        count={profile.recordings.length}
+        empty="This voice does not appear in any current recording."
+      >
+        {profile.recordings.map((recording) => (
+          <DocumentRow
+            key={`${recording.inboxItemId}-${recording.label}`}
+            variant="row"
+            to={`/items/${recording.inboxItemId}`}
+            leading={<AudioIcon className="h-5 w-5 shrink-0 text-default-500" />}
+            title={recording.title ?? formatDateTime(recording.occurredAt)}
+            subtitle={
+              <>
                 {recording.title && `${formatDateTime(recording.occurredAt)} · `}
                 {formatDuration(recording.speakingSeconds)} spoken
                 {recording.similarity !== null &&
                   ` · ${(recording.similarity * 100).toFixed(0)}% match`}
-              </span>
-            </Link>
-          ))}
-        </CardBody>
-      </Card>
+              </>
+            }
+          />
+        ))}
+      </DocumentList>
     </div>
   );
 }

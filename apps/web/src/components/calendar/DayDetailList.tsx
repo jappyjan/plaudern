@@ -1,8 +1,8 @@
-import { Card, CardBody, Chip } from '@heroui/react';
+import { Chip } from '@heroui/react';
 import type { CalendarEventDto, RecordingSummaryDto } from '@plaudern/contracts';
-import { Link } from 'react-router-dom';
 import { formatTime, formatTimeRange } from '../../lib/format';
-import { AudioIcon, MicIcon } from '../icons';
+import { MicIcon, SourceIcon } from '../icons';
+import { DocumentRow } from '../DocumentRow';
 
 interface DayDetailListProps {
   dayLabel: string;
@@ -54,24 +54,27 @@ export function DayDetailList({ dayLabel, events, recordings, onEventClick }: Da
 
       {entries.map((entry) =>
         entry.kind === 'event' ? (
-          <Card key={`event-${entry.event.id}`} isPressable onPress={() => onEventClick(entry.event.id)}>
-            <CardBody className="flex flex-row items-center gap-3 py-3">
+          <DocumentRow
+            key={`event-${entry.event.id}`}
+            variant="card"
+            onPress={() => onEventClick(entry.event.id)}
+            leading={
               <span
                 className="h-8 w-1 shrink-0 rounded-full"
                 style={{ backgroundColor: entry.event.feedColor ?? 'hsl(var(--heroui-primary))' }}
               />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">
-                  {entry.event.title ?? '(untitled event)'}
-                </p>
-                <p className="text-xs text-default-500">
-                  {entry.event.isAllDay
-                    ? 'All day'
-                    : formatTimeRange(entry.event.startAt, entry.event.endAt)}
-                  {entry.event.location ? ` · ${entry.event.location}` : ''}
-                </p>
-              </div>
-              {entry.event.linkedRecordingIds.length > 0 && (
+            }
+            title={entry.event.title ?? '(untitled event)'}
+            subtitle={
+              <>
+                {entry.event.isAllDay
+                  ? 'All day'
+                  : formatTimeRange(entry.event.startAt, entry.event.endAt)}
+                {entry.event.location ? ` · ${entry.event.location}` : ''}
+              </>
+            }
+            trailing={
+              entry.event.linkedRecordingIds.length > 0 && (
                 <Chip
                   size="sm"
                   variant="flat"
@@ -80,32 +83,38 @@ export function DayDetailList({ dayLabel, events, recordings, onEventClick }: Da
                 >
                   {entry.event.linkedRecordingIds.length}
                 </Chip>
-              )}
-            </CardBody>
-          </Card>
+              )
+            }
+          />
         ) : (
-          <Card key={`recording-${entry.recording.id}`} isPressable as={Link} to={`/items/${entry.recording.id}`}>
-            <CardBody className="flex flex-row items-center gap-3 py-3">
-              <AudioIcon className="h-5 w-5 shrink-0 text-success" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">
-                  {entry.recording.originalFilename ?? `${entry.recording.sourceType} capture`}
-                </p>
-                <p className="text-xs text-default-500">
-                  Recording · {formatTime(entry.recording.occurredAt)}
-                  {entry.recording.durationMs !== null
-                    ? ` · ${Math.round(entry.recording.durationMs / 60000)} min`
-                    : ''}
-                </p>
-              </div>
-              {entry.recording.linkedEventIds.length > 0 && (
+          <DocumentRow
+            key={`recording-${entry.recording.id}`}
+            variant="card"
+            to={`/items/${entry.recording.id}`}
+            leading={
+              <SourceIcon
+                sourceType={entry.recording.sourceType}
+                className="h-5 w-5 shrink-0 text-success"
+              />
+            }
+            title={entry.recording.originalFilename ?? `${entry.recording.sourceType} capture`}
+            subtitle={
+              <>
+                Recording · {formatTime(entry.recording.occurredAt)}
+                {entry.recording.durationMs !== null
+                  ? ` · ${Math.round(entry.recording.durationMs / 60000)} min`
+                  : ''}
+              </>
+            }
+            trailing={
+              entry.recording.linkedEventIds.length > 0 && (
                 <Chip size="sm" variant="flat">
                   {entry.recording.linkedEventIds.length} event
                   {entry.recording.linkedEventIds.length === 1 ? '' : 's'}
                 </Chip>
-              )}
-            </CardBody>
-          </Card>
+              )
+            }
+          />
         ),
       )}
     </div>

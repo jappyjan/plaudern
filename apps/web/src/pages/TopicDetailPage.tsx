@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Card, CardBody, CardHeader, Chip, Spinner } from '@heroui/react';
+import { Button, Card, CardBody, Chip, Spinner } from '@heroui/react';
 import type { TopicDto, TopicItemDto } from '@plaudern/contracts';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { deleteTopic, listTopicItems, listTopics, updateTopic } from '../lib/api';
 import { TopicModal } from '../components/TopicModal';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
+import { DocumentList, DocumentRow } from '../components/DocumentRow';
 import { ArchiveIcon, BackIcon, EditIcon, TrashIcon } from '../components/icons';
 import { formatDateTime } from '../lib/format';
 
@@ -137,33 +138,25 @@ export function TopicDetailPage() {
         </CardBody>
       </Card>
 
-      <Card>
-        <CardHeader className="flex items-center justify-between pb-0">
-          <h2 className="text-sm font-semibold">Items</h2>
-          <Chip size="sm" variant="flat">
-            {items.length}
-          </Chip>
-        </CardHeader>
-        <CardBody className="gap-2">
-          {items.length === 0 && (
-            <p className="text-sm text-default-500">
-              No items are classified under this topic yet.
-            </p>
-          )}
-          {items.map((item) => (
-            <Link
-              key={item.inboxItemId}
-              to={`/items/${item.inboxItemId}`}
-              className="flex items-center justify-between gap-3 rounded-medium p-2 text-sm hover:bg-default-100"
-            >
-              <span className="min-w-0 truncate">{formatDateTime(item.occurredAt)}</span>
-              <Chip size="sm" variant="flat" className="shrink-0">
+      <DocumentList
+        title="Items"
+        count={items.length}
+        empty="No items are classified under this topic yet."
+      >
+        {items.map((item) => (
+          <DocumentRow
+            key={item.inboxItemId}
+            variant="row"
+            to={`/items/${item.inboxItemId}`}
+            title={formatDateTime(item.occurredAt)}
+            trailing={
+              <Chip size="sm" variant="flat">
                 {(item.confidence * 100).toFixed(0)}%
               </Chip>
-            </Link>
-          ))}
-        </CardBody>
-      </Card>
+            }
+          />
+        ))}
+      </DocumentList>
 
       <TopicModal
         isOpen={editOpen}

@@ -14,6 +14,7 @@ import {
   RELATION_TYPE_LABEL,
 } from '../lib/entityLabels';
 import { formatDateTime } from '../lib/format';
+import { DocumentList, DocumentRow } from '../components/DocumentRow';
 import { BackIcon } from '../components/icons';
 
 /**
@@ -174,30 +175,21 @@ export function EntityDetailPage() {
         </CardBody>
       </Card>
 
-      <Card>
-        <CardHeader className="pb-0">
-          <h2 className="text-sm font-semibold">Mentions</h2>
-        </CardHeader>
-        <CardBody className="gap-2">
-          {entity.mentions.length === 0 && (
-            <p className="text-sm text-default-500">
-              This entity is not mentioned in any current recording.
-            </p>
-          )}
-          {entity.mentions.map((mention) => (
-            <Link
-              key={mention.id}
-              to={`/items/${mention.inboxItemId}`}
-              className="flex flex-col gap-0.5 rounded-medium p-2 text-sm hover:bg-default-100"
-            >
-              <span className="truncate font-medium">“{mention.surfaceForm}”</span>
-              <span className="text-xs text-default-500">
-                {formatDateTime(mention.createdAt)} · open recording
-              </span>
-            </Link>
-          ))}
-        </CardBody>
-      </Card>
+      <DocumentList
+        title="Mentions"
+        count={entity.mentions.length}
+        empty="This entity is not mentioned in any current recording."
+      >
+        {entity.mentions.map((mention) => (
+          <DocumentRow
+            key={mention.id}
+            variant="row"
+            to={`/items/${mention.inboxItemId}`}
+            title={`“${mention.surfaceForm}”`}
+            subtitle={`${formatDateTime(mention.createdAt)} · open recording`}
+          />
+        ))}
+      </DocumentList>
     </div>
   );
 }

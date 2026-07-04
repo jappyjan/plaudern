@@ -1,5 +1,28 @@
+import type { SourceType } from '@plaudern/contracts';
+
 interface IconProps {
   className?: string;
+}
+
+/** The glyph for an item's origin — audio wave, plain text, web link or generic file. */
+export function SourceIcon({
+  sourceType,
+  className = 'h-5 w-5 shrink-0 text-default-500',
+}: {
+  sourceType: SourceType;
+  className?: string;
+}) {
+  switch (sourceType) {
+    case 'audio':
+    case 'plaud':
+      return <AudioIcon className={className} />;
+    case 'text':
+      return <TextIcon className={className} />;
+    case 'web':
+      return <LinkIcon className={className} />;
+    default:
+      return <FileIcon className={className} />;
+  }
 }
 
 export function MicIcon({ className }: IconProps) {
