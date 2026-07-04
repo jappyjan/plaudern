@@ -3,15 +3,22 @@
  * it appears (transcript blocks, contact book). Hashing the profile id keeps
  * the color stable across renders and pages without storing anything.
  */
+/**
+ * HeroUI semantic scales (primary…danger) flip in dark mode (100 is dark,
+ * 900 is light), so `bg-*-100 text-*-700` self-adapts and must NOT get a
+ * `dark:` override — that would double-apply the flip and render light text
+ * on a light background. The raw Tailwind colors (cyan/violet/lime) don't
+ * flip, so they carry explicit dark variants.
+ */
 const PALETTE = [
-  'bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300',
-  'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/40 dark:text-secondary-300',
-  'bg-success-100 text-success-700 dark:bg-success-900/40 dark:text-success-300',
-  'bg-warning-100 text-warning-700 dark:bg-warning-900/40 dark:text-warning-300',
-  'bg-danger-100 text-danger-700 dark:bg-danger-900/40 dark:text-danger-300',
-  'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300',
-  'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
-  'bg-lime-100 text-lime-700 dark:bg-lime-900/40 dark:text-lime-300',
+  'bg-primary-100 text-primary-700',
+  'bg-secondary-100 text-secondary-700',
+  'bg-success-100 text-success-700',
+  'bg-warning-100 text-warning-700',
+  'bg-danger-100 text-danger-700',
+  'bg-cyan-100 text-cyan-700 dark:bg-cyan-400/20 dark:text-cyan-300',
+  'bg-violet-100 text-violet-700 dark:bg-violet-400/20 dark:text-violet-300',
+  'bg-lime-100 text-lime-700 dark:bg-lime-400/20 dark:text-lime-300',
 ] as const;
 
 export function speakerColor(profileId: string): string {

@@ -91,19 +91,22 @@ export function SpeakerTranscript({
             <div key={i} className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
                 {segment.speaker ? (
-                  <Link
+                  <Chip
+                    as={Link}
                     to={`/contacts/${segment.speaker.profileId}`}
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${speakerColor(segment.speaker.profileId)}`}
+                    size="sm"
+                    variant="flat"
+                    className={`font-medium ${speakerColor(segment.speaker.profileId)}`}
                   >
                     {speakerDisplayName(
                       segment.speaker,
                       speakerIndex.get(segment.speaker.profileId),
                     )}
-                  </Link>
+                  </Chip>
                 ) : (
-                  <span className="rounded-full bg-default-100 px-2 py-0.5 text-xs text-default-500">
+                  <Chip size="sm" variant="flat" className="text-default-500">
                     Unknown
-                  </span>
+                  </Chip>
                 )}
                 <span className="text-xs text-default-400">{formatDuration(segment.start)}</span>
               </div>
