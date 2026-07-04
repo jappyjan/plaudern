@@ -72,6 +72,8 @@ export const inboxItemSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).nullable(),
   source: sourcePayloadSchema.nullable(),
   extractions: z.array(extractedPayloadSchema),
+  /** Source recording ids (in playback order) when this item was produced by a merge. */
+  mergedFromItemIds: z.array(z.string().uuid()).optional(),
 });
 export type InboxItemDto = z.infer<typeof inboxItemSchema>;
 
@@ -85,6 +87,21 @@ export const inboxListResponseSchema = z.object({
   nextCursor: z.string().uuid().nullable(),
 });
 export type InboxListResponse = z.infer<typeof inboxListResponseSchema>;
+
+/**
+ * Combine several recordings into one. The sources are concatenated in
+ * chronological (occurredAt) order regardless of the order given here.
+ */
+export const inboxMergeRequestSchema = z.object({
+  itemIds: z.array(z.string().uuid()).min(2).max(10),
+});
+export type InboxMergeRequest = z.infer<typeof inboxMergeRequestSchema>;
+
+/** Result of splitting a merged recording back into its original parts. */
+export const inboxSplitResponseSchema = z.object({
+  restoredItemIds: z.array(z.string().uuid()),
+});
+export type InboxSplitResponse = z.infer<typeof inboxSplitResponseSchema>;
 
 /**
  * Result of purging every recording (and all recording-derived data) for the

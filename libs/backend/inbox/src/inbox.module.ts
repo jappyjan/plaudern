@@ -4,6 +4,7 @@ import {
   ExtractedPayloadEntity,
   InboxItemEntity,
   InboxTombstoneEntity,
+  RecordingMergeEntity,
   SourcePayloadEntity,
 } from '@plaudern/persistence';
 import { InboxService } from './inbox.service';
@@ -18,6 +19,7 @@ import { InboxEventsController } from './inbox-events.controller';
       SourcePayloadEntity,
       ExtractedPayloadEntity,
       InboxTombstoneEntity,
+      RecordingMergeEntity,
     ]),
   ],
   providers: [InboxService, InboxEventsService],

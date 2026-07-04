@@ -23,6 +23,7 @@ import {
   retryDiarization,
   retrySummary,
   retryTranscription,
+  splitItem,
 } from '../lib/api';
 import { useInboxEvents } from '../hooks/useInboxEvents';
 import { usePlaceName } from '../hooks/usePlaceName';
@@ -106,6 +107,9 @@ export function ItemDetailPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [splitting, setSplitting] = useState(false);
+  const [splitError, setSplitError] = useState<string | null>(null);
   const [linkedEvents, setLinkedEvents] = useState<CalendarEventDto[] | null>(null);
   const [linkPickerOpen, setLinkPickerOpen] = useState(false);
   // Which tab is shown; defaults to the summary once one exists, else the
@@ -257,19 +261,46 @@ export function ItemDetailPage() {
     }
   };
 
+  const mergedFromCount = item.mergedFromItemIds?.length ?? 0;
+
+  const confirmSplit = async () => {
+    if (!id) return;
+    setSplitting(true);
+    setSplitError(null);
+    try {
+      await splitItem(id);
+      navigate('/');
+    } catch (cause) {
+      setSplitError(cause instanceof Error ? cause.message : String(cause));
+      setSplitting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <BackLink />
-        <Button
-          color="danger"
-          variant="light"
-          size="sm"
-          startContent={<TrashIcon className="h-4 w-4" />}
-          onPress={() => setConfirmOpen(true)}
-        >
-          Delete
-        </Button>
+        <div className="flex items-center gap-1">
+          {mergedFromCount > 0 && (
+            <Button
+              variant="light"
+              size="sm"
+              startContent={<UnlinkIcon className="h-4 w-4" />}
+              onPress={() => setSplitOpen(true)}
+            >
+              Split
+            </Button>
+          )}
+          <Button
+            color="danger"
+            variant="light"
+            size="sm"
+            startContent={<TrashIcon className="h-4 w-4" />}
+            onPress={() => setConfirmOpen(true)}
+          >
+            Delete
+          </Button>
+        </div>
       </div>
 
       {sourceUrl && item.sourceType !== 'text' && (
@@ -409,6 +440,9 @@ export function ItemDetailPage() {
         <CardBody className="gap-2 text-sm">
           <DetailRow label="Recorded" value={formatDateTime(item.occurredAt)} />
           <DetailRow label="Added to inbox" value={formatDateTime(item.ingestedAt)} />
+          {mergedFromCount > 0 && (
+            <DetailRow label="Merged from" value={`${mergedFromCount} recordings`} />
+          )}
           {item.source?.originalFilename && (
             <DetailRow label="File" value={item.source.originalFilename} />
           )}
@@ -507,10 +541,29 @@ export function ItemDetailPage() {
         isOpen={confirmOpen}
         isDeleting={deleting}
         error={deleteError}
+        message={
+          mergedFromCount > 0
+            ? `This deletes the merged recording and restores the ${mergedFromCount} original recordings it was combined from.`
+            : undefined
+        }
         onConfirm={() => void confirmDelete()}
         onClose={() => {
           setConfirmOpen(false);
           setDeleteError(null);
+        }}
+      />
+
+      <ConfirmDeleteModal
+        isOpen={splitOpen}
+        isDeleting={splitting}
+        error={splitError}
+        title="Split merged recording?"
+        message={`This restores the ${mergedFromCount} original recordings and deletes this merged one (including its transcript and summary).`}
+        confirmLabel="Split"
+        onConfirm={() => void confirmSplit()}
+        onClose={() => {
+          setSplitOpen(false);
+          setSplitError(null);
         }}
       />
     </div>

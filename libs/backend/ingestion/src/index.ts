@@ -8,3 +8,7 @@ export * from './adapters/generic-audio.adapter';
 export * from './adapters/plaud.adapter';
 export * from './adapters/text.adapter';
 export * from './adapters/file.adapter';
+export * from './merge/audio-concatenator';
+export * from './merge/extraction-stitcher';
+export * from './merge/recording-merge.service';
+export * from './merge/recording-merge.controller';

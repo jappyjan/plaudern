@@ -13,6 +13,7 @@ import {
   inboxItemSchema,
   inboxListResponseSchema,
   inboxPurgeResponseSchema,
+  inboxSplitResponseSchema,
   ingestInitResponseSchema,
   itemEventsResponseSchema,
   linkResponseSchema,
@@ -40,6 +41,7 @@ import {
   type InboxItemDto,
   type InboxListResponse,
   type InboxPurgeResponse,
+  type InboxSplitResponse,
   type PlaudSettingsDto,
   type PlaudSyncNowResponse,
   type PlaudTestConnectionRequest,
@@ -122,6 +124,23 @@ export async function getSourceUrl(id: string): Promise<string | null> {
 /** Permanently delete an inbox item, its extractions and its stored blobs. */
 export async function deleteInboxItem(id: string): Promise<void> {
   return requestVoid(`/inbox/${id}`, { method: 'DELETE' });
+}
+
+/**
+ * Combine several recordings into one. The originals are hidden (not
+ * deleted) behind the merged recording and come back on split.
+ */
+export async function mergeItems(itemIds: string[]): Promise<InboxItemDto> {
+  return inboxItemSchema.parse(
+    await requestJson('/inbox/merge', { method: 'POST', body: JSON.stringify({ itemIds }) }),
+  );
+}
+
+/** Undo a merge: delete the merged recording and restore the originals. */
+export async function splitItem(id: string): Promise<InboxSplitResponse> {
+  return inboxSplitResponseSchema.parse(
+    await requestJson(`/inbox/${id}/split`, { method: 'POST' }),
+  );
 }
 
 /**

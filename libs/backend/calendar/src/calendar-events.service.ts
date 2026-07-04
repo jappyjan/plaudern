@@ -11,6 +11,7 @@ import {
   CalendarFeedEntity,
   InboxItemEntity,
   RecordingEventLinkEntity,
+  RecordingMergeEntity,
 } from '@plaudern/persistence';
 import { recordingDurationMs } from './recording-duration';
 
@@ -26,6 +27,8 @@ export class CalendarEventsService {
     private readonly links: Repository<RecordingEventLinkEntity>,
     @InjectRepository(InboxItemEntity)
     private readonly items: Repository<InboxItemEntity>,
+    @InjectRepository(RecordingMergeEntity)
+    private readonly merges: Repository<RecordingMergeEntity>,
   ) {}
 
   /** Events overlapping [from, to], with active linked recording ids. */
@@ -47,14 +50,23 @@ export class CalendarEventsService {
     return { ...dto, recordings };
   }
 
-  /** Recordings (inbox items) whose occurredAt falls in [from, to]. */
+  /**
+   * Recordings (inbox items) whose occurredAt falls in [from, to]. Sources
+   * hidden inside a merged recording are excluded, matching the inbox list —
+   * the merged item covers their time range.
+   */
   async recordingsInRange(userId: string, from: string, to: string): Promise<RecordingSummaryDto[]> {
     const items = await this.items.find({
       where: { userId, occurredAt: Between(from, to) },
       relations: { source: true },
       order: { occurredAt: 'ASC' },
     });
-    return this.toRecordingSummaries(items);
+    const hidden = new Set(
+      (
+        await this.merges.find({ select: { sourceItemId: true }, where: { userId } })
+      ).map((link) => link.sourceItemId),
+    );
+    return this.toRecordingSummaries(items.filter((item) => !hidden.has(item.id)));
   }
 
   /** Events actively linked to one inbox item. */

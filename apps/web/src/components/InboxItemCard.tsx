@@ -50,9 +50,19 @@ function itemTitle(item: InboxItemDto): string {
 export function InboxItemCard({
   item,
   onDeleted,
+  selectable = false,
+  selected = false,
+  selectionDisabled = false,
+  onToggleSelect,
 }: {
   item: InboxItemDto;
   onDeleted: (id: string) => void;
+  /** Selection mode: pressing toggles selection instead of navigating. */
+  selectable?: boolean;
+  selected?: boolean;
+  /** In selection mode, items that cannot be merged are dimmed and inert. */
+  selectionDisabled?: boolean;
+  onToggleSelect?: (id: string) => void;
 }) {
   const navigate = useNavigate();
   const tags = item.metadata?.tags as Record<string, unknown> | undefined;
@@ -82,11 +92,31 @@ export function InboxItemCard({
   return (
     // The card is a <button> (isPressable), so the delete trigger is an
     // absolutely-positioned sibling — nesting buttons is invalid HTML.
-    <div className="relative w-full">
-      <Card isPressable onPress={() => navigate(`/items/${item.id}`)} className="w-full">
+    <div className={`relative w-full ${selectable && selectionDisabled ? 'opacity-40' : ''}`}>
+      <Card
+        isPressable={!selectable || !selectionDisabled}
+        onPress={() =>
+          selectable
+            ? !selectionDisabled && onToggleSelect?.(item.id)
+            : navigate(`/items/${item.id}`)
+        }
+        className={`w-full ${selected ? 'outline outline-2 outline-primary' : ''}`}
+      >
         <CardBody className="gap-1 py-2.5 pr-12">
           {/* Main line: the title gets the full row width. */}
           <div className="flex items-center gap-2">
+            {selectable && (
+              <span
+                aria-hidden
+                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-xs ${
+                  selected
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-default-300 text-transparent'
+                }`}
+              >
+                ✓
+              </span>
+            )}
             <SourceIcon sourceType={item.sourceType} />
             <p className="min-w-0 flex-1 truncate text-sm font-medium">{itemTitle(item)}</p>
           </div>
@@ -112,19 +142,26 @@ export function InboxItemCard({
                 summary
               </Chip>
             )}
+            {(item.mergedFromItemIds?.length ?? 0) > 0 && (
+              <Chip size="sm" variant="flat" color="warning">
+                merged
+              </Chip>
+            )}
           </div>
         </CardBody>
       </Card>
-      <Button
-        isIconOnly
-        size="sm"
-        variant="light"
-        aria-label="Delete"
-        className="absolute right-2 top-1/2 -translate-y-1/2 text-default-400 hover:text-danger"
-        onPress={() => setConfirmOpen(true)}
-      >
-        <TrashIcon className="h-4 w-4" />
-      </Button>
+      {!selectable && (
+        <Button
+          isIconOnly
+          size="sm"
+          variant="light"
+          aria-label="Delete"
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-default-400 hover:text-danger"
+          onPress={() => setConfirmOpen(true)}
+        >
+          <TrashIcon className="h-4 w-4" />
+        </Button>
+      )}
       <ConfirmDeleteModal
         isOpen={confirmOpen}
         isDeleting={deleting}
