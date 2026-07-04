@@ -3,14 +3,18 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import type { ConnectionOptions } from 'bullmq';
 import { InboxModule } from '@plaudern/inbox';
-import { SpeakerOccurrenceEntity } from '@plaudern/persistence';
+import { SpeakerOccurrenceEntity, SummarizationSettingsEntity } from '@plaudern/persistence';
 import { SUMMARIZATION_PROVIDER } from './summarization.provider';
 import { SUMMARIZATION_QUEUE } from './summarization.job';
 import { OpenAiSummarizationProvider } from './providers/openai.provider';
 import { SummaryContextService } from './summary-context.service';
+import { SummarizationSettingsService } from './summarization-settings.service';
 import { SummarizationProcessor } from './summarization.processor';
 import { SummarizationService } from './summarization.service';
-import { SummarizationController } from './summarization.controller';
+import {
+  SummarizationController,
+  SummarizationSettingsController,
+} from './summarization.controller';
 import { SummarizationTrigger } from './summarization.trigger';
 import { InlineSummarizationQueue } from './queues/inline.queue';
 import { BullSummarizationQueue } from './queues/bull.queue';
@@ -37,7 +41,7 @@ function redisConnection(config: ConfigService): ConnectionOptions {
   imports: [
     ConfigModule,
     InboxModule,
-    TypeOrmModule.forFeature([SpeakerOccurrenceEntity]),
+    TypeOrmModule.forFeature([SpeakerOccurrenceEntity, SummarizationSettingsEntity]),
   ],
   providers: [
     OpenAiSummarizationProvider,
@@ -49,6 +53,7 @@ function redisConnection(config: ConfigService): ConnectionOptions {
       useFactory: (openai: OpenAiSummarizationProvider) => openai,
     },
     SummaryContextService,
+    SummarizationSettingsService,
     SummarizationProcessor,
     {
       provide: SUMMARIZATION_QUEUE,
@@ -61,7 +66,7 @@ function redisConnection(config: ConfigService): ConnectionOptions {
     SummarizationService,
     SummarizationTrigger,
   ],
-  controllers: [SummarizationController],
+  controllers: [SummarizationController, SummarizationSettingsController],
   exports: [SummarizationService],
 })
 export class SummarizationModule {}

@@ -32,6 +32,16 @@ describe('buildUserPrompt', () => {
     const prompt = buildUserPrompt({ ...baseInput, speakers: [] });
     expect(prompt).not.toContain('Speaker roster');
   });
+
+  it("defaults to the transcript's own language when no target is set", () => {
+    const prompt = buildUserPrompt(baseInput);
+    expect(prompt).toContain("in the transcript's own language");
+  });
+
+  it('forces the configured output language when one is set', () => {
+    const prompt = buildUserPrompt({ ...baseInput, targetLanguage: 'German' });
+    expect(prompt).toContain('in German, regardless of the transcript');
+  });
 });
 
 describe('parseSummaryResponse', () => {

@@ -3,6 +3,60 @@ import { extractionStatusSchema } from './inbox';
 import { voiceProfileStatusSchema } from './speakers';
 
 /**
+ * Preferred output language for AI summaries — a per-user setting applied to
+ * every summarization. `auto` follows the recording's own (transcribed)
+ * language; any other value forces that language regardless of what was spoken.
+ */
+export const summaryLanguagePreferenceSchema = z.enum([
+  'auto',
+  'en',
+  'de',
+  'fr',
+  'es',
+  'it',
+  'nl',
+  'pt',
+  'pl',
+  'ru',
+  'uk',
+  'tr',
+  'ja',
+  'ko',
+  'zh',
+]);
+export type SummaryLanguagePreference = z.infer<typeof summaryLanguagePreferenceSchema>;
+
+/** English display/label per language code — also used to instruct the LLM. */
+export const SUMMARY_LANGUAGE_LABELS: Record<SummaryLanguagePreference, string> = {
+  auto: 'Automatic (match the recording)',
+  en: 'English',
+  de: 'German',
+  fr: 'French',
+  es: 'Spanish',
+  it: 'Italian',
+  nl: 'Dutch',
+  pt: 'Portuguese',
+  pl: 'Polish',
+  ru: 'Russian',
+  uk: 'Ukrainian',
+  tr: 'Turkish',
+  ja: 'Japanese',
+  ko: 'Korean',
+  zh: 'Chinese',
+};
+
+/** Per-user summarization preferences. */
+export const summarizationSettingsSchema = z.object({
+  language: summaryLanguagePreferenceSchema,
+});
+export type SummarizationSettingsDto = z.infer<typeof summarizationSettingsSchema>;
+
+export const updateSummarizationSettingsRequestSchema = summarizationSettingsSchema;
+export type UpdateSummarizationSettingsRequest = z.infer<
+  typeof updateSummarizationSettingsRequestSchema
+>;
+
+/**
  * The AI picks the layout that best fits the recording's content; the frontend
  * renders every layout the same way (markdown + mermaid + speaker mentions) but
  * shows the chosen layout as a small badge and the model is prompted to shape

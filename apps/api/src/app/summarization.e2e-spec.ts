@@ -149,6 +149,43 @@ describe('AI summarization pipeline (e2e, Path A)', () => {
     expect(summaries.length).toBeGreaterThanOrEqual(2);
   });
 
+  it('defaults the summary language setting to auto and applies it to summaries', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/settings/summarization')
+      .expect(200);
+    expect(res.body).toEqual({ language: 'auto' });
+
+    const itemId = await ingestAudio('e2e-summary-lang-auto');
+    const summary = await waitForSummary(itemId);
+    expect(summary.markdown).toContain('Language: auto.');
+  });
+
+  it('forces the summary into the user-selected language on the next summary', async () => {
+    await request(app.getHttpServer())
+      .put('/api/v1/settings/summarization')
+      .send({ language: 'de' })
+      .expect(200)
+      .expect((r) => expect(r.body).toEqual({ language: 'de' }));
+
+    const itemId = await ingestAudio('e2e-summary-lang-de');
+    const summary = await waitForSummary(itemId);
+    // FakeSummarizationProvider echoes the English name of the forced language.
+    expect(summary.markdown).toContain('Language: German.');
+
+    // Reset so ordering never leaks the preference into other tests.
+    await request(app.getHttpServer())
+      .put('/api/v1/settings/summarization')
+      .send({ language: 'auto' })
+      .expect(200);
+  });
+
+  it('rejects an unknown language value', async () => {
+    await request(app.getHttpServer())
+      .put('/api/v1/settings/summarization')
+      .send({ language: 'klingon' })
+      .expect(400);
+  });
+
   it('returns an empty summary (status null) for an item that has none', async () => {
     // A text item is never transcribed, so it never gets summarized.
     const text = await request(app.getHttpServer())

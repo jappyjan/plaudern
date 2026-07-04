@@ -17,6 +17,7 @@ import {
   plaudSyncNowResponseSchema,
   plaudTestConnectionResponseSchema,
   speakerTranscriptSchema,
+  summarizationSettingsSchema,
   summarySchema,
   voiceProfileDetailSchema,
   voiceProfileListResponseSchema,
@@ -41,8 +42,10 @@ import {
   type ItemEventsResponse,
   type LinkResponse,
   type SpeakerTranscriptDto,
+  type SummarizationSettingsDto,
   type SummaryDto,
   type UpdateCalendarFeedRequest,
+  type UpdateSummarizationSettingsRequest,
   type UpdatePlaudSettingsRequest,
   type UpdateVoiceProfileRequest,
   type VoiceProfileDetailDto,
@@ -191,6 +194,18 @@ export async function getSummary(itemId: string): Promise<SummaryDto> {
 export async function retrySummary(itemId: string): Promise<SummaryDto> {
   return summarySchema.parse(
     await requestJson(`/inbox/${itemId}/summary/retry`, { method: 'POST' }),
+  );
+}
+
+export async function getSummarizationSettings(): Promise<SummarizationSettingsDto> {
+  return summarizationSettingsSchema.parse(await requestJson('/settings/summarization'));
+}
+
+export async function updateSummarizationSettings(
+  req: UpdateSummarizationSettingsRequest,
+): Promise<SummarizationSettingsDto> {
+  return summarizationSettingsSchema.parse(
+    await requestJson('/settings/summarization', { method: 'PUT', body: JSON.stringify(req) }),
   );
 }
 

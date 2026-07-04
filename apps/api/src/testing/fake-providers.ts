@@ -86,6 +86,9 @@ export class FakeSummarizationProvider implements SummarizationProvider {
     const mentions = input.speakers.map((s) => `@[${s.label}]`).join(' and ');
     const markdown = [
       '## Summary',
+      // Echo the forced output language so tests can assert the per-user
+      // language preference reaches the provider.
+      `Language: ${input.targetLanguage ?? 'auto'}.`,
       mentions ? `Speakers: ${mentions}.` : 'No speakers detected.',
       '',
       '```mermaid',

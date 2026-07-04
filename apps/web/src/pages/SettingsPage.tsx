@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Input, Select, SelectItem, Spinner, Switch } from '@heroui/react';
-import type {
-  CalendarFeedsResponse,
-  PasskeyDto,
-  PlaudRegion,
-  PlaudSettingsDto,
+import {
+  SUMMARY_LANGUAGE_LABELS,
+  summaryLanguagePreferenceSchema,
+  type CalendarFeedsResponse,
+  type PasskeyDto,
+  type PlaudRegion,
+  type PlaudSettingsDto,
+  type SummaryLanguagePreference,
 } from '@plaudern/contracts';
 import { useAuth } from '../auth/AuthContext';
 import { addPasskey, deletePasskey, listPasskeys } from '../lib/auth';
@@ -12,6 +15,7 @@ import {
   createCalendarFeed,
   deleteCalendarFeed,
   getPlaudSettings,
+  getSummarizationSettings,
   listCalendarFeeds,
   purgeAllData,
   testCalendarFeed,
@@ -20,6 +24,7 @@ import {
   triggerPlaudSync,
   updateCalendarFeed,
   updatePlaudSettings,
+  updateSummarizationSettings,
 } from '../lib/api';
 import { formatDateTime } from '../lib/format';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
@@ -245,12 +250,81 @@ export function SettingsPage() {
         </div>
       )}
 
+      <SummarizationSection />
+
       <CalendarFeedsSection />
 
       <DangerZoneSection
         plaudEnabled={settings?.enabled ?? false}
         onPurged={() => void refresh()}
       />
+    </div>
+  );
+}
+
+/**
+ * AI summary preferences. Currently the output language, applied to every
+ * future summary (and to any summary you regenerate). "Automatic" follows the
+ * language spoken in each recording.
+ */
+function SummarizationSection() {
+  const [language, setLanguage] = useState<SummaryLanguagePreference>('auto');
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    getSummarizationSettings()
+      .then((s) => setLanguage(s.language))
+      .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setLoaded(true));
+  }, []);
+
+  const save = async (next: SummaryLanguagePreference) => {
+    setLanguage(next);
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      await updateSummarizationSettings({ language: next });
+      setSaved(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4 border-t border-default-200 pt-6">
+      <div>
+        <h2 className="text-lg font-semibold">AI summaries</h2>
+        <p className="text-sm text-default-500">
+          Recordings are automatically given a title and summary once transcribed. Choose the
+          language summaries are written in — this applies to every future summary.
+        </p>
+      </div>
+
+      <Select
+        label="Summary language"
+        isDisabled={!loaded || saving}
+        selectedKeys={[language]}
+        onSelectionChange={(keys) => {
+          const key = Array.from(keys)[0];
+          if (typeof key === 'string') void save(key as SummaryLanguagePreference);
+        }}
+        disallowEmptySelection
+      >
+        {summaryLanguagePreferenceSchema.options.map((code) => (
+          <SelectItem key={code}>{SUMMARY_LANGUAGE_LABELS[code]}</SelectItem>
+        ))}
+      </Select>
+
+      {error && (
+        <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">{error}</div>
+      )}
+      {saved && !error && <span className="text-sm text-success">Saved.</span>}
     </div>
   );
 }

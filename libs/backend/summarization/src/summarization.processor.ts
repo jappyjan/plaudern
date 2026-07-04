@@ -1,11 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InboxService } from '@plaudern/inbox';
-import type { SummaryPayload } from '@plaudern/contracts';
+import { SUMMARY_LANGUAGE_LABELS, type SummaryPayload } from '@plaudern/contracts';
 import {
   SUMMARIZATION_PROVIDER,
   type SummarizationProvider,
 } from './summarization.provider';
 import { SummaryContextService } from './summary-context.service';
+import { SummarizationSettingsService } from './summarization-settings.service';
 import type { SummarizationJob } from './summarization.job';
 
 /**
@@ -22,6 +23,7 @@ export class SummarizationProcessor {
   constructor(
     private readonly inbox: InboxService,
     private readonly context: SummaryContextService,
+    private readonly settings: SummarizationSettingsService,
     @Inject(SUMMARIZATION_PROVIDER)
     private readonly provider: SummarizationProvider,
   ) {}
@@ -37,7 +39,13 @@ export class SummarizationProcessor {
         throw new Error('no succeeded transcription to summarize');
       }
 
-      const result = await this.provider.summarize(input);
+      // The output language is the owning user's per-account preference; `auto`
+      // leaves it to the model to match the transcript.
+      const language = await this.settings.getLanguage(item.userId);
+      const targetLanguage =
+        language === 'auto' ? undefined : SUMMARY_LANGUAGE_LABELS[language];
+
+      const result = await this.provider.summarize({ ...input, targetLanguage });
       const payload: SummaryPayload = {
         title: result.title,
         layout: result.layout,

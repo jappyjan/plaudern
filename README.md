@@ -87,12 +87,14 @@ docker-compose.yml   Postgres + MinIO + Redis (+ api + web + speaker-id) for loc
   into the same clickable speaker chips as the transcript. It runs as another
   append-only extraction (`kind: summary`), triggered in-process when the
   transcription/diarization finish, so job ordering never matters and a
-  reprocess regenerates it. Any **OpenAI-compatible** `/chat/completions`
-  endpoint works — the default targets **DeepSeek** (`deepseek-chat`), the
-  cheapest capable option; leave `SUMMARIZATION_API_KEY` empty to disable the
-  step (the UI then just shows the transcript). Detail pages show the summary
-  and transcript in a **tabbed view**, defaulting to the summary once it's
-  ready.
+  reprocess regenerates it. The **summary language** is a per-user setting
+  (Settings → AI summaries): `Automatic` follows each recording's spoken
+  language, or pick a fixed language applied to every future summary. Any
+  **OpenAI-compatible** `/chat/completions` endpoint works — the default
+  targets **DeepSeek** (`deepseek-chat`), the cheapest capable option; leave
+  `SUMMARIZATION_API_KEY` empty to disable the step (the UI then just shows the
+  transcript). Detail pages show the summary and transcript in a **tabbed
+  view**, defaulting to the summary once it's ready.
 - **Capture metadata travels with the item**: `occurredAt` (when it was
   recorded) plus a free-form `metadata` field (GPS location, recording device,
   file tags) set at ingest time — the envelope is immutable, so metadata is

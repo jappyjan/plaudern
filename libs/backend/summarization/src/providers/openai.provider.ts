@@ -110,7 +110,7 @@ const SYSTEM_PROMPT = [
   '  "markdown": the summary body as GitHub-flavored Markdown.',
   '',
   'Markdown rules:',
-  '- Write in the transcript\'s own language.',
+  '- Write in the output language stated in the user message.',
   '- Do NOT repeat the title as a top-level heading inside the markdown.',
   '- You may use mermaid diagrams inside ```mermaid fenced code blocks when they add clarity (flowchart, sequenceDiagram, mindmap, timeline). Keep them syntactically valid and simple.',
   '- When you refer to a speaker in prose, mention them with the exact token @[LABEL] using their diarization LABEL (e.g. @[SPEAKER_00]); the app turns these into clickable chips. Never invent a LABEL that is not in the roster. Inside mermaid diagrams use the plain display name instead of the token.',
@@ -121,6 +121,13 @@ const SYSTEM_PROMPT = [
 /** Build the user message: roster + metadata + the transcript, plus layout menu. */
 export function buildUserPrompt(input: SummarizationInput): string {
   const parts: string[] = [];
+
+  parts.push(
+    input.targetLanguage
+      ? `Write the title and the entire summary in ${input.targetLanguage}, regardless of the transcript's language.`
+      : "Write the title and the entire summary in the transcript's own language.",
+    '',
+  );
 
   parts.push('Choose the single best layout for this recording:');
   for (const layout of summaryLayoutSchema.options) {

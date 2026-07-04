@@ -19,7 +19,13 @@ export interface SummarizationInput {
    */
   transcript: string;
   speakers: SummarizationSpeaker[];
+  /** Detected transcript language (2-letter code), for context. */
   language?: string;
+  /**
+   * Forced output language as an English name (e.g. "German"), from the user's
+   * per-account preference. Undefined => write in the transcript's own language.
+   */
+  targetLanguage?: string;
   occurredAt?: string;
   durationSeconds?: number;
 }
