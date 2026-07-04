@@ -11,6 +11,7 @@ import { EmbeddingProcessor } from './embedding.processor';
 import { EmbeddingService } from './embedding.service';
 import { EmbeddingSearchService } from './embedding.search';
 import { EmbeddingExtractor } from './embedding.extractor';
+import { EmbeddingController } from './embedding.controller';
 
 @Module({
   imports: [ConfigModule, InboxModule, TypeOrmModule.forFeature([EmbeddingChunkEntity])],
@@ -39,6 +40,7 @@ import { EmbeddingExtractor } from './embedding.extractor';
     EmbeddingSearchService,
     EmbeddingExtractor,
   ],
+  controllers: [EmbeddingController],
   exports: [EmbeddingService, EmbeddingSearchService, EmbeddingExtractor],
 })
 export class EmbeddingModule {}

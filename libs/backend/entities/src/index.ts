@@ -6,6 +6,7 @@ export * from './entity-graph.service';
 export * from './entities.processor';
 export * from './entities.service';
 export * from './entities.controller';
+export * from './inbox-entities.controller';
 export * from './entities.extractor';
 export * from './relations.provider';
 export * from './relation-context';

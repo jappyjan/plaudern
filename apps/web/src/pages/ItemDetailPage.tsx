@@ -21,6 +21,9 @@ import {
   listItemEvents,
   reprocessItem,
   retryDiarization,
+  retryEmbeddings,
+  retryEntities,
+  retryRelations,
   retrySummary,
   retryTranscription,
   splitItem,
@@ -49,13 +52,23 @@ import type { GeoLocation } from '../lib/geolocation';
 // that break the event stream, so it can be slow.
 const POLL_INTERVAL_MS = 10_000;
 
-type ReprocessStep = 'transcription' | 'diarization' | 'summary' | 'all';
+type ReprocessStep =
+  | 'transcription'
+  | 'diarization'
+  | 'summary'
+  | 'embeddings'
+  | 'entities'
+  | 'relations'
+  | 'all';
 
 /**
  * The individually re-runnable pipeline steps, shown in the Reprocess panel.
  * `all` replays transcription + diarization (the summary then follows via the
  * server-side trigger); the single-step actions target one stage only. Every
  * run appends a new extraction — the immutable history is never overwritten.
+ * Downstream steps re-run automatically after an earlier one settles (e.g.
+ * relations follow an entities re-run), so those retries are entry points for
+ * repairing one stage without replaying the whole pipeline.
  */
 const REPROCESS_STEPS: {
   key: ReprocessStep;
@@ -86,6 +99,27 @@ const REPROCESS_STEPS: {
     run: async (id) => {
       await retrySummary(id);
     },
+  },
+  {
+    key: 'embeddings',
+    label: 'Embeddings',
+    description: 'Regenerate the semantic search embeddings.',
+    action: 'Re-embed',
+    run: (id) => retryEmbeddings(id),
+  },
+  {
+    key: 'entities',
+    label: 'Entities',
+    description: 'Re-extract people, places and things (relations follow).',
+    action: 'Re-extract',
+    run: (id) => retryEntities(id),
+  },
+  {
+    key: 'relations',
+    label: 'Relations',
+    description: 'Re-derive the knowledge-graph relations between entities.',
+    action: 'Re-relate',
+    run: (id) => retryRelations(id),
   },
   {
     key: 'all',

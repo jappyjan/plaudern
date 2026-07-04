@@ -6,5 +6,6 @@ export * from './embedding.processor';
 export * from './embedding.service';
 export * from './embedding.search';
 export * from './embedding.extractor';
+export * from './embedding.controller';
 export * from './embedding.module';
 export * from './providers/openai.provider';

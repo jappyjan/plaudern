@@ -21,6 +21,7 @@ import { EntityGraphService } from './entity-graph.service';
 import { EntitiesProcessor } from './entities.processor';
 import { EntitiesService } from './entities.service';
 import { EntitiesController } from './entities.controller';
+import { InboxEntitiesController } from './inbox-entities.controller';
 import { EntitiesExtractor } from './entities.extractor';
 import { RelationsProcessor } from './relations.processor';
 import { RelationsService } from './relations.service';
@@ -84,7 +85,7 @@ import { RelationsExtractor } from './relations.extractor';
     RelationsService,
     RelationsExtractor,
   ],
-  controllers: [EntitiesController],
+  controllers: [EntitiesController, InboxEntitiesController],
   exports: [EntitiesService, EntitiesExtractor, RelationsService, RelationsExtractor],
 })
 export class EntitiesModule {}
