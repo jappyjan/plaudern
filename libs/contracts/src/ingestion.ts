@@ -33,10 +33,6 @@ export const ingestInitResponseSchema = z.object({
 });
 export type IngestInitResponse = z.infer<typeof ingestInitResponseSchema>;
 
-/** Phase 3: the client confirms the direct upload finished. */
-export const ingestCommitResponseSchema = inboxItemSchema;
-export type IngestCommitResponse = z.infer<typeof ingestCommitResponseSchema>;
-
 /** Inline text ingestion — no presigned upload needed. */
 export const ingestTextRequestSchema = z.object({
   text: z.string().min(1),

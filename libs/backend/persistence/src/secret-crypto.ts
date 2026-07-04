@@ -1,9 +1,11 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 
 /**
- * Symmetric encryption for the stored Plaud password. The Plaud API needs the
- * raw password for (re-)login, so hashing is impossible — encrypting with an
- * app secret at least keeps the credential out of plain DB dumps/backups.
+ * Symmetric encryption for secrets stored in the database (the Plaud password,
+ * calendar feed URLs). These must round-trip back to plaintext — the Plaud API
+ * needs the raw password for (re-)login and calendar sync needs the raw URL —
+ * so hashing is impossible; encrypting with APP_ENCRYPTION_SECRET at least
+ * keeps them out of plain DB dumps/backups.
  * Format: `v1:<ivB64>:<tagB64>:<dataB64>`.
  */
 const VERSION = 'v1';

@@ -10,7 +10,6 @@ export type CalendarSyncStatus = z.infer<typeof calendarSyncStatusSchema>;
 
 /** Who created a recording↔event link. Manual links are never touched by sync. */
 export const linkOriginSchema = z.enum(['auto', 'manual']);
-export type LinkOrigin = z.infer<typeof linkOriginSchema>;
 
 /** Feed URLs are secrets (they grant read access) — DTOs only carry a mask. */
 export const calendarFeedSchema = z.object({
@@ -66,7 +65,6 @@ export type CalendarFeedsResponse = z.infer<typeof calendarFeedsResponseSchema>;
 export const calendarFeedTestRequestSchema = z.object({
   url: feedUrlSchema,
 });
-export type CalendarFeedTestRequest = z.infer<typeof calendarFeedTestRequestSchema>;
 
 export const calendarFeedTestResponseSchema = z.object({
   ok: z.boolean(),
@@ -114,7 +112,6 @@ export const calendarRangeQuerySchema = z
       400 * 24 * 60 * 60 * 1000,
     { message: 'range must be at most 400 days' },
   );
-export type CalendarRangeQuery = z.infer<typeof calendarRangeQuerySchema>;
 
 export const calendarEventsResponseSchema = z.object({
   events: z.array(calendarEventSchema),
@@ -151,7 +148,6 @@ export const createLinkRequestSchema = z.object({
   inboxItemId: z.string().uuid(),
   eventId: z.string().uuid(),
 });
-export type CreateLinkRequest = z.infer<typeof createLinkRequestSchema>;
 
 export const linkResponseSchema = z.object({
   inboxItemId: z.string().uuid(),

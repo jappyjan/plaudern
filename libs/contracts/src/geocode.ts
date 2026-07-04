@@ -4,7 +4,6 @@ export const geocodeQuerySchema = z.object({
   lat: z.coerce.number().min(-90).max(90),
   lon: z.coerce.number().min(-180).max(180),
 });
-export type GeocodeQuery = z.infer<typeof geocodeQuerySchema>;
 
 /**
  * `label` is the full "street, city, country" line; `city` is just the

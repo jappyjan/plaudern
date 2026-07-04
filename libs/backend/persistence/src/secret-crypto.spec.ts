@@ -1,6 +1,6 @@
-import { decryptSecret, encryptSecret } from './crypto';
+import { decryptSecret, encryptSecret } from './secret-crypto';
 
-describe('crypto', () => {
+describe('secret crypto', () => {
   it('round-trips a secret', () => {
     const ciphertext = encryptSecret('plaud-password-123', 'app-secret');
     expect(ciphertext).toMatch(/^v1:/);

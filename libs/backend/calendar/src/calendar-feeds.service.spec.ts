@@ -2,7 +2,7 @@ import { DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { ALL_ENTITIES, CalendarFeedEntity } from '@plaudern/persistence';
 import { CalendarFeedsService } from './calendar-feeds.service';
-import { decryptSecret } from './crypto';
+import { decryptSecret } from '@plaudern/persistence';
 import { maskFeedUrl, normalizeFeedUrl } from './ics/ics-feed.client';
 
 describe('normalizeFeedUrl / maskFeedUrl', () => {

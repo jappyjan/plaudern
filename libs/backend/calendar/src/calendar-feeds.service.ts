@@ -10,7 +10,7 @@ import type {
   UpdateCalendarFeedRequest,
 } from '@plaudern/contracts';
 import { CalendarFeedEntity } from '@plaudern/persistence';
-import { decryptSecret, encryptSecret } from './crypto';
+import { decryptSecret, encryptSecret } from '@plaudern/persistence';
 import { maskFeedUrl, normalizeFeedUrl } from './ics/ics-feed.client';
 
 /**

@@ -42,13 +42,6 @@ export const meResponseSchema = z.object({ user: authUserSchema });
 export type MeResponse = z.infer<typeof meResponseSchema>;
 
 export const registerOptionsRequestSchema = z.object({ username: usernameSchema });
-export type RegisterOptionsRequest = z.infer<typeof registerOptionsRequestSchema>;
-
-/** WebAuthn creation/request options, opaque to the contract layer. */
-export const webauthnOptionsResponseSchema = z.object({
-  options: z.record(z.string(), z.unknown()),
-});
-export type WebauthnOptionsResponse = z.infer<typeof webauthnOptionsResponseSchema>;
 
 /** The authenticator's answer, passed through verbatim to the server. */
 export const webauthnVerifyRequestSchema = z.object({
@@ -56,7 +49,6 @@ export const webauthnVerifyRequestSchema = z.object({
   /** Optional user-facing name for the new passkey (registration only). */
   label: z.string().trim().min(1).max(64).optional(),
 });
-export type WebauthnVerifyRequest = z.infer<typeof webauthnVerifyRequestSchema>;
 
 export const passkeySchema = z.object({
   id: z.string(),

@@ -2,7 +2,7 @@
   "name": "plaudern",
   "version": "0.1.0",
   "private": true,
-  "description": "Modular AI note-taking platform. Milestone 1: immutable Inbox + Plaud audio injection.",
+  "description": "Modular AI note-taking platform: immutable inbox, async transcription & speaker identification.",
   "license": "UNLICENSED",
   "scripts": {
     "api:serve": "nx serve api",
@@ -11,7 +11,6 @@
     "web:serve": "nx serve web",
     "web:build": "nx build web",
     "test": "nx run-many -t test",
-    "lint": "nx run-many -t lint",
     "typecheck": "nx run-many -t typecheck",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down"
