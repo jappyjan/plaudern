@@ -37,6 +37,7 @@ import { SpeakerTranscript } from '../components/SpeakerTranscript';
 import { SummaryView } from '../components/SummaryView';
 import { ItemTopicsCard } from '../components/ItemTopicsCard';
 import { ItemTasksCard } from '../components/ItemTasksCard';
+import { MoreLikeThisCard } from '../components/MoreLikeThisCard';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import {
   BackIcon,
@@ -412,6 +413,8 @@ export function ItemDetailPage() {
       <ItemTopicsCard itemId={item.id} />
 
       <ItemTasksCard itemId={item.id} />
+
+      <MoreLikeThisCard itemId={item.id} />
 
       <Card>
         <CardHeader className="flex items-center justify-between pb-0">

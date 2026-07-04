@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Button, Spinner } from '@heroui/react';
 import type { InboxItemDto } from '@plaudern/contracts';
 import { getItem, listInbox, mergeItems } from '../lib/api';
@@ -7,7 +8,7 @@ import { InboxItemCard } from '../components/InboxItemCard';
 import { NoteModal } from '../components/NoteModal';
 import { RecordModal } from '../components/RecordModal';
 import { UploadFab } from '../components/UploadButton';
-import { MicIcon, TextIcon } from '../components/icons';
+import { MicIcon, SearchIcon, TextIcon } from '../components/icons';
 
 const PAGE_SIZE = 20;
 
@@ -137,6 +138,21 @@ export function InboxPage() {
   return (
     // Bottom padding keeps the last cards reachable above the floating actions.
     <div className="flex flex-col gap-6 pb-28">
+      {!selectMode && (
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="text-lg font-semibold">Inbox</h1>
+          <Button
+            as={Link}
+            to="/search"
+            isIconOnly
+            variant="flat"
+            size="sm"
+            aria-label="Search your memory"
+          >
+            <SearchIcon className="h-5 w-5" />
+          </Button>
+        </div>
+      )}
       {!selectMode && (
         <Button
           color="danger"

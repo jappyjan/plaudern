@@ -19,6 +19,7 @@ import { CalendarModule } from '@plaudern/calendar';
 import { EmailIngestModule } from '@plaudern/email-ingest';
 import { NotificationsModule } from '@plaudern/notifications';
 import { McpModule } from '@plaudern/mcp';
+import { SearchModule } from '@plaudern/search';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -45,6 +46,7 @@ import { HealthController } from './health.controller';
     EmailIngestModule,
     NotificationsModule,
     McpModule,
+    SearchModule,
   ],
   controllers: [HealthController],
 })

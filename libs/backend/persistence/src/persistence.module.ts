@@ -60,6 +60,7 @@ import { CreateTopics1720000000021 } from './migrations/1720000000021-CreateTopi
 import { CreateMcpTokens1720000000022 } from './migrations/1720000000022-CreateMcpTokens';
 import { CreateEntityRelations1720000000023 } from './migrations/1720000000023-CreateEntityRelations';
 import { CreateTasks1720000000024 } from './migrations/1720000000024-CreateTasks';
+import { AddFullTextSearch1720000000026 } from './migrations/1720000000026-AddFullTextSearch';
 import { ExtractionRunTrigger1720000000028 } from './migrations/1720000000028-ExtractionRunTrigger';
 
 export const ALL_ENTITIES = [
@@ -125,6 +126,7 @@ export const ALL_MIGRATIONS = [
   CreateMcpTokens1720000000022,
   CreateEntityRelations1720000000023,
   CreateTasks1720000000024,
+  AddFullTextSearch1720000000026,
   ExtractionRunTrigger1720000000028,
 ];
 
