@@ -13,8 +13,20 @@ import { INestApplication } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import request from 'supertest';
-import type { ExtractedPayloadDto, InboxItemDto, SummaryDto } from '@plaudern/contracts';
-import { ExtractedPayloadEntity, RecordingMergeEntity } from '@plaudern/persistence';
+import type {
+  ExtractedPayloadDto,
+  InboxItemDto,
+  SummaryDto,
+  VoiceProfileDetailDto,
+  VoiceProfileDto,
+} from '@plaudern/contracts';
+import {
+  CalendarEventEntity,
+  CalendarFeedEntity,
+  DEFAULT_USER_ID,
+  ExtractedPayloadEntity,
+  RecordingMergeEntity,
+} from '@plaudern/persistence';
 import { InMemoryStorageService, StorageService } from '@plaudern/storage';
 import { SUMMARIZATION_PROVIDER } from '@plaudern/summarization';
 import { createE2eApp } from '../testing/e2e-app';
@@ -25,6 +37,8 @@ describe('Merge & split recordings (e2e, Path A)', () => {
   let storage: InMemoryStorageService;
   let extractionRepo: Repository<ExtractedPayloadEntity>;
   let mergeRepo: Repository<RecordingMergeEntity>;
+  let feedRepo: Repository<CalendarFeedEntity>;
+  let eventRepo: Repository<CalendarEventEntity>;
 
   beforeAll(async () => {
     app = await createE2eApp((builder) =>
@@ -33,6 +47,8 @@ describe('Merge & split recordings (e2e, Path A)', () => {
     storage = app.get(StorageService) as InMemoryStorageService;
     extractionRepo = app.get(getRepositoryToken(ExtractedPayloadEntity));
     mergeRepo = app.get(getRepositoryToken(RecordingMergeEntity));
+    feedRepo = app.get(getRepositoryToken(CalendarFeedEntity));
+    eventRepo = app.get(getRepositoryToken(CalendarEventEntity));
   });
 
   afterAll(async () => {
@@ -302,5 +318,112 @@ describe('Merge & split recordings (e2e, Path A)', () => {
 
     const summary = await waitForSummary(merged.id);
     expect(summary.status).toBe('succeeded');
+  });
+
+  it('contacts show the merged recording (titled by its summary) instead of the hidden sources', async () => {
+    const a = await ingestAudio('merge-contact-a', '2026-07-07T09:00:00.000Z');
+    const b = await ingestAudio('merge-contact-b', '2026-07-07T10:00:00.000Z');
+
+    // The fake pipeline gives each recording its own per-recording voice — a
+    // profile that appears in exactly one recording. Track A's, which the merge
+    // should move onto the merged item (and split move back). (The constant
+    // voice spans every recording in the suite, so it is a poor probe here.)
+    async function detailFor(profileId: string): Promise<VoiceProfileDetailDto> {
+      return (
+        await request(app.getHttpServer()).get(`/api/v1/speakers/${profileId}`).expect(200)
+      ).body as VoiceProfileDetailDto;
+    }
+    const profiles = (await request(app.getHttpServer()).get('/api/v1/speakers').expect(200))
+      .body.profiles as VoiceProfileDto[];
+    let perRecordingId: string | undefined;
+    for (const profile of profiles) {
+      const detail = await detailFor(profile.id);
+      if (detail.recordings.length === 1 && detail.recordings[0].inboxItemId === a.id) {
+        perRecordingId = profile.id;
+        break;
+      }
+    }
+    expect(perRecordingId).toBeDefined();
+
+    const merged = (
+      await request(app.getHttpServer())
+        .post('/api/v1/inbox/merge')
+        .send({ itemIds: [a.id, b.id] })
+        .expect(201)
+    ).body as InboxItemDto;
+    await waitForSummary(merged.id);
+
+    // After the merge the contact appears only in the merged recording — the
+    // hidden source is gone — and the recording is labeled by its summary
+    // title, not a raw date.
+    const afterMerge = await detailFor(perRecordingId!);
+    const itemIds = afterMerge.recordings.map((r) => r.inboxItemId);
+    expect(itemIds).toEqual([merged.id]);
+    expect(itemIds).not.toContain(a.id);
+    expect(afterMerge.recordings[0].title).toBe('Test summary title');
+
+    // Splitting restores the individual recording to the contact.
+    await request(app.getHttpServer()).post(`/api/v1/inbox/${merged.id}/split`).expect(201);
+    const afterSplit = await detailFor(perRecordingId!);
+    const restoredIds = afterSplit.recordings.map((r) => r.inboxItemId);
+    expect(restoredIds).toEqual([a.id]);
+    expect(restoredIds).not.toContain(merged.id);
+  });
+
+  it('a calendar event linked to a source shows the merged recording, and split reverts it', async () => {
+    const a = await ingestAudio('merge-cal-a', '2026-07-08T09:00:00.000Z');
+    const b = await ingestAudio('merge-cal-b', '2026-07-08T10:00:00.000Z');
+
+    // A bare feed + event (no ICS sync needed for a manual link).
+    const feed = await feedRepo.save(
+      feedRepo.create({ userId: DEFAULT_USER_ID, name: 'Work', providerType: 'ics' }),
+    );
+    const event = await eventRepo.save(
+      eventRepo.create({
+        userId: DEFAULT_USER_ID,
+        feedId: feed.id,
+        externalUid: 'merge-cal-event@e2e',
+        instanceStart: '2026-07-08T09:00:00.000Z',
+        startAt: '2026-07-08T09:00:00.000Z',
+        endAt: '2026-07-08T11:00:00.000Z',
+        title: 'Standup',
+      }),
+    );
+
+    // Link the FIRST source to the event, then merge it away.
+    await request(app.getHttpServer())
+      .post('/api/v1/calendar/links')
+      .send({ inboxItemId: a.id, eventId: event.id })
+      .expect(201);
+    const linkedBefore = (
+      await request(app.getHttpServer()).get(`/api/v1/calendar/events/${event.id}`).expect(200)
+    ).body.recordings.map((r: { id: string }) => r.id);
+    expect(linkedBefore).toEqual([a.id]);
+
+    const merged = (
+      await request(app.getHttpServer())
+        .post('/api/v1/inbox/merge')
+        .send({ itemIds: [a.id, b.id] })
+        .expect(201)
+    ).body as InboxItemDto;
+
+    // Event detail now shows the merged recording in place of the source.
+    const detail = await request(app.getHttpServer())
+      .get(`/api/v1/calendar/events/${event.id}`)
+      .expect(200);
+    expect(detail.body.recordings.map((r: { id: string }) => r.id)).toEqual([merged.id]);
+
+    // The merged item inherits the source's event link both directions.
+    const mergedEvents = await request(app.getHttpServer())
+      .get(`/api/v1/calendar/items/${merged.id}/events`)
+      .expect(200);
+    expect(mergedEvents.body.events.map((e: { id: string }) => e.id)).toContain(event.id);
+
+    // Splitting reverts the event to the individual recording.
+    await request(app.getHttpServer()).post(`/api/v1/inbox/${merged.id}/split`).expect(201);
+    const reverted = await request(app.getHttpServer())
+      .get(`/api/v1/calendar/events/${event.id}`)
+      .expect(200);
+    expect(reverted.body.recordings.map((r: { id: string }) => r.id)).toEqual([a.id]);
   });
 });

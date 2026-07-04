@@ -46,6 +46,8 @@ export type VoiceProfileListResponse = z.infer<typeof voiceProfileListResponseSc
 export const voiceProfileRecordingSchema = z.object({
   inboxItemId: z.string().uuid(),
   occurredAt: z.string(),
+  /** AI summary title, when one has been generated for the recording. */
+  title: z.string().nullable(),
   /** Per-recording diarization label, e.g. SPEAKER_00. */
   label: z.string(),
   speakingSeconds: z.number().nonnegative(),
