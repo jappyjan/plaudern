@@ -46,6 +46,16 @@ export const extractionRunStatusSchema = z.enum(['running', 'completed', 'failed
 export type ExtractionRunStatus = z.infer<typeof extractionRunStatusSchema>;
 
 /**
+ * What triggered a backfill run:
+ * - `manual`: an explicit POST /v1/extractions/backfills from a user.
+ * - `startup`: the automatic sweep kicked off on every API boot, catching
+ *   items whose step is missing or failed up to the current extractor version
+ *   (so merging a new/improved processing step migrates old data on deploy).
+ */
+export const extractionRunTriggerSchema = z.enum(['manual', 'startup']);
+export type ExtractionRunTrigger = z.infer<typeof extractionRunTriggerSchema>;
+
+/**
  * Start a backfill: re-run one extraction kind (at its current version) over
  * the caller's past items. Non-forced runs skip items whose latest succeeded
  * row of that kind is already at (or above) the current version — the everyday
@@ -68,6 +78,8 @@ export const extractionRunSchema = z.object({
   /** Extractor version this run targets (the registered version at start time). */
   targetVersion: z.number().int().positive(),
   force: z.boolean(),
+  /** How the run was triggered (manual request vs. automatic startup sweep). */
+  trigger: extractionRunTriggerSchema,
   occurredFrom: z.string().datetime().nullable(),
   occurredTo: z.string().datetime().nullable(),
   status: extractionRunStatusSchema,
