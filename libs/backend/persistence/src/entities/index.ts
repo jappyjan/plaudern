@@ -4,6 +4,7 @@ export * from './extracted-payload.entity';
 export * from './embedding-chunk.entity';
 export * from './entity-registry.entity';
 export * from './entity-mention.entity';
+export * from './entity-relation.entity';
 export * from './inbox-tombstone.entity';
 export * from './plaud-settings.entity';
 export * from './email-settings.entity';

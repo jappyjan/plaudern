@@ -10,6 +10,7 @@ import {
   EmbeddingChunkEntity,
   EntityMentionEntity,
   EntityRegistryEntity,
+  EntityRelationEntity,
   ExtractedPayloadEntity,
   ExtractionRunEntity,
   GeocodeCacheEntity,
@@ -55,6 +56,7 @@ import { CreateEmbeddingChunks1720000000019 } from './migrations/1720000000019-C
 import { CreateEntityRegistry1720000000020 } from './migrations/1720000000020-CreateEntityRegistry';
 import { CreateTopics1720000000021 } from './migrations/1720000000021-CreateTopics';
 import { CreateMcpTokens1720000000022 } from './migrations/1720000000022-CreateMcpTokens';
+import { CreateEntityRelations1720000000023 } from './migrations/1720000000023-CreateEntityRelations';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -66,6 +68,7 @@ export const ALL_ENTITIES = [
   EntityMentionEntity,
   TopicEntity,
   ItemTopicEntity,
+  EntityRelationEntity,
   InboxTombstoneEntity,
   PlaudSettingsEntity,
   EmailSettingsEntity,
@@ -114,6 +117,7 @@ export const ALL_MIGRATIONS = [
   CreateEntityRegistry1720000000020,
   CreateTopics1720000000021,
   CreateMcpTokens1720000000022,
+  CreateEntityRelations1720000000023,
 ];
 
 /**

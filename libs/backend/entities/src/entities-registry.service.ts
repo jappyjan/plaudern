@@ -48,7 +48,10 @@ export class EntitiesRegistryService {
   ): Promise<number> {
     // Collapse duplicates within the batch first (same type + normalized name),
     // unioning their surface forms — so one recording yields one mention each.
-    const byKey = new Map<string, { entity: ExtractedEntity; surfaceForms: Set<string> }>();
+    const byKey = new Map<
+      string,
+      { entity: ExtractedEntity; surfaceForms: Set<string>; surfaceForm: string }
+    >();
     for (const raw of extracted) {
       const name = raw.name.trim();
       if (!name) continue;
@@ -59,13 +62,19 @@ export class EntitiesRegistryService {
         const trimmed = mention.trim();
         if (trimmed) surfaceForms.add(trimmed);
       }
-      if (!existing) byKey.set(key, { entity: { ...raw, name }, surfaceForms });
+      if (!existing) {
+        // The mention records the form actually observed in the recording
+        // (contract: entityMentionSchema.surfaceForm), so prefer the model's
+        // first reported surface form over the canonical name.
+        const observed = raw.mentions.map((m) => m.trim()).find(Boolean) ?? name;
+        byKey.set(key, { entity: { ...raw, name }, surfaceForms, surfaceForm: observed });
+      }
     }
     if (byKey.size === 0) return 0;
 
     const profilesByName = await this.namedProfiles(userId);
     let linked = 0;
-    for (const { entity, surfaceForms } of byKey.values()) {
+    for (const { entity, surfaceForms, surfaceForm } of byKey.values()) {
       const registryEntity = await this.upsertEntity(
         userId,
         entity.type,
@@ -78,15 +87,23 @@ export class EntitiesRegistryService {
         inboxItemId,
         extractionId,
         registryEntity.id,
-        entity.name,
+        surfaceForm,
       );
       linked += 1;
     }
     return linked;
   }
 
-  /** Registry list, optionally filtered to one type, newest activity first. */
-  async list(userId: string, type?: EntityType): Promise<RegistryEntityDto[]> {
+  /**
+   * Registry list, optionally filtered to one type, newest activity first.
+   * Rows no current extraction mentions (ghosts after reprocessing/deletes)
+   * are hidden unless `includeUnreferenced` is set.
+   */
+  async list(
+    userId: string,
+    type?: EntityType,
+    includeUnreferenced = false,
+  ): Promise<RegistryEntityDto[]> {
     const rows = await this.entities.find({
       where: type ? { userId, type } : { userId },
     });
@@ -94,6 +111,7 @@ export class EntitiesRegistryService {
     const current = await this.currentMentions(rows.map((r) => r.id));
     return rows
       .map((row) => this.toDto(row, current.get(row.id) ?? []))
+      .filter((dto) => includeUnreferenced || dto.mentionCount > 0)
       .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
   }
 
@@ -114,6 +132,25 @@ export class EntitiesRegistryService {
           createdAt: m.createdAt.toISOString(),
         })),
     };
+  }
+
+  /**
+   * The registry entities mentioned by the item's latest succeeded `entities`
+   * extraction — the legal relation endpoints for the `relations` extractor.
+   */
+  async entitiesForItem(userId: string, inboxItemId: string): Promise<EntityRegistryEntity[]> {
+    const extractionRows = await this.extractions.find({
+      where: { inboxItemId, kind: 'entities', status: 'succeeded' },
+    });
+    const latest = extractionRows
+      .slice()
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+    if (!latest) return [];
+    const mentions = await this.mentions.find({ where: { extractionId: latest.id } });
+    if (mentions.length === 0) return [];
+    return this.entities.find({
+      where: { id: In(mentions.map((m) => m.entityId)), userId },
+    });
   }
 
   /**
@@ -154,7 +191,8 @@ export class EntitiesRegistryService {
 
     try {
       return await this.entities.save(row);
-    } catch {
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
       // Lost a race on the unique index — re-read and merge onto the winner.
       const winner = await this.entities.findOne({
         where: { userId, type, normalizedName },
@@ -251,4 +289,21 @@ export class EntitiesRegistryService {
 /** Normalization key: lowercased, whitespace-collapsed. Alias/case matching. */
 export function normalize(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * Whether a save failed on a unique index, across the drivers we run on:
+ * Postgres surfaces SQLSTATE 23505 (unique_violation), better-sqlite3 a
+ * SQLITE_CONSTRAINT* code / "UNIQUE constraint failed" message. Anything else
+ * (connection loss, bad SQL, …) is a real error and must propagate.
+ */
+export function isUniqueViolation(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const driverError = (err as { driverError?: unknown }).driverError ?? err;
+  if (!driverError || typeof driverError !== 'object') return false;
+  const code = (driverError as { code?: unknown }).code;
+  if (code === '23505') return true;
+  if (typeof code === 'string' && code.startsWith('SQLITE_CONSTRAINT')) return true;
+  const message = (driverError as { message?: unknown }).message;
+  return typeof message === 'string' && message.includes('UNIQUE constraint failed');
 }

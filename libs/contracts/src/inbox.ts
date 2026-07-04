@@ -29,6 +29,9 @@ export const extractionKindSchema = z.enum([
   // Zero-shot classification of an item against the user's topic/project
   // taxonomy (JJ-18).
   'topics',
+  // LLM extraction of typed relations between an item's entities (plus weak
+  // implicit co-occurrence edges) — the knowledge graph proper.
+  'relations',
 ]);
 export type ExtractionKind = z.infer<typeof extractionKindSchema>;
 

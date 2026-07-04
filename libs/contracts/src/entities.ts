@@ -88,6 +88,15 @@ export type EntityMentionDto = z.infer<typeof entityMentionSchema>;
 /** Registry list query: optionally filter to a single entity type. */
 export const entityListQuerySchema = z.object({
   type: entityTypeSchema.optional(),
+  /**
+   * Also return registry rows no current extraction mentions any more (ghosts
+   * left behind by reprocessing or deletes). Hidden by default so the list
+   * reflects what the recordings actually say today.
+   */
+  includeUnreferenced: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
 });
 export type EntityListQuery = z.infer<typeof entityListQuerySchema>;
 
