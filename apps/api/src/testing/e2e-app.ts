@@ -1,5 +1,6 @@
 import { INestApplication, VersioningType } from '@nestjs/common';
 import { Test, TestingModuleBuilder } from '@nestjs/testing';
+import { json, raw, urlencoded } from 'express';
 import { CLIP_EXTRACTOR, PyannoteAiClient } from '@plaudern/speaker-id';
 import { TRANSCRIPTION_PROVIDER } from '@plaudern/transcription';
 import { AUDIO_CONCATENATOR } from '@plaudern/ingestion';
@@ -33,7 +34,12 @@ export async function createE2eApp(
     .useValue(new FakeAudioConcatenator());
 
   const moduleRef = await customize(builder).compile();
-  const app = moduleRef.createNestApplication();
+  const app = moduleRef.createNestApplication({ bodyParser: false });
+  // Mirror main.ts's body parser setup (raised JSON limit + raw MIME support
+  // for the email-in webhook) so e2e specs see production request handling.
+  app.use(json({ limit: '25mb' }));
+  app.use(urlencoded({ extended: true, limit: '25mb' }));
+  app.use(raw({ type: ['message/rfc822', 'text/plain'], limit: '25mb' }));
   app.setGlobalPrefix('api');
   app.enableVersioning({ type: VersioningType.URI });
   await app.init();

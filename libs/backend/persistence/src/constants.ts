@@ -18,6 +18,7 @@ export const DEFAULT_USER_ID = '00000000-0000-0000-0000-000000000001';
 export const USER_OWNED_DATA_TABLES = [
   'inbox_items',
   'plaud_settings',
+  'email_settings',
   'voice_profiles',
   'calendar_feeds',
   'calendar_events',

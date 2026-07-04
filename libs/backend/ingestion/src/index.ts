@@ -11,6 +11,7 @@ export * from './adapters/file.adapter';
 export * from './adapters/web.adapter';
 export * from './web/readability';
 export * from './web/web-page-snapshot.service';
+export * from './adapters/email.adapter';
 export * from './merge/audio-concatenator';
 export * from './merge/extraction-stitcher';
 export * from './merge/recording-merge.job';

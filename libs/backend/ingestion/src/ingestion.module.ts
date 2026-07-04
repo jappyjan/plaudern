@@ -15,6 +15,7 @@ import { TextAdapter } from './adapters/text.adapter';
 import { FileAdapter } from './adapters/file.adapter';
 import { WebAdapter } from './adapters/web.adapter';
 import { WEB_SNAPSHOT_FETCH, WebPageSnapshotService } from './web/web-page-snapshot.service';
+import { EmailAdapter } from './adapters/email.adapter';
 import { AUDIO_CONCATENATOR, FfmpegAudioConcatenator } from './merge/audio-concatenator';
 import { RECORDING_MERGE_QUEUE } from './merge/recording-merge.job';
 import { RecordingMergeProcessor } from './merge/recording-merge.processor';
@@ -35,16 +36,18 @@ import { RecordingMergeController } from './merge/recording-merge.controller';
     TextAdapter,
     FileAdapter,
     WebAdapter,
+    EmailAdapter,
     {
       provide: SOURCE_ADAPTERS,
-      inject: [GenericAudioAdapter, PlaudAdapter, TextAdapter, FileAdapter, WebAdapter],
+      inject: [GenericAudioAdapter, PlaudAdapter, TextAdapter, FileAdapter, WebAdapter, EmailAdapter],
       useFactory: (
         audio: GenericAudioAdapter,
         plaud: PlaudAdapter,
         text: TextAdapter,
         file: FileAdapter,
         web: WebAdapter,
-      ) => [audio, plaud, text, file, web],
+        email: EmailAdapter,
+      ) => [audio, plaud, text, file, web, email],
     },
     // Plain global fetch behind a DI token so tests can fake the network.
     { provide: WEB_SNAPSHOT_FETCH, useValue: globalThis.fetch },

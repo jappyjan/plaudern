@@ -6,6 +6,7 @@ import {
   CalendarEventEntity,
   CalendarFeedEntity,
   ConsentSettingsEntity,
+  EmailSettingsEntity,
   ExtractedPayloadEntity,
   GeocodeCacheEntity,
   InboxItemEntity,
@@ -36,6 +37,7 @@ import { DropEmbeddingColumns1720000000012 } from './migrations/1720000000012-Dr
 import { GoogleCalendarFeeds1720000000013 } from './migrations/1720000000013-GoogleCalendarFeeds';
 import { CreateRecordingMerges1720000000014 } from './migrations/1720000000014-CreateRecordingMerges';
 import { ConsentGuardian1720000000015 } from './migrations/1720000000015-ConsentGuardian';
+import { CreateEmailSettings1720000000016 } from './migrations/1720000000016-CreateEmailSettings';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -43,6 +45,7 @@ export const ALL_ENTITIES = [
   ExtractedPayloadEntity,
   InboxTombstoneEntity,
   PlaudSettingsEntity,
+  EmailSettingsEntity,
   GeocodeCacheEntity,
   VoiceProfileEntity,
   SpeakerOccurrenceEntity,
@@ -76,6 +79,7 @@ export const ALL_MIGRATIONS = [
   GoogleCalendarFeeds1720000000013,
   CreateRecordingMerges1720000000014,
   ConsentGuardian1720000000015,
+  CreateEmailSettings1720000000016,
 ];
 
 /**
