@@ -5,6 +5,9 @@ import { Link } from 'react-router-dom';
 import { getItemTopics, retryItemTopics } from '../lib/api';
 import { TagIcon } from './icons';
 
+/** Classification is async — poll for the outcome while it is in flight. */
+const POLL_INTERVAL_MS = 10_000;
+
 /**
  * An item's topic assignments. Mirrors how the transcript/summary surface their
  * pipeline state: a spinner while classification runs, an error + retry when it
@@ -28,6 +31,16 @@ export function ItemTopicsCard({ itemId }: { itemId: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // While a classification is queued/processing (fresh item, or right after a
+  // retry — the retry endpoint answers `queued` immediately), keep refetching
+  // until it settles. Every poll stores a new `data` object, so this effect
+  // re-arms itself; the cleanup stops the chain on unmount or item change.
+  useEffect(() => {
+    if (!data || (data.status !== 'queued' && data.status !== 'processing')) return;
+    const timer = setTimeout(() => void load(), POLL_INTERVAL_MS);
+    return () => clearTimeout(timer);
+  }, [data, load]);
 
   const retry = async () => {
     setBusy(true);
