@@ -13,5 +13,7 @@ export * from './web/readability';
 export * from './web/web-page-snapshot.service';
 export * from './merge/audio-concatenator';
 export * from './merge/extraction-stitcher';
+export * from './merge/recording-merge.job';
+export * from './merge/recording-merge.processor';
 export * from './merge/recording-merge.service';
 export * from './merge/recording-merge.controller';

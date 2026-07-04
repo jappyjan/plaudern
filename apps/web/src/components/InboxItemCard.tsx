@@ -8,6 +8,7 @@ import { usePlaceName } from '../hooks/usePlaceName';
 import { AudioIcon, FileIcon, LinkIcon, LocationIcon, MicIcon, TextIcon, TrashIcon } from './icons';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 import { TranscriptionChip } from './TranscriptionChip';
+import { MergeChip } from './MergeChip';
 
 function SourceIcon({ sourceType }: { sourceType: SourceType }) {
   const className = 'h-5 w-5 shrink-0 text-default-500';
@@ -138,17 +139,23 @@ export function InboxItemCard({
                 <span className="max-w-32 truncate">{city ?? 'GPS'}</span>
               </Chip>
             )}
+            <MergeChip item={item} />
             <TranscriptionChip item={item} />
             {item.extractions.some((e) => e.kind === 'summary' && e.status === 'succeeded') && (
               <Chip size="sm" variant="flat" color="secondary">
                 summary
               </Chip>
             )}
-            {(item.mergedFromItemIds?.length ?? 0) > 0 && (
-              <Chip size="sm" variant="flat" color="warning">
-                merged
-              </Chip>
-            )}
+            {/* Provenance badge for a completed merge. Hidden while the merge is
+                still in progress or failed — MergeChip covers those states. */}
+            {(item.mergedFromItemIds?.length ?? 0) > 0 &&
+              !item.extractions.some(
+                (e) => e.kind === 'merge' && e.status !== 'succeeded',
+              ) && (
+                <Chip size="sm" variant="flat" color="warning">
+                  merged
+                </Chip>
+              )}
           </div>
         </CardBody>
       </Card>

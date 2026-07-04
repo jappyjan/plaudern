@@ -10,12 +10,14 @@
     "@plaudern/contracts": "workspace:*",
     "@plaudern/inbox": "workspace:*",
     "@plaudern/persistence": "workspace:*",
+    "@plaudern/queue": "workspace:*",
     "@plaudern/speaker-id": "workspace:*",
     "@plaudern/storage": "workspace:*",
     "@plaudern/transcription": "workspace:*"
   },
   "peerDependencies": {
     "@nestjs/common": "^11.0.0",
+    "@nestjs/config": "^4.0.0",
     "@nestjs/typeorm": "^11.0.0",
     "typeorm": "^1.0.0"
   }

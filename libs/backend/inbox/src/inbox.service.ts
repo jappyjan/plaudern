@@ -118,6 +118,27 @@ export class InboxService {
     this.events.emit(userId, { type: 'item.committed', itemId: inboxItemId });
   }
 
+  /**
+   * Finalize a merged item once its background audio concatenation lands:
+   * commit the (until now pending) source, record the true total duration, and
+   * announce the item so clients refetch and can play the merged audio. A
+   * merged item carries only the `tags.durationSeconds` metadata key, so
+   * replacing metadata wholesale is safe.
+   */
+  async markMergedItemReady(
+    userId: string,
+    inboxItemId: string,
+    byteSize: number,
+    totalDurationSeconds: number,
+  ): Promise<void> {
+    await this.sources.update({ inboxItemId }, { uploadStatus: 'committed', byteSize });
+    await this.items.update(
+      { id: inboxItemId },
+      { metadata: { tags: { durationSeconds: totalDurationSeconds } } },
+    );
+    this.events.emit(userId, { type: 'item.committed', itemId: inboxItemId });
+  }
+
   /** Append a new derived-artifact row in the `queued` state. */
   async addExtraction(
     inboxItemId: string,

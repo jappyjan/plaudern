@@ -97,6 +97,15 @@ describe('Merge & split recordings (e2e, Path A)', () => {
     expect(merged.sourceType).toBe('audio');
     expect((merged.metadata?.tags as { durationSeconds: number }).durationSeconds).toBe(32);
 
+    // The audio merge ran as a tracked step: the `merge` extraction is the
+    // progress indicator, ending `succeeded` once the concatenation lands. The
+    // inline queue runs it synchronously, so the source is already committed.
+    const mergeStep = latestOfKind(merged, 'merge')!;
+    expect(mergeStep.provider).toBe('ffmpeg');
+    expect(mergeStep.status).toBe('succeeded');
+    expect(merged.source?.uploadStatus).toBe('committed');
+    expect(merged.source?.byteSize).toBeGreaterThan(0);
+
     // Transcription was stitched (provider 'merged'), not re-run: contents
     // joined, segments shifted by the first part's 16s duration.
     const transcription = latestOfKind(merged, 'transcription')!;

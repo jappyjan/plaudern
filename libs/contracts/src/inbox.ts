@@ -14,7 +14,15 @@ export const extractionStatusSchema = z.enum([
 ]);
 export type ExtractionStatus = z.infer<typeof extractionStatusSchema>;
 
-export const extractionKindSchema = z.enum(['transcription', 'ocr', 'diarization', 'summary']);
+export const extractionKindSchema = z.enum([
+  'transcription',
+  'ocr',
+  'diarization',
+  'summary',
+  // The audio-concatenation step of a merge. Its status drives the "merging"
+  // progress indicator on the merged item while the background job runs.
+  'merge',
+]);
 export type ExtractionKind = z.infer<typeof extractionKindSchema>;
 
 /**
