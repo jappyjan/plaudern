@@ -7,7 +7,7 @@ import {
 } from '@plaudern/contracts';
 import type { ExtractedPayloadEntity, InboxItemEntity } from '@plaudern/persistence';
 import { InboxService } from '@plaudern/inbox';
-import { EmbeddingSearchService } from '@plaudern/embeddings';
+import { SearchService } from '@plaudern/search';
 import { IngestionService } from '@plaudern/ingestion';
 
 /** A single semantic-search hit as returned to an MCP client. */
@@ -62,23 +62,33 @@ export interface RecentItemResult {
 export class McpToolsService {
   constructor(
     private readonly inbox: InboxService,
-    private readonly search: EmbeddingSearchService,
+    private readonly search: SearchService,
     private readonly ingestion: IngestionService,
   ) {}
 
-  /** search_memory: semantic search over the user's transcript/summary chunks. */
+  /**
+   * search_memory: hybrid search (FTS + pgvector + RRF) over the user's memory
+   * (JJ-38). Backed by the shared SearchService, so agents get the same fused
+   * ranking as the web app and the semantic leg's graceful degradation for
+   * free. Response shape is unchanged; `snippet` is stripped of the keyword
+   * leg's `<mark>` highlight markers (agents want plain text), and `score` is
+   * the fused RRF score.
+   */
   async searchMemory(
     userId: string,
     args: { query: string; limit: number },
   ): Promise<SearchMemoryResult[]> {
-    const hits = await this.search.search(userId, args.query, args.limit);
-    return hits.map((hit) => ({
-      itemId: hit.inboxItemId,
-      source: hit.source,
-      snippet: hit.text,
-      score: Math.round(hit.score * 1000) / 1000,
-      startSeconds: hit.startSeconds,
-      endSeconds: hit.endSeconds,
+    const { results } = await this.search.search(userId, {
+      query: args.query,
+      limit: args.limit,
+    });
+    return results.map((r) => ({
+      itemId: r.itemId,
+      source: r.snippetSource ?? 'summary',
+      snippet: stripHighlights(r.snippet ?? ''),
+      score: r.fusedScore,
+      startSeconds: r.startSeconds,
+      endSeconds: r.endSeconds,
     }));
   }
 
@@ -140,6 +150,11 @@ export class McpToolsService {
     });
     return { itemId: item.id };
   }
+}
+
+/** Remove the keyword leg's `<mark>` highlight markers for plain-text agents. */
+function stripHighlights(text: string): string {
+  return text.replace(/<\/?mark>/g, '');
 }
 
 function latestSucceeded(

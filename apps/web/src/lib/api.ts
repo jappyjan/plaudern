@@ -98,6 +98,11 @@ import {
   type EntityConnectResponse,
   type EntityType,
   type RelationType,
+  searchResponseSchema,
+  similarResponseSchema,
+  type SearchRequest,
+  type SearchResponse,
+  type SimilarResponse,
 } from '@plaudern/contracts';
 
 /**
@@ -663,4 +668,23 @@ export function uploadToPresignedUrl(
     xhr.onerror = () => reject(new Error('upload failed (network error)'));
     xhr.send(blob);
   });
+}
+
+// ---- Hybrid search (JJ-38) ----
+
+/**
+ * Hybrid search over the whole memory: semantic (pgvector) + keyword (FTS) +
+ * structured filters, fused with RRF. POST because the request carries a nested
+ * filter object. `query` is optional when at least one filter is present.
+ */
+export async function searchMemory(req: SearchRequest): Promise<SearchResponse> {
+  return searchResponseSchema.parse(
+    await requestJson('/search', { method: 'POST', body: JSON.stringify(req) }),
+  );
+}
+
+/** "More like this": items nearest an item's embedding centroid (vector only). */
+export async function getSimilarItems(id: string, limit = 8): Promise<SimilarResponse> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  return similarResponseSchema.parse(await requestJson(`/inbox/${id}/similar?${query}`));
 }

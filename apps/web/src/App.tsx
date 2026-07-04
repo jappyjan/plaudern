@@ -13,6 +13,7 @@ import { TopicsPage } from './pages/TopicsPage';
 import { TopicDetailPage } from './pages/TopicDetailPage';
 import { EntitiesPage } from './pages/EntitiesPage';
 import { EntityDetailPage } from './pages/EntityDetailPage';
+import { SearchPage } from './pages/SearchPage';
 import { SharePage } from './pages/SharePage';
 import {
   CalendarIcon,
@@ -146,6 +147,7 @@ export function App() {
           <main className="flex-1 pt-4 pb-[calc(5rem+env(safe-area-inset-bottom))] md:pt-0 md:pb-0">
             <Routes>
               <Route path="/" element={<InboxPage />} />
+              <Route path="/search" element={<SearchPage />} />
               <Route path="/items/:id" element={<ItemDetailPage />} />
               <Route path="/calendar" element={<CalendarPage />} />
               <Route path="/contacts" element={<ContactsPage />} />
