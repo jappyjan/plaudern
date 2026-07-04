@@ -4,6 +4,7 @@ import {
   Entity,
   Index,
   PrimaryGeneratedColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 import type {
   ExtractionKind,
@@ -72,6 +73,15 @@ export class ExtractionRunEntity {
 
   @CreateDateColumn()
   createdAt!: Date;
+
+  /**
+   * Touched by TypeORM on every save/update — the per-batch counter update in
+   * the run loop doubles as a liveness heartbeat. A `running` startup run whose
+   * updatedAt is old is treated as stale (its process died mid-sweep) and is
+   * superseded on the next boot instead of wedging the kind forever.
+   */
+  @UpdateDateColumn()
+  updatedAt!: Date;
 
   @Column({ type: 'varchar', nullable: true })
   completedAt!: string | null;

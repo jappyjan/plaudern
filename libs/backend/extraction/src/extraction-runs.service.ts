@@ -19,6 +19,18 @@ import { evaluateReadiness, isActive, latestOfKind } from './readiness';
 const BATCH_SIZE = 25;
 
 /**
+ * A `running` startup run whose heartbeat (updatedAt, touched by the run
+ * loop's per-batch counter update) is older than this is considered stale:
+ * its process died mid-sweep (SIGKILL / OOM / redeploy) — a live sweep
+ * refreshes the row at least once per batch. Stale runs are marked failed and
+ * superseded by the next boot's sweep; without this, one crashed sweep would
+ * block its kind on every future boot. Generous enough that a slow batch
+ * (e.g. inline-queue local dev, where enqueue processes synchronously) is not
+ * mistaken for a crash.
+ */
+export const STARTUP_RUN_STALE_MS = 15 * 60 * 1000;
+
+/**
  * Backfill runs: "re-run `kind@version` over past items" (VISION §8). A run
  * walks the user's items and, for every item where the kind applies and its
  * dependencies are satisfied, appends a fresh extraction row through the
@@ -83,26 +95,48 @@ export class ExtractionRunsService {
    * a fresh attempt wherever the step is missing or the latest attempt failed
    * / predates the current extractor version.
    *
-   * Idempotency: if a `startup` run for this kind from a previous boot is still
-   * `running`, no new run is started (the previous sweep is still catching
-   * items up) — that existing run is returned instead. Returns null when the
-   * kind is unknown or its extractor is disabled on this server.
+   * Idempotency: if a `startup` run for this kind is still `running` AND its
+   * heartbeat is fresh (another replica's live sweep), no new run is started —
+   * that run is returned instead. A `running` run whose heartbeat is older
+   * than {@link STARTUP_RUN_STALE_MS} is a leftover of a process that died
+   * mid-sweep; it is marked failed and a fresh run is started, so a crash or
+   * hard redeploy never wedges the kind. Returns null when the kind is unknown
+   * or its extractor is disabled on this server.
    */
   async startStartupBackfill(kind: ExtractionKind): Promise<ExtractionRunDto | null> {
     const extractor = this.graph.get(kind);
     if (!extractor || !extractor.enabled()) return null;
 
-    // Skip-if-running: don't stack a second startup sweep for a kind whose
-    // previous-boot sweep hasn't finished yet.
-    const open = await this.runs.findOne({
+    // Skip-if-running with a staleness lease: a live sweep (this or another
+    // replica) heartbeats updatedAt per batch; only such a run blocks a new
+    // sweep. Anything older is a crash leftover and gets superseded.
+    const openRuns = await this.runs.find({
       where: { kind, trigger: 'startup', status: 'running' },
       order: { createdAt: 'DESC' },
     });
-    if (open) {
+    const now = Date.now();
+    const live = openRuns.find(
+      (run) => now - new Date(run.updatedAt).getTime() < STARTUP_RUN_STALE_MS,
+    );
+    if (live) {
       this.logger.log(
-        `startup backfill '${kind}': a previous run (${open.id}) is still running — skipping`,
+        `startup backfill '${kind}': a previous run (${live.id}) is still running — skipping`,
       );
-      return toRunDto(open);
+      return toRunDto(live);
+    }
+    for (const stale of openRuns) {
+      // Guard on status so we never clobber a run that finished in between.
+      await this.runs.update(
+        { id: stale.id, status: 'running' },
+        {
+          status: 'failed',
+          error: 'stale: no heartbeat — the process died mid-sweep; superseded by a reboot sweep',
+          completedAt: new Date().toISOString(),
+        },
+      );
+      this.logger.warn(
+        `startup backfill '${kind}': marked stale run ${stale.id} as failed (superseded by reboot)`,
+      );
     }
 
     const run = await this.runs.save(
@@ -137,10 +171,14 @@ export class ExtractionRunsService {
     return toRunDto(run);
   }
 
-  async listRuns(userId: string): Promise<ExtractionRunDto[]> {
-    // The user's own runs plus the system-wide startup sweeps (userId null).
+  /**
+   * The user's own runs; system-wide startup sweeps (userId null) only when
+   * `includeSystem` is set — otherwise 7 kinds × a few reboots would crowd the
+   * take-50 window and push the user's own manual runs out of the listing.
+   */
+  async listRuns(userId: string, includeSystem = false): Promise<ExtractionRunDto[]> {
     const rows = await this.runs.find({
-      where: [{ userId }, { userId: IsNull() }],
+      where: includeSystem ? [{ userId }, { userId: IsNull() }] : { userId },
       order: { createdAt: 'DESC' },
       take: 50,
     });

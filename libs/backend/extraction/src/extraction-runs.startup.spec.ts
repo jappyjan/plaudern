@@ -140,11 +140,10 @@ describe('ExtractionRunsService — startup backfill scan', () => {
     expect(await dataSource.getRepository(ExtractionRunEntity).count()).toBe(0);
   });
 
-  it('skip-if-running: does not stack a second sweep while a prior startup run is still running', async () => {
-    const service = buildService([fakeExtractor('transcription', 1, enqueued)]);
+  /** Seed an open startup run row (fresh heartbeat, set by save()). */
+  async function seedRunningStartupRun(): Promise<ExtractionRunEntity> {
     const runs = dataSource.getRepository(ExtractionRunEntity);
-
-    const prior = await runs.save(
+    return runs.save(
       runs.create({
         userId: null,
         kind: 'transcription',
@@ -156,10 +155,75 @@ describe('ExtractionRunsService — startup backfill scan', () => {
         status: 'running',
       }),
     );
+  }
+
+  it('skip-if-running: a prior startup run with a FRESH heartbeat blocks a new sweep', async () => {
+    const service = buildService([fakeExtractor('transcription', 1, enqueued)]);
+    const runs = dataSource.getRepository(ExtractionRunEntity);
+    const prior = await seedRunningStartupRun(); // save() stamps updatedAt = now
 
     const dto = await service.startStartupBackfill('transcription');
 
     expect(dto?.id).toBe(prior.id); // returns the in-flight run, not a new one
     expect(await runs.count()).toBe(1); // no second run created
+  });
+
+  it('reboot recovery: a STALE running startup run (dead heartbeat) is failed and superseded', async () => {
+    const service = buildService([fakeExtractor('transcription', 1, enqueued)]);
+    const runs = dataSource.getRepository(ExtractionRunEntity);
+    const item = await createItem(USER_A);
+    const stale = await seedRunningStartupRun();
+    // Age the heartbeat past the staleness lease — the crash scenario: the
+    // previous process was SIGKILLed mid-sweep and never reached finish().
+    await dataSource.query(
+      `UPDATE "extraction_runs" SET "updatedAt" = datetime('now', '-1 hour') WHERE "id" = ?`,
+      [stale.id],
+    );
+
+    const dto = await service.startStartupBackfill('transcription');
+
+    // A NEW run was started (the kind is not wedged)...
+    expect(dto).not.toBeNull();
+    expect(dto?.id).not.toBe(stale.id);
+    const fresh = await waitForRun(dto!.id);
+    expect(fresh.status).toBe('completed');
+    expect(enqueued).toEqual([item]);
+    // ...and the stale leftover is marked failed, not left 'running' forever.
+    const superseded = await runs.findOneOrFail({ where: { id: stale.id } });
+    expect(superseded.status).toBe('failed');
+    expect(superseded.error).toContain('stale');
+    expect(superseded.completedAt).not.toBeNull();
+  });
+
+  describe('listRuns visibility', () => {
+    it('hides system startup runs from the default per-user listing, shows them with includeSystem', async () => {
+      const service = buildService([fakeExtractor('transcription', 1, enqueued)]);
+      const runs = dataSource.getRepository(ExtractionRunEntity);
+      await seedRunningStartupRun(); // system-wide (userId null)
+      await runs.save(
+        runs.create({
+          userId: USER_A,
+          kind: 'transcription',
+          trigger: 'manual',
+          targetVersion: 1,
+          force: false,
+          occurredFrom: null,
+          occurredTo: null,
+          status: 'completed',
+        }),
+      );
+
+      const own = await service.listRuns(USER_A);
+      expect(own).toHaveLength(1);
+      expect(own[0].trigger).toBe('manual');
+
+      const withSystem = await service.listRuns(USER_A, true);
+      expect(withSystem).toHaveLength(2);
+      expect(withSystem.map((r) => r.trigger).sort()).toEqual(['manual', 'startup']);
+
+      // Another user never sees USER_A's manual run either way.
+      const other = await service.listRuns(USER_B);
+      expect(other).toHaveLength(0);
+    });
   });
 });
