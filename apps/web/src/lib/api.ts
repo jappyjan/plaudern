@@ -74,6 +74,16 @@ import {
   type SendTestNotificationRequest,
   type UpdateNotificationPreferencesRequest,
   type VapidPublicKeyResponse,
+  itemTopicsResponseSchema,
+  topicListResponseSchema,
+  topicItemsResponseSchema,
+  topicSchema,
+  type CreateTopicRequest,
+  type ItemTopicsResponse,
+  type TopicDto,
+  type TopicItemsResponse,
+  type TopicListResponse,
+  type UpdateTopicRequest,
 } from '@plaudern/contracts';
 
 /**
@@ -484,6 +494,46 @@ export async function reconnectGoogle(pendingId: string): Promise<{ updated: num
     method: 'POST',
     body: JSON.stringify({ pendingId }),
   })) as { updated: number };
+}
+
+/** The editable topic/project taxonomy items are classified against. */
+export async function listTopics(): Promise<TopicListResponse> {
+  return topicListResponseSchema.parse(await requestJson('/topics'));
+}
+
+export async function createTopic(req: CreateTopicRequest): Promise<TopicDto> {
+  return topicSchema.parse(
+    await requestJson('/topics', { method: 'POST', body: JSON.stringify(req) }),
+  );
+}
+
+/** Partial update: rename, edit the description, or (un)archive a topic. */
+export async function updateTopic(id: string, req: UpdateTopicRequest): Promise<TopicDto> {
+  return topicSchema.parse(
+    await requestJson(`/topics/${id}`, { method: 'PATCH', body: JSON.stringify(req) }),
+  );
+}
+
+/** Delete a topic; its assignments on already-classified items are removed too. */
+export async function deleteTopic(id: string): Promise<void> {
+  return requestVoid(`/topics/${id}`, { method: 'DELETE' });
+}
+
+/** The inbox items classified under a topic, newest occurrence first. */
+export async function listTopicItems(id: string): Promise<TopicItemsResponse> {
+  return topicItemsResponseSchema.parse(await requestJson(`/topics/${id}/items`));
+}
+
+/** An item's topic assignments plus the classification pipeline status. */
+export async function getItemTopics(itemId: string): Promise<ItemTopicsResponse> {
+  return itemTopicsResponseSchema.parse(await requestJson(`/inbox/${itemId}/topics`));
+}
+
+/** Re-run zero-shot topic classification for an item; returns the refreshed read model. */
+export async function retryItemTopics(itemId: string): Promise<ItemTopicsResponse> {
+  return itemTopicsResponseSchema.parse(
+    await requestJson(`/inbox/${itemId}/topics/retry`, { method: 'POST' }),
+  );
 }
 
 /**

@@ -32,6 +32,7 @@ import { latestTranscription, TranscriptionChip } from '../components/Transcript
 import { LinkEventModal } from '../components/calendar/LinkEventModal';
 import { SpeakerTranscript } from '../components/SpeakerTranscript';
 import { SummaryView } from '../components/SummaryView';
+import { ItemTopicsCard } from '../components/ItemTopicsCard';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import {
   BackIcon,
@@ -372,6 +373,8 @@ export function ItemDetailPage() {
           </Tabs>
         </CardBody>
       </Card>
+
+      <ItemTopicsCard itemId={item.id} />
 
       <Card>
         <CardHeader className="flex items-center justify-between pb-0">

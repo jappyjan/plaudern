@@ -9,8 +9,10 @@ import { SettingsPage } from './pages/SettingsPage';
 import { CalendarPage } from './pages/CalendarPage';
 import { ContactsPage } from './pages/ContactsPage';
 import { ContactDetailPage } from './pages/ContactDetailPage';
+import { TopicsPage } from './pages/TopicsPage';
+import { TopicDetailPage } from './pages/TopicDetailPage';
 import { SharePage } from './pages/SharePage';
-import { CalendarIcon, GearIcon, MoonIcon, PeopleIcon, SunIcon } from './components/icons';
+import { CalendarIcon, GearIcon, MoonIcon, PeopleIcon, SunIcon, TagIcon } from './components/icons';
 import { BottomNav } from './components/BottomNav';
 
 export type Theme = 'light' | 'dark';
@@ -101,6 +103,16 @@ export function App() {
               </Button>
               <Button
                 as={Link}
+                to="/topics"
+                isIconOnly
+                variant="light"
+                size="sm"
+                aria-label="Topics"
+              >
+                <TagIcon className="h-5 w-5" />
+              </Button>
+              <Button
+                as={Link}
                 to="/settings"
                 isIconOnly
                 variant="light"
@@ -118,6 +130,8 @@ export function App() {
               <Route path="/calendar" element={<CalendarPage />} />
               <Route path="/contacts" element={<ContactsPage />} />
               <Route path="/contacts/:id" element={<ContactDetailPage />} />
+              <Route path="/topics" element={<TopicsPage />} />
+              <Route path="/topics/:id" element={<TopicDetailPage />} />
               {/* PWA share-target landing (manifest share_target → GET /share). */}
               <Route path="/share" element={<SharePage />} />
               <Route

@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { CalendarIcon, GearIcon, InboxIcon, PeopleIcon } from './icons';
+import { CalendarIcon, GearIcon, InboxIcon, PeopleIcon, TagIcon } from './icons';
 
 interface NavItem {
   to: string;
@@ -29,6 +29,12 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Contacts',
     Icon: PeopleIcon,
     isActive: (pathname) => pathname.startsWith('/contacts'),
+  },
+  {
+    to: '/topics',
+    label: 'Topics',
+    Icon: TagIcon,
+    isActive: (pathname) => pathname.startsWith('/topics'),
   },
   {
     to: '/settings',
