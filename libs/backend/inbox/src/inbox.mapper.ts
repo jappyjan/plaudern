@@ -54,5 +54,14 @@ export function toInboxItemDto(entity: InboxItemEntity): InboxItemDto {
       .slice()
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
       .map(toExtractedPayloadDto),
+    // Optional: many call sites load items without the mergeSources relation.
+    ...(entity.mergeSources?.length
+      ? {
+          mergedFromItemIds: entity.mergeSources
+            .slice()
+            .sort((a, b) => a.position - b.position)
+            .map((link) => link.sourceItemId),
+        }
+      : {}),
   };
 }

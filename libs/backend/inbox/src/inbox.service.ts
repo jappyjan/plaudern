@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import type {
@@ -12,6 +12,7 @@ import {
   InboxItemEntity,
   InboxTombstoneEntity,
   RecordingEventLinkEntity,
+  RecordingMergeEntity,
   SourcePayloadEntity,
   SpeakerOccurrenceEntity,
   VoiceProfileEntity,
@@ -54,6 +55,8 @@ export class InboxService {
     private readonly extractions: Repository<ExtractedPayloadEntity>,
     @InjectRepository(InboxTombstoneEntity)
     private readonly tombstones: Repository<InboxTombstoneEntity>,
+    @InjectRepository(RecordingMergeEntity)
+    private readonly merges: Repository<RecordingMergeEntity>,
     private readonly events: InboxEventsService,
     private readonly storage: StorageService,
   ) {}
@@ -197,7 +200,7 @@ export class InboxService {
   async getItem(userId: string, id: string): Promise<InboxItemEntity> {
     const item = await this.items.findOne({
       where: { id, userId },
-      relations: { source: true, extractions: true },
+      relations: { source: true, extractions: true, mergeSources: true },
     });
     if (!item) throw new NotFoundException('inbox item not found');
     return item;
@@ -213,13 +216,28 @@ export class InboxService {
    * blob cleanup. Blob deletion runs after the commit because S3 cannot join
    * the transaction — an orphaned blob is an invisible leak, whereas a deleted
    * blob under a still-live row would be user-visible breakage.
+   *
+   * Merge interplay: a recording hidden inside a merge cannot be deleted
+   * (split first — otherwise the split would be partial). Deleting a MERGED
+   * item removes its links too, so the untouched sources reappear in the
+   * list; their ids are returned so callers (the split endpoint) can report
+   * them.
    */
-  async deleteItem(userId: string, id: string): Promise<void> {
+  async deleteItem(userId: string, id: string): Promise<{ restoredItemIds: string[] }> {
     const item = await this.getItem(userId, id);
+    if (await this.merges.exists({ where: { sourceItemId: id } })) {
+      throw new ConflictException(
+        'this recording is part of a merged recording; split the merge first',
+      );
+    }
     const storageKeys = [
       item.source?.storageKey,
       ...item.extractions.map((extraction) => extraction.contentStorageKey),
     ].filter((key): key is string => Boolean(key));
+    const restoredItemIds = (item.mergeSources ?? [])
+      .slice()
+      .sort((a, b) => a.position - b.position)
+      .map((link) => link.sourceItemId);
 
     // Children are deleted explicitly (instead of relying on FK cascades) so
     // the behavior is identical on Postgres and the sqlite test database.
@@ -230,12 +248,16 @@ export class InboxService {
         deletedItemId: item.id,
         sourceType: item.sourceType,
       });
+      await em.getRepository(RecordingMergeEntity).delete({ mergedItemId: item.id });
       await em.getRepository(ExtractedPayloadEntity).delete({ inboxItemId: item.id });
       await em.getRepository(SourcePayloadEntity).delete({ inboxItemId: item.id });
       await em.getRepository(InboxItemEntity).delete({ id: item.id });
     });
 
     this.events.emit(userId, { type: 'item.deleted', itemId: item.id });
+    for (const restoredId of restoredItemIds) {
+      this.events.emit(userId, { type: 'item.created', itemId: restoredId });
+    }
 
     const results = await Promise.allSettled(
       storageKeys.map((key) => this.storage.deleteObject(key)),
@@ -245,6 +267,8 @@ export class InboxService {
         this.logger.warn(`failed to delete blob ${storageKeys[index]}: ${result.reason}`);
       }
     });
+
+    return { restoredItemIds };
   }
 
   /**
@@ -274,6 +298,7 @@ export class InboxService {
     // on Postgres and the sqlite test database — mirrors deleteItem(). Order
     // respects FK direction: occurrences/links/payloads before their parents.
     await this.items.manager.transaction(async (em) => {
+      await em.getRepository(RecordingMergeEntity).delete({ userId });
       if (itemIds.length > 0) {
         await em.getRepository(SpeakerOccurrenceEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(RecordingEventLinkEntity).delete({ inboxItemId: In(itemIds) });
@@ -305,11 +330,15 @@ export class InboxService {
   async getItemById(id: string): Promise<InboxItemEntity | null> {
     return this.items.findOne({
       where: { id },
-      relations: { source: true, extractions: true },
+      relations: { source: true, extractions: true, mergeSources: true },
     });
   }
 
-  /** Keyset pagination, newest first, over (ingestedAt, id). */
+  /**
+   * Keyset pagination, newest first, over (ingestedAt, id). Recordings that
+   * were merged into another recording are hidden (not deleted) — they come
+   * back the moment the merged item is split or deleted.
+   */
   async listItems(
     userId: string,
     limit: number,
@@ -319,7 +348,17 @@ export class InboxService {
       .createQueryBuilder('item')
       .leftJoinAndSelect('item.source', 'source')
       .leftJoinAndSelect('item.extractions', 'extractions')
+      .leftJoinAndSelect('item.mergeSources', 'mergeSources')
       .where('item.userId = :userId', { userId })
+      .andWhere((sub) => {
+        const hidden = sub
+          .subQuery()
+          .select('1')
+          .from(RecordingMergeEntity, 'rm')
+          .where('rm.sourceItemId = item.id')
+          .getQuery();
+        return `NOT EXISTS ${hidden}`;
+      })
       .orderBy('item.ingestedAt', 'DESC')
       .addOrderBy('item.id', 'DESC')
       .take(limit + 1);

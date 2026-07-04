@@ -10,6 +10,7 @@ import {
 import type { SourceType } from '@plaudern/contracts';
 import { SourcePayloadEntity } from './source-payload.entity';
 import { ExtractedPayloadEntity } from './extracted-payload.entity';
+import { RecordingMergeEntity } from './recording-merge.entity';
 
 /**
  * The inbox envelope — the source of truth. Rows are never edited in place:
@@ -56,4 +57,8 @@ export class InboxItemEntity {
 
   @OneToMany(() => ExtractedPayloadEntity, (extracted) => extracted.inboxItem)
   extractions!: ExtractedPayloadEntity[];
+
+  /** Present (non-empty) only on items produced by merging other recordings. */
+  @OneToMany(() => RecordingMergeEntity, (link) => link.mergedItem)
+  mergeSources!: RecordingMergeEntity[];
 }

@@ -2,8 +2,10 @@ import { INestApplication, VersioningType } from '@nestjs/common';
 import { Test, TestingModuleBuilder } from '@nestjs/testing';
 import { CLIP_EXTRACTOR, PyannoteAiClient } from '@plaudern/speaker-id';
 import { TRANSCRIPTION_PROVIDER } from '@plaudern/transcription';
+import { AUDIO_CONCATENATOR } from '@plaudern/ingestion';
 import { AppModule } from '../app/app.module';
 import {
+  FakeAudioConcatenator,
   FakeClipExtractor,
   FakePyannoteAiClient,
   FakeTranscriptionProvider,
@@ -26,7 +28,9 @@ export async function createE2eApp(
     .overrideProvider(PyannoteAiClient)
     .useValue(new FakePyannoteAiClient())
     .overrideProvider(CLIP_EXTRACTOR)
-    .useValue(new FakeClipExtractor());
+    .useValue(new FakeClipExtractor())
+    .overrideProvider(AUDIO_CONCATENATOR)
+    .useValue(new FakeAudioConcatenator());
 
   const moduleRef = await customize(builder).compile();
   const app = moduleRef.createNestApplication();

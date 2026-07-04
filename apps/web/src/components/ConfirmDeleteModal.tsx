@@ -11,6 +11,7 @@ interface ConfirmDeleteModalProps {
   isOpen: boolean;
   title?: string;
   message?: string;
+  confirmLabel?: string;
   isDeleting: boolean;
   error: string | null;
   onConfirm: () => void;
@@ -22,6 +23,7 @@ export function ConfirmDeleteModal({
   isOpen,
   title = 'Delete item?',
   message = 'This permanently removes the recording, its transcription and the stored file. This cannot be undone.',
+  confirmLabel = 'Delete',
   isDeleting,
   error,
   onConfirm,
@@ -40,7 +42,7 @@ export function ConfirmDeleteModal({
             Cancel
           </Button>
           <Button color="danger" onPress={onConfirm} isLoading={isDeleting}>
-            Delete
+            {confirmLabel}
           </Button>
         </ModalFooter>
       </ModalContent>

@@ -12,6 +12,7 @@ import {
   PasskeyCredentialEntity,
   PlaudSettingsEntity,
   RecordingEventLinkEntity,
+  RecordingMergeEntity,
   SourcePayloadEntity,
   SpeakerOccurrenceEntity,
   SummarizationSettingsEntity,
@@ -32,6 +33,7 @@ import { PyannoteAiVoiceprints1720000000010 } from './migrations/1720000000010-P
 import { CreateSummarizationSettings1720000000011 } from './migrations/1720000000011-CreateSummarizationSettings';
 import { DropEmbeddingColumns1720000000012 } from './migrations/1720000000012-DropEmbeddingColumns';
 import { GoogleCalendarFeeds1720000000013 } from './migrations/1720000000013-GoogleCalendarFeeds';
+import { CreateRecordingMerges1720000000014 } from './migrations/1720000000014-CreateRecordingMerges';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -45,6 +47,7 @@ export const ALL_ENTITIES = [
   CalendarFeedEntity,
   CalendarEventEntity,
   RecordingEventLinkEntity,
+  RecordingMergeEntity,
   UserEntity,
   PasskeyCredentialEntity,
   AuthSessionEntity,
@@ -68,6 +71,7 @@ export const ALL_MIGRATIONS = [
   CreateSummarizationSettings1720000000011,
   DropEmbeddingColumns1720000000012,
   GoogleCalendarFeeds1720000000013,
+  CreateRecordingMerges1720000000014,
 ];
 
 /**

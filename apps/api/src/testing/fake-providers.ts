@@ -16,6 +16,7 @@ import type {
   SummarizationProvider,
   SummarizationResult,
 } from '@plaudern/summarization';
+import type { AudioConcatenator, ConcatResult } from '@plaudern/ingestion';
 
 /**
  * Deterministic test doubles for the hosted-API pipeline. The fakes share one
@@ -74,6 +75,22 @@ export class FakeClipExtractor implements ClipExtractor {
           ? CONSTANT_VOICE
           : Buffer.from(`fake-voice-${storageKey}-${speaker.label}`),
     }));
+  }
+}
+
+/**
+ * ffmpeg-free concatenator double, injected via
+ * overrideProvider(AUDIO_CONCATENATOR). Every part is reported as 16 s long,
+ * matching the fakes' shared world model (0–8 s constant voice, 8–16 s
+ * per-recording voice), so merged segment offsets are exactly 16 * i.
+ */
+export class FakeAudioConcatenator implements AudioConcatenator {
+  async concat(storageKeys: string[]): Promise<ConcatResult> {
+    return {
+      bytes: Buffer.from(`fake-merged:${storageKeys.join('+')}`),
+      contentType: 'audio/mpeg',
+      durationsSeconds: storageKeys.map(() => 16),
+    };
   }
 }
 
