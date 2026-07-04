@@ -118,12 +118,21 @@ export const MAX_GRAPH_DEPTH = 3;
  * shortest paths (≤ maxDepth hops) from the first id to each of the others.
  */
 export const entityConnectQuerySchema = z.object({
-  /** Comma-separated list of 2–3 entity ids. */
+  /** Comma-separated list of 2–3 distinct entity ids. */
   ids: z
     .string()
     .transform((value) => value.split(',').map((id) => id.trim()).filter(Boolean))
-    .pipe(z.array(z.string().uuid()).min(2).max(3)),
+    .pipe(z.array(z.string().uuid()).min(2).max(3))
+    .refine((ids) => new Set(ids).size >= 2, 'ids must contain at least 2 distinct entity ids'),
   maxDepth: z.coerce.number().int().min(1).max(MAX_GRAPH_DEPTH).default(MAX_GRAPH_DEPTH),
+  /**
+   * Whether paths may traverse weak implicit co-occurrence edges. Pass `false`
+   * to restrict the traversal to LLM-evidenced edges only.
+   */
+  includeCooccurrence: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
 });
 export type EntityConnectQuery = z.infer<typeof entityConnectQuerySchema>;
 
@@ -132,5 +141,11 @@ export const entityConnectResponseSchema = z.object({
   relations: z.array(entityRelationEdgeSchema),
   /** True iff every requested entity was reachable from the first one. */
   connected: z.boolean(),
+  /**
+   * True when the traversal hit its safety budget (visited nodes / loaded
+   * evidence rows) before exhausting maxDepth — paths through extremely dense
+   * hubs may then be missed even though they exist.
+   */
+  truncated: z.boolean(),
 });
 export type EntityConnectResponse = z.infer<typeof entityConnectResponseSchema>;

@@ -53,7 +53,12 @@ export class EntitiesController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues[0]?.message ?? 'invalid query');
     }
-    return this.graph.connect(user.id, parsed.data.ids, parsed.data.maxDepth);
+    return this.graph.connect(
+      user.id,
+      parsed.data.ids,
+      parsed.data.maxDepth,
+      parsed.data.includeCooccurrence,
+    );
   }
 
   @Get(':id')

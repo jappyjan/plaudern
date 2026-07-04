@@ -9,7 +9,11 @@ import {
 } from '@plaudern/persistence';
 import type { ExtractedRelation } from '@plaudern/contracts';
 import { normalize } from './entities-registry.service';
-import { COOCCURRENCE_CONFIDENCE, EntityGraphService } from './entity-graph.service';
+import {
+  COOCCURRENCE_CONFIDENCE,
+  EntityGraphService,
+  MAX_GRAPH_VISITED_NODES,
+} from './entity-graph.service';
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
 const OTHER_USER = '00000000-0000-0000-0000-0000000000bb';
@@ -185,6 +189,23 @@ describe('EntityGraphService', () => {
 
       expect(await dataSource.getRepository(EntityRelationEntity).count()).toBe(1);
     });
+
+    it('tolerates losing the unique-index race on an evidence row', async () => {
+      const a = await createEntity('Alice');
+      const b = await createEntity('Bob');
+      const batch: ExtractedRelation[] = [{ type: 'owns', source: 'Alice', target: 'Bob' }];
+      const { itemId, extractionId } = await ingestBatch(batch, [a, b]);
+
+      // Simulate a concurrent writer: the pre-save existence check sees
+      // nothing, so save() hits the unique index — ingest must swallow it.
+      const repo = dataSource.getRepository(EntityRelationEntity);
+      jest.spyOn(repo, 'findOne').mockResolvedValue(null);
+      await expect(
+        service.ingest(USER, itemId, extractionId, batch, [a, b]),
+      ).resolves.toBe(1);
+      expect(await repo.count()).toBe(1);
+      jest.restoreAllMocks();
+    });
   });
 
   describe('edgesFor (aggregation + supersede)', () => {
@@ -349,6 +370,72 @@ describe('EntityGraphService', () => {
       await expect(service.connect(USER, [a.id, foreign.id], 3)).rejects.toBeInstanceOf(
         NotFoundException,
       );
+    });
+
+    it('excludes weak co-occurrence edges when includeCooccurrence=false', async () => {
+      const a = await createEntity('Alice');
+      const b = await createEntity('Bob');
+      // No explicit relation — the pair is only linked by co-occurrence.
+      await ingestBatch([], [a, b]);
+
+      expect((await service.connect(USER, [a.id, b.id], 3)).connected).toBe(true);
+      const strict = await service.connect(USER, [a.id, b.id], 3, false);
+      expect(strict.connected).toBe(false);
+      expect(strict.relations).toHaveLength(0);
+    });
+
+    it('stops at the traversal budget on a dense hub and reports truncated', async () => {
+      const { randomUUID } = await import('node:crypto');
+      const hub = await createEntity('Hub');
+      const itemId = await createItem();
+      const extractionId = await createRelationsExtraction(
+        itemId,
+        new Date('2026-07-01T10:00:00Z'),
+      );
+
+      // Seed a hub with more direct neighbors than the visited-node budget,
+      // in bulk (insert, not save) so the test stays fast.
+      const fanOut = MAX_GRAPH_VISITED_NODES + 50;
+      const neighborIds = Array.from({ length: fanOut }, () => randomUUID());
+      const entityRepo = dataSource.getRepository(EntityRegistryEntity);
+      const relationRepo = dataSource.getRepository(EntityRelationEntity);
+      for (let i = 0; i < fanOut; i += 100) {
+        await entityRepo.insert(
+          neighborIds.slice(i, i + 100).map((id, j) => ({
+            id,
+            userId: USER,
+            type: 'person' as const,
+            canonicalName: `Neighbor ${i + j}`,
+            normalizedName: `neighbor ${i + j}`,
+            aliases: [],
+            voiceProfileId: null,
+          })),
+        );
+        await relationRepo.insert(
+          neighborIds.slice(i, i + 100).map((id) => ({
+            userId: USER,
+            inboxItemId: itemId,
+            extractionId,
+            sourceEntityId: hub.id,
+            targetEntityId: id,
+            relationType: 'discussed_with' as const,
+            label: null,
+            confidence: null,
+            origin: 'llm' as const,
+          })),
+        );
+      }
+
+      const findSpy = jest.spyOn(relationRepo, 'find');
+      const graph = await service.connect(USER, [hub.id, neighborIds[0]], 3);
+
+      // The direct edge is found, but the expansion hit the node budget…
+      expect(graph.connected).toBe(true);
+      expect(graph.truncated).toBe(true);
+      // …and the number of relation queries stays bounded (chunked frontier,
+      // one expansion per depth, no runaway fan-out).
+      expect(findSpy.mock.calls.length).toBeLessThanOrEqual(6);
+      findSpy.mockRestore();
     });
 
     it('never traverses another user\'s edges', async () => {

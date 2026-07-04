@@ -14,7 +14,7 @@ import {
   EntityRelationEntity,
   ExtractedPayloadEntity,
 } from '@plaudern/persistence';
-import { normalize } from './entities-registry.service';
+import { isUniqueViolation, normalize } from './entities-registry.service';
 
 /**
  * Relation types whose direction carries no meaning; their endpoints are
@@ -27,6 +27,18 @@ const SYMMETRIC_RELATION_TYPES: ReadonlySet<RelationType> = new Set([
 
 /** Confidence recorded on implicit same-recording co-occurrence edges. */
 export const COOCCURRENCE_CONFIDENCE = 0.2;
+
+/**
+ * Safety budget for connect()'s BFS: co-occurrence edges are O(N²) per
+ * recording, so a hub entity can fan out enormously. Once the traversal has
+ * visited this many nodes (or loaded MAX_GRAPH_EVIDENCE_ROWS rows) it stops
+ * expanding and reports `truncated: true` instead of unbounded queries.
+ */
+export const MAX_GRAPH_VISITED_NODES = 500;
+export const MAX_GRAPH_EVIDENCE_ROWS = 5_000;
+
+/** Ceiling on a single SQL IN() list, well below Postgres's bind-param limit. */
+export const GRAPH_IN_CHUNK_SIZE = 500;
 
 interface EvidenceCandidate {
   sourceEntityId: string;
@@ -173,15 +185,18 @@ export class EntityGraphService {
 
   /**
    * The subgraph connecting 2–3 entities: bounded multi-source BFS (≤ maxDepth
-   * hops, each expansion user-scoped), then the shortest path from the first
-   * entity to each of the others, unioned. `connected` is false when some
-   * requested entity is unreachable within maxDepth — the paths that do exist
-   * are still returned.
+   * hops, each expansion user-scoped and chunked), then the shortest path from
+   * the first entity to each of the others, unioned. `connected` is false when
+   * some requested entity is unreachable within maxDepth — the paths that do
+   * exist are still returned. The traversal carries a hard safety budget
+   * (MAX_GRAPH_VISITED_NODES / MAX_GRAPH_EVIDENCE_ROWS); hitting it stops the
+   * expansion and sets `truncated: true`.
    */
   async connect(
     userId: string,
     ids: string[],
     maxDepth: number,
+    includeCooccurrence = true,
   ): Promise<EntityConnectResponse> {
     const seedIds = [...new Set(ids)];
     const seeds = await this.entities.find({ where: { id: In(seedIds), userId } });
@@ -194,20 +209,35 @@ export class EntityGraphService {
     let frontier = seedIds;
     const evidence: EntityRelationEntity[] = [];
     const seenRowIds = new Set<string>();
-    for (let depth = 0; depth < maxDepth && frontier.length > 0; depth += 1) {
-      const rows = await this.relations.find({
-        where: [
-          { userId, sourceEntityId: In(frontier) },
-          { userId, targetEntityId: In(frontier) },
-        ],
-      });
+    let truncated = false;
+    for (let depth = 0; depth < maxDepth && frontier.length > 0 && !truncated; depth += 1) {
+      const remaining = MAX_GRAPH_EVIDENCE_ROWS - evidence.length;
+      if (remaining <= 0) {
+        truncated = true;
+        break;
+      }
+      const { rows, overflowed } = await this.evidenceTouching(
+        userId,
+        frontier,
+        includeCooccurrence,
+        remaining,
+      );
+      if (overflowed) truncated = true;
       const next = new Set<string>();
-      for (const row of await this.currentRows(rows)) {
+      for (const row of rows) {
         if (seenRowIds.has(row.id)) continue;
+        if (evidence.length >= MAX_GRAPH_EVIDENCE_ROWS) {
+          truncated = true;
+          break;
+        }
         seenRowIds.add(row.id);
         evidence.push(row);
         for (const id of [row.sourceEntityId, row.targetEntityId]) {
           if (visited.has(id)) continue;
+          if (visited.size >= MAX_GRAPH_VISITED_NODES) {
+            truncated = true;
+            continue;
+          }
           visited.add(id);
           next.add(id);
         }
@@ -244,6 +274,7 @@ export class EntityGraphService {
         .sort((a, b) => a.canonicalName.localeCompare(b.canonicalName)),
       relations,
       connected,
+      truncated,
     };
   }
 
@@ -263,9 +294,51 @@ export class EntityGraphService {
       },
     });
     if (existing) return;
-    await this.relations.save(
-      this.relations.create({ userId, inboxItemId, extractionId, ...candidate }),
-    );
+    try {
+      await this.relations.save(
+        this.relations.create({ userId, inboxItemId, extractionId, ...candidate }),
+      );
+    } catch (err) {
+      // Lost a race on the evidence unique index — the row already exists.
+      if (!isUniqueViolation(err)) throw err;
+    }
+  }
+
+  /**
+   * One BFS expansion: the CURRENT evidence rows touching the given entities,
+   * user-scoped, with the co-occurrence filter and a hard row limit pushed
+   * into the SQL, and the IN() lists chunked so a wide frontier can never
+   * exceed the driver's bind-parameter limit. Rows are deduped by id across
+   * chunks (a row matches both the source and the target chunk when both of
+   * its endpoints are in the frontier). `overflowed` reports that more raw
+   * rows existed than the limit allowed to load.
+   */
+  private async evidenceTouching(
+    userId: string,
+    entityIds: string[],
+    includeCooccurrence: boolean,
+    limit: number,
+  ): Promise<{ rows: EntityRelationEntity[]; overflowed: boolean }> {
+    // Only two origins exist, so "no co-occurrence" is exactly "llm only".
+    const originFilter = includeCooccurrence ? {} : { origin: 'llm' as const };
+    const byId = new Map<string, EntityRelationEntity>();
+    let overflowed = false;
+    for (let i = 0; i < entityIds.length && !overflowed; i += GRAPH_IN_CHUNK_SIZE) {
+      const chunk = entityIds.slice(i, i + GRAPH_IN_CHUNK_SIZE);
+      // Ask for one row more than the remaining budget so hitting the limit is
+      // distinguishable from exactly exhausting it.
+      const rows = await this.relations.find({
+        where: [
+          { userId, sourceEntityId: In(chunk), ...originFilter },
+          { userId, targetEntityId: In(chunk), ...originFilter },
+        ],
+        take: limit - byId.size + 1,
+      });
+      for (const row of rows) byId.set(row.id, row);
+      if (byId.size > limit) overflowed = true;
+    }
+    const bounded = [...byId.values()].slice(0, limit);
+    return { rows: await this.currentRows(bounded), overflowed };
   }
 
   /**
