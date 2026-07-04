@@ -85,6 +85,10 @@ export function GraphCanvas({
     () => edges.map((e) => ({ source: e.sourceEntityId, target: e.targetEntityId })),
     [edges],
   );
+  // The rAF loop reads links through a ref so an already-running loop picks up
+  // newly expanded edges immediately instead of keeping a stale closure.
+  const linksRef = useRef(links);
+  linksRef.current = links;
 
   const simParams = useMemo(
     () => ({ ...DEFAULT_SIM_PARAMS, center: { x: 0, y: 0 } }),
@@ -95,7 +99,7 @@ export function GraphCanvas({
     if (rafRef.current != null) return;
     const loop = () => {
       const list = [...posRef.current.values()];
-      alphaRef.current = tickSimulation(list, links, simParams, alphaRef.current);
+      alphaRef.current = tickSimulation(list, linksRef.current, simParams, alphaRef.current);
       setFrame((f) => (f + 1) % 1_000_000);
       if (alphaRef.current > SIM_ALPHA_MIN) {
         rafRef.current = requestAnimationFrame(loop);
@@ -104,7 +108,13 @@ export function GraphCanvas({
       }
     };
     rafRef.current = requestAnimationFrame(loop);
-  }, [links, simParams]);
+  }, [simParams]);
+
+  // Signature of the previous node/edge SET — the parent recomputes its arrays
+  // on every filter/selection change, so identity alone must never reheat a
+  // settled layout (tapping a node or dragging the confidence slider would
+  // violently re-lay-out otherwise).
+  const structureSigRef = useRef('');
 
   // Reconcile positions whenever the node set changes: keep placed nodes, seed
   // newcomers near an already-placed neighbour (falling back to the centre),
@@ -125,10 +135,8 @@ export function GraphCanvas({
       addNeighbour(e.targetEntityId, e.sourceEntityId);
     }
 
-    let added = false;
     for (const node of nodes) {
       if (pos.has(node.id)) continue;
-      added = true;
       const anchor = (neighbours.get(node.id) ?? []).map((n) => pos.get(n)).find(Boolean);
       const angle = Math.random() * Math.PI * 2;
       const spread = anchor ? 110 : 220;
@@ -141,7 +149,16 @@ export function GraphCanvas({
       });
     }
 
-    if (added || pos.size > 0) {
+    // Only an actual set change (nodes/edges added or removed) reheats the
+    // layout; identity-only prop changes leave a settled simulation alone.
+    const signature = `${[...wanted].sort().join('|')}#${edges
+      .map((e) => `${e.sourceEntityId}:${e.targetEntityId}:${e.relationType}`)
+      .sort()
+      .join('|')}`;
+    const structureChanged = signature !== structureSigRef.current;
+    structureSigRef.current = signature;
+
+    if (structureChanged && pos.size > 0) {
       alphaRef.current = SIM_ALPHA_REHEAT;
       ensureRunning();
     }
@@ -399,10 +416,12 @@ export function GraphCanvas({
                 y={r + 9}
                 textAnchor="middle"
                 dominantBaseline="central"
-                className="fill-foreground"
+                // Halo = the theme's background colour so labels stay legible
+                // over edges in BOTH themes (white glow light, black glow dark).
+                className="fill-foreground stroke-background"
                 style={{ fontSize: 9, pointerEvents: 'none', paintOrder: 'stroke' }}
-                stroke="var(--graph-label-halo, rgba(255,255,255,0.7))"
                 strokeWidth={2.5}
+                strokeOpacity={0.8}
               >
                 {truncate(node.canonicalName)}
               </text>
