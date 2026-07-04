@@ -349,6 +349,40 @@ describe('EntityContactResolverService', () => {
     expect(await resolver.suggest(USER, org.id)).toEqual([]);
   });
 
+  it('autoLinkAllUsers sweeps every user with unlinked people (the startup pass)', async () => {
+    const OTHER = '00000000-0000-0000-0000-0000000000bb';
+    const mueller = await createProfile('Detlef Müller');
+    const item = await createItem();
+    await createPersonEntity('Detlef Mueller', item); // exact-modulo-folding → links
+    // A second user's data must be swept independently and never cross-link.
+    const otherItem = await dataSource.getRepository(InboxItemEntity).save({
+      userId: OTHER,
+      deviceId: null,
+      sourceType: 'plaud',
+      occurredAt: '2026-07-01T10:00:00Z',
+      idempotencyKey: `key-${Math.random()}`,
+      metadata: null,
+    });
+    const otherEntity = await dataSource.getRepository(EntityRegistryEntity).save({
+      userId: OTHER,
+      type: 'person',
+      canonicalName: 'Detlef Müller',
+      normalizedName: 'detlef müller',
+      aliases: [],
+      voiceProfileId: null,
+      voiceProfileLinkOrigin: null,
+    });
+    void otherItem;
+
+    expect(await resolver.autoLinkAllUsers()).toBe(1);
+    const rows = dataSource.getRepository(EntityRegistryEntity);
+    // USER's entity linked; OTHER's stayed unlinked (Müller isn't their contact).
+    expect((await rows.findOneByOrFail({ userId: USER, type: 'person' })).voiceProfileId).toBe(
+      mueller,
+    );
+    expect((await rows.findOneByOrFail({ id: otherEntity.id })).voiceProfileId).toBeNull();
+  });
+
   it('autoLinkForItem only touches entities mentioned by that item', async () => {
     const mueller = await createProfile('Detlef Müller');
     const itemA = await createItem();

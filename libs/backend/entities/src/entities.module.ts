@@ -19,6 +19,7 @@ import { RELATION_EXTRACTION_QUEUE } from './relations.job';
 import { OpenAiEntityExtractionProvider } from './providers/openai.provider';
 import { OpenAiContactResolutionProvider } from './providers/openai-contact-resolution.provider';
 import { OpenAiRelationExtractionProvider } from './providers/openai-relations.provider';
+import { ContactResolutionStartupService } from './contact-resolution-startup.service';
 import { EntitiesRegistryService } from './entities-registry.service';
 import { EntityContactResolverService } from './entity-contact-resolver.service';
 import { EntityGraphService } from './entity-graph.service';
@@ -67,6 +68,7 @@ import { RelationsExtractor } from './relations.extractor';
     },
     EntitiesRegistryService,
     EntityContactResolverService,
+    ContactResolutionStartupService,
     EntityGraphService,
     EntitiesProcessor,
     RelationsProcessor,

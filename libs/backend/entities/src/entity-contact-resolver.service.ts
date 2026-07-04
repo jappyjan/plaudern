@@ -88,6 +88,27 @@ export class EntityContactResolverService {
   }
 
   /**
+   * Resolve every user's unlinked person entities — the startup sweep that
+   * folds pre-existing registry data (extracted before this resolver shipped,
+   * or while a contact was still unnamed) into the contact book without any
+   * re-extraction. Idempotent: linked and suppressed entities are skipped.
+   */
+  async autoLinkAllUsers(): Promise<number> {
+    const users: { userId: string }[] = await this.entities
+      .createQueryBuilder('entity')
+      .select('DISTINCT entity.userId', 'userId')
+      .where('entity.type = :type', { type: 'person' })
+      .andWhere('entity.voiceProfileId IS NULL')
+      .andWhere(
+        "(entity.voiceProfileLinkOrigin IS NULL OR entity.voiceProfileLinkOrigin != 'suppressed')",
+      )
+      .getRawMany();
+    let linked = 0;
+    for (const { userId } of users) linked += await this.autoLinkAll(userId);
+    return linked;
+  }
+
+  /**
    * Resolve just the person entities mentioned by one item's latest entities
    * extraction — the per-recording pass the pipeline runs after extraction, so
    * new mentions link up (or get suggestions) without any user action.
