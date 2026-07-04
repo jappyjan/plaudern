@@ -28,6 +28,7 @@
       "@plaudern/transcription": ["libs/backend/transcription/src/index.ts"],
       "@plaudern/summarization": ["libs/backend/summarization/src/index.ts"],
       "@plaudern/embeddings": ["libs/backend/embeddings/src/index.ts"],
+      "@plaudern/entities": ["libs/backend/entities/src/index.ts"],
       "@plaudern/plaud-sync": ["libs/backend/plaud-sync/src/index.ts"],
       "@plaudern/email-ingest": ["libs/backend/email-ingest/src/index.ts"],
       "@plaudern/geocoding": ["libs/backend/geocoding/src/index.ts"],
