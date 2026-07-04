@@ -23,13 +23,21 @@ import {
 } from '../lib/api';
 import { formatDateTime } from '../lib/format';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
+import { MoonIcon, SunIcon } from '../components/icons';
+import type { Theme } from '../App';
 
 const REGIONS: { key: PlaudRegion; label: string }[] = [
   { key: 'us', label: 'US (api.plaud.ai)' },
   { key: 'eu', label: 'EU (api-euc1.plaud.ai)' },
 ];
 
-export function SettingsPage() {
+export function SettingsPage({
+  theme,
+  onToggleTheme,
+}: {
+  theme: Theme;
+  onToggleTheme: () => void;
+}) {
   const [settings, setSettings] = useState<PlaudSettingsDto | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -136,6 +144,22 @@ export function SettingsPage() {
   return (
     <div className="flex flex-col gap-6">
       <AccountSection />
+
+      <div className="flex flex-col gap-4 border-t border-default-200 pt-6">
+        <div>
+          <h2 className="text-lg font-semibold">Appearance</h2>
+          <p className="text-sm text-default-500">Switch between light and dark mode.</p>
+        </div>
+        <Switch
+          isSelected={theme === 'dark'}
+          onValueChange={onToggleTheme}
+          thumbIcon={({ isSelected, className }) =>
+            isSelected ? <MoonIcon className={className} /> : <SunIcon className={className} />
+          }
+        >
+          Dark mode
+        </Switch>
+      </div>
 
       <div className="border-t border-default-200 pt-6">
         <h2 className="text-lg font-semibold">Plaud sync</h2>
