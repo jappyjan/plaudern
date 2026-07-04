@@ -7,6 +7,7 @@ export * from './speakers';
 export * from './summary';
 export * from './embedding';
 export * from './entities';
+export * from './topics';
 export * from './events';
 export * from './geocode';
 export * from './calendar';

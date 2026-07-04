@@ -26,6 +26,9 @@ export const extractionKindSchema = z.enum([
   // LLM extraction of named entities (people, organizations, places, …),
   // normalized into a per-user entity registry (the knowledge-graph seed).
   'entities',
+  // Zero-shot classification of an item against the user's topic/project
+  // taxonomy (JJ-18).
+  'topics',
 ]);
 export type ExtractionKind = z.infer<typeof extractionKindSchema>;
 

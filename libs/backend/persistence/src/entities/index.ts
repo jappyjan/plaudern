@@ -24,3 +24,5 @@ export * from './notification-category-preference.entity';
 export * from './push-subscription.entity';
 export * from './notification-delivery.entity';
 export * from './extraction-run.entity';
+export * from './topic.entity';
+export * from './item-topic.entity';

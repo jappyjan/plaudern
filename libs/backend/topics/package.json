@@ -1,5 +1,5 @@
 {
-  "name": "@plaudern/extraction",
+  "name": "@plaudern/topics",
   "version": "0.1.0",
   "private": true,
   "type": "commonjs",
@@ -8,17 +8,13 @@
   "dependencies": {
     "@plaudern/auth": "workspace:*",
     "@plaudern/contracts": "workspace:*",
-    "@plaudern/embeddings": "workspace:*",
-    "@plaudern/entities": "workspace:*",
     "@plaudern/inbox": "workspace:*",
     "@plaudern/persistence": "workspace:*",
-    "@plaudern/speaker-id": "workspace:*",
-    "@plaudern/summarization": "workspace:*",
-    "@plaudern/topics": "workspace:*",
-    "@plaudern/transcription": "workspace:*"
+    "@plaudern/queue": "workspace:*"
   },
   "peerDependencies": {
     "@nestjs/common": "^11.0.0",
+    "@nestjs/config": "^4.0.0",
     "@nestjs/typeorm": "^11.0.0",
     "rxjs": "^7.0.0",
     "typeorm": "^1.0.0"
