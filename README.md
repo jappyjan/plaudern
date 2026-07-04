@@ -46,8 +46,9 @@ libs/
     transcription/ Transcription queue + ElevenLabs Scribe / local Whisper providers
     speaker-id/   Diarization queue + voice-profile matching + contact book API
     summarization/ AI title + Markdown summary (OpenAI-compatible LLM: DeepSeek by default, or local Ollama)
+    embeddings/   Chunked vector embeddings of transcript + summary (pgvector)
     email-ingest/ Email-in adapter — per-user inbox+<token>@<domain> address + inbound webhook
-docker-compose.yml   Postgres + MinIO + Redis + api + web for local dev
+docker-compose.yml   Postgres (pgvector) + MinIO + Redis + api + web for local dev
 ```
 
 ## Architecture
@@ -123,6 +124,20 @@ docker-compose.yml   Postgres + MinIO + Redis + api + web for local dev
   `http://localhost:11434/v1` / `llama3.1`) for a fully local summarization
   path. Detail pages show the summary and transcript in a **tabbed view**,
   defaulting to the summary once it's ready.
+- **Embeddings (semantic memory)**: after transcription (and summarization,
+  when enabled) another append-only extraction (`kind: embedding`,
+  `libs/backend/embeddings`) chunks the transcript + summary and stores vector
+  embeddings in **pgvector** inside the same Postgres (the compose file uses
+  the `pgvector/pgvector` image). Transcript chunks keep their **segment
+  timestamps** so future retrieval features (semantic search, memory chat) can
+  deep-link into the audio. Any **OpenAI-compatible** `/embeddings` endpoint
+  works: cloud OpenAI (`EMBEDDINGS_API_KEY`, default `text-embedding-3-small`)
+  or — for a **no-extra-API-keys** setup — a keyless local **Ollama** server
+  (`EMBEDDINGS_ENABLED=true`, `EMBEDDINGS_MODEL=nomic-embed-text`,
+  `EMBEDDINGS_DIMENSIONS=768`, set *before* the first migration run since the
+  pgvector column dimension is frozen then). Note **DeepSeek has no embeddings
+  API**, so the DeepSeek summarization key can't be reused here. Leave both
+  `EMBEDDINGS_API_KEY` and `EMBEDDINGS_ENABLED` unset to disable the step.
 - **Capture metadata travels with the item**: `occurredAt` (when it was
   recorded) plus a free-form `metadata` field (GPS location, recording device,
   file tags) set at ingest time — the envelope is immutable, so metadata is

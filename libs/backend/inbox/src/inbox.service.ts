@@ -8,6 +8,7 @@ import type {
   SourceType,
 } from '@plaudern/contracts';
 import {
+  EmbeddingChunkEntity,
   ExtractedPayloadEntity,
   InboxItemEntity,
   InboxTombstoneEntity,
@@ -276,6 +277,9 @@ export class InboxService {
         sourceType: item.sourceType,
       });
       await em.getRepository(RecordingMergeEntity).delete({ mergedItemId: item.id });
+      // Embedding chunks are FK children of the extractions; delete them first
+      // so behavior is identical on Postgres and the sqlite test database.
+      await em.getRepository(EmbeddingChunkEntity).delete({ inboxItemId: item.id });
       await em.getRepository(ExtractedPayloadEntity).delete({ inboxItemId: item.id });
       await em.getRepository(SourcePayloadEntity).delete({ inboxItemId: item.id });
       await em.getRepository(InboxItemEntity).delete({ id: item.id });
@@ -329,6 +333,7 @@ export class InboxService {
       if (itemIds.length > 0) {
         await em.getRepository(SpeakerOccurrenceEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(RecordingEventLinkEntity).delete({ inboxItemId: In(itemIds) });
+        await em.getRepository(EmbeddingChunkEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(ExtractedPayloadEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(SourcePayloadEntity).delete({ inboxItemId: In(itemIds) });
       }

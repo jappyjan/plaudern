@@ -5,6 +5,7 @@ export * from './settings';
 export * from './email-settings';
 export * from './speakers';
 export * from './summary';
+export * from './embedding';
 export * from './events';
 export * from './geocode';
 export * from './calendar';

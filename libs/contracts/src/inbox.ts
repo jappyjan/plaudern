@@ -22,6 +22,7 @@ export const extractionKindSchema = z.enum([
   // The audio-concatenation step of a merge. Its status drives the "merging"
   // progress indicator on the merged item while the background job runs.
   'merge',
+  'embedding',
 ]);
 export type ExtractionKind = z.infer<typeof extractionKindSchema>;
 

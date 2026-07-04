@@ -32,7 +32,7 @@ describe('Migrations & app boot (integration, real Postgres)', () => {
   let baseUrl: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer('postgres:17-alpine')
+    container = await new PostgreSqlContainer('pgvector/pgvector:pg17')
       .withDatabase('plaudern')
       .withUsername('plaudern')
       .withPassword('plaudern')

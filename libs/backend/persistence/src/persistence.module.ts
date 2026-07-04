@@ -7,6 +7,7 @@ import {
   CalendarFeedEntity,
   ConsentSettingsEntity,
   EmailSettingsEntity,
+  EmbeddingChunkEntity,
   ExtractedPayloadEntity,
   ExtractionRunEntity,
   GeocodeCacheEntity,
@@ -45,12 +46,14 @@ import { ConsentGuardian1720000000015 } from './migrations/1720000000015-Consent
 import { CreateEmailSettings1720000000016 } from './migrations/1720000000016-CreateEmailSettings';
 import { CreateNotificationTables1720000000017 } from './migrations/1720000000017-CreateNotificationTables';
 import { ExtractionDag1720000000018 } from './migrations/1720000000018-ExtractionDag';
+import { CreateEmbeddingChunks1720000000019 } from './migrations/1720000000019-CreateEmbeddingChunks';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
   SourcePayloadEntity,
   ExtractedPayloadEntity,
   ExtractionRunEntity,
+  EmbeddingChunkEntity,
   InboxTombstoneEntity,
   PlaudSettingsEntity,
   EmailSettingsEntity,
@@ -94,6 +97,7 @@ export const ALL_MIGRATIONS = [
   CreateEmailSettings1720000000016,
   CreateNotificationTables1720000000017,
   ExtractionDag1720000000018,
+  CreateEmbeddingChunks1720000000019,
 ];
 
 /**
