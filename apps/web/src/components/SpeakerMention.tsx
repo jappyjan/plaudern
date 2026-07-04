@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react';
+import { Chip } from '@heroui/react';
 import { Link } from 'react-router-dom';
 import type { SummarySpeakerDto } from '@plaudern/contracts';
 import { speakerColor, speakerDisplayName } from '../lib/speakerColors';
@@ -26,12 +27,15 @@ export function SpeakerMention({ label }: { label?: string }) {
   }
 
   return (
-    <Link
+    <Chip
+      as={Link}
       to={`/contacts/${speaker.profileId}`}
-      className={`mx-0.5 inline-block rounded-full px-1.5 py-0.5 align-baseline text-xs font-medium ${speakerColor(speaker.profileId)}`}
+      size="sm"
+      variant="flat"
+      className={`mx-0.5 h-5 align-text-bottom font-medium ${speakerColor(speaker.profileId)}`}
     >
       {speakerDisplayName(speaker, index)}
       {speaker.status === 'unconfirmed' && ' ?'}
-    </Link>
+    </Chip>
   );
 }
