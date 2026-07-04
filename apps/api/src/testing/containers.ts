@@ -24,7 +24,9 @@ const MINIO_PASSWORD = 'minioadmin';
  */
 export async function startInfra(): Promise<Infra> {
   const [postgres, redis, minio] = await Promise.all([
-    new PostgreSqlContainer('postgres:17-alpine')
+    // pgvector image so the embedding_chunks `vector` column + HNSW index
+    // migration (ATT-659) applies; drop-in for stock postgres:17 otherwise.
+    new PostgreSqlContainer('pgvector/pgvector:pg17')
       .withDatabase('plaudern')
       .withUsername('plaudern')
       .withPassword('plaudern')

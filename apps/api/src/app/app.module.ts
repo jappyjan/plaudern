@@ -7,6 +7,7 @@ import { InboxModule } from '@plaudern/inbox';
 import { TranscriptionModule } from '@plaudern/transcription';
 import { SummarizationModule } from '@plaudern/summarization';
 import { ExtractionModule } from '@plaudern/extraction';
+import { EmbeddingModule } from '@plaudern/embeddings';
 import { IngestionModule } from '@plaudern/ingestion';
 import { PlaudSyncModule } from '@plaudern/plaud-sync';
 import { SpeakerIdModule } from '@plaudern/speaker-id';
@@ -27,6 +28,7 @@ import { HealthController } from './health.controller';
     InboxModule,
     TranscriptionModule,
     SummarizationModule,
+    EmbeddingModule,
     ExtractionModule,
     IngestionModule,
     PlaudSyncModule,

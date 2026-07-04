@@ -16,6 +16,7 @@ import type {
   SummarizationProvider,
   SummarizationResult,
 } from '@plaudern/summarization';
+import type { EmbeddingProvider, EmbeddingResult } from '@plaudern/embeddings';
 import type { AudioConcatenator, ConcatResult } from '@plaudern/ingestion';
 
 /**
@@ -169,4 +170,39 @@ export class FakeSummarizationProvider implements SummarizationProvider {
       model: 'fake-model',
     };
   }
+}
+
+/** Dimension the fake emits — matches the `vector(1536)` migration column. */
+export const FAKE_EMBEDDING_DIMENSIONS = 1536;
+
+/**
+ * Deterministic embedding double, injected via overrideProvider(EMBEDDING_PROVIDER).
+ * Same text => same vector (a seeded LCG over a content hash), so tests can
+ * assert stable chunking/persistence and — on the real pgvector path — that a
+ * chunk is its own nearest neighbour under cosine distance. Emits 1536-dim
+ * vectors to fill the `vector(1536)` column exactly.
+ */
+export class FakeEmbeddingProvider implements EmbeddingProvider {
+  readonly id = 'fake-embedding';
+  readonly enabled = true;
+  readonly dimensions = FAKE_EMBEDDING_DIMENSIONS;
+
+  async embed(texts: string[]): Promise<EmbeddingResult> {
+    return {
+      vectors: texts.map((text) => deterministicVector(text, this.dimensions)),
+      model: 'fake-embedding-model',
+      dimensions: this.dimensions,
+    };
+  }
+}
+
+/** Reproducible pseudo-random unit-ish vector seeded from the text's hash. */
+export function deterministicVector(text: string, dimensions: number): number[] {
+  let state = parseInt(sha(Buffer.from(text)).slice(0, 8), 16) >>> 0;
+  const out = new Array<number>(dimensions);
+  for (let i = 0; i < dimensions; i++) {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    out[i] = (state / 2 ** 32) * 2 - 1;
+  }
+  return out;
 }
