@@ -3,9 +3,11 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { InboxModule } from '@plaudern/inbox';
 import {
+  EntityAliasEntity,
   EntityMentionEntity,
   EntityRegistryEntity,
   EntityRelationEntity,
+  EntitySuppressionEntity,
   ExtractedPayloadEntity,
   VoiceProfileEntity,
 } from '@plaudern/persistence';
@@ -17,6 +19,7 @@ import { RELATION_EXTRACTION_QUEUE } from './relations.job';
 import { OpenAiEntityExtractionProvider } from './providers/openai.provider';
 import { OpenAiRelationExtractionProvider } from './providers/openai-relations.provider';
 import { EntitiesRegistryService } from './entities-registry.service';
+import { EntitiesCorrectionService } from './entities-correction.service';
 import { EntityGraphService } from './entity-graph.service';
 import { EntitiesProcessor } from './entities.processor';
 import { EntitiesService } from './entities.service';
@@ -35,6 +38,8 @@ import { RelationsExtractor } from './relations.extractor';
       EntityRegistryEntity,
       EntityMentionEntity,
       EntityRelationEntity,
+      EntityAliasEntity,
+      EntitySuppressionEntity,
       ExtractedPayloadEntity,
       VoiceProfileEntity,
     ]),
@@ -55,6 +60,7 @@ import { RelationsExtractor } from './relations.extractor';
       useFactory: (openai: OpenAiRelationExtractionProvider) => openai,
     },
     EntitiesRegistryService,
+    EntitiesCorrectionService,
     EntityGraphService,
     EntitiesProcessor,
     RelationsProcessor,

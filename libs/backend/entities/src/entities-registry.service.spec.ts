@@ -2,8 +2,10 @@ import { NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import {
   ALL_ENTITIES,
+  EntityAliasEntity,
   EntityMentionEntity,
   EntityRegistryEntity,
+  EntitySuppressionEntity,
   ExtractedPayloadEntity,
   InboxItemEntity,
   VoiceProfileEntity,
@@ -60,6 +62,8 @@ describe('EntitiesRegistryService', () => {
       dataSource.getRepository(EntityMentionEntity),
       dataSource.getRepository(ExtractedPayloadEntity),
       dataSource.getRepository(VoiceProfileEntity),
+      dataSource.getRepository(EntityAliasEntity),
+      dataSource.getRepository(EntitySuppressionEntity),
     );
   });
 

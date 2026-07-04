@@ -8,8 +8,10 @@ import type {
   RegistryEntityDto,
 } from '@plaudern/contracts';
 import {
+  EntityAliasEntity,
   EntityMentionEntity,
   EntityRegistryEntity,
+  EntitySuppressionEntity,
   ExtractedPayloadEntity,
   VoiceProfileEntity,
 } from '@plaudern/persistence';
@@ -33,6 +35,10 @@ export class EntitiesRegistryService {
     private readonly extractions: Repository<ExtractedPayloadEntity>,
     @InjectRepository(VoiceProfileEntity)
     private readonly profiles: Repository<VoiceProfileEntity>,
+    @InjectRepository(EntityAliasEntity)
+    private readonly aliasRecords: Repository<EntityAliasEntity>,
+    @InjectRepository(EntitySuppressionEntity)
+    private readonly suppressions: Repository<EntitySuppressionEntity>,
   ) {}
 
   /**
@@ -82,6 +88,9 @@ export class EntitiesRegistryService {
         [...surfaceForms],
         profilesByName,
       );
+      // Suppressed (deleted) names resolve to null — no entity, no mention, so
+      // the correction stays durable across re-extraction and backfills.
+      if (!registryEntity) continue;
       await this.upsertMention(
         userId,
         inboxItemId,
@@ -157,6 +166,11 @@ export class EntitiesRegistryService {
    * Find or create the registry row for (userId, type, normalizedName),
    * accreting any new surface forms as aliases and (re)linking a `person` to a
    * matching named voice profile.
+   *
+   * Consults the JJ-63 correction tables so manual edits survive re-extraction:
+   * a suppressed (deleted) name returns null (skip it entirely); a merged-away
+   * or renamed name resolves — via `entity_aliases` — onto the surviving entity
+   * instead of resurrecting a duplicate.
    */
   private async upsertEntity(
     userId: string,
@@ -164,9 +178,25 @@ export class EntitiesRegistryService {
     name: string,
     surfaceForms: string[],
     profilesByName: Map<string, string>,
-  ): Promise<EntityRegistryEntity> {
+  ): Promise<EntityRegistryEntity | null> {
     const normalizedName = normalize(name);
+    // Deleted/suppressed names must never come back.
+    const suppressed = await this.suppressions.findOne({
+      where: { userId, type, normalizedName },
+    });
+    if (suppressed) return null;
+
     let row = await this.entities.findOne({ where: { userId, type, normalizedName } });
+    // Not a live entity under this exact name — but it may be a merged-away or
+    // renamed spelling that must resolve onto its surviving entity.
+    if (!row) {
+      const alias = await this.aliasRecords.findOne({
+        where: { userId, type, normalizedName },
+      });
+      if (alias) {
+        row = await this.entities.findOne({ where: { id: alias.entityId, userId } });
+      }
+    }
     if (!row) {
       row = this.entities.create({
         userId,

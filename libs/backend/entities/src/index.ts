@@ -2,6 +2,7 @@ export * from './entities.provider';
 export * from './entity-context';
 export * from './entities.job';
 export * from './entities-registry.service';
+export * from './entities-correction.service';
 export * from './entity-graph.service';
 export * from './entities.processor';
 export * from './entities.service';

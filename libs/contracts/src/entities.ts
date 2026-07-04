@@ -110,3 +110,46 @@ export const entityDetailSchema = registryEntitySchema.extend({
   mentions: z.array(entityMentionSchema),
 });
 export type EntityDetailDto = z.infer<typeof entityDetailSchema>;
+
+/**
+ * Merge & correction tooling (JJ-63). The entity detail read model (with
+ * relations, `entityDetailWithRelationsSchema` in ./relations) is the response
+ * for every mutation below, so the UI can refresh from one call.
+ */
+
+/**
+ * POST /v1/entities/:id/merge — union the victim into the survivor addressed by
+ * the URL, then delete the victim. The victim's names are recorded as aliases
+ * of the survivor so future extraction resolves to it instead of resurrecting a
+ * duplicate. Both entities must be the same type (retype first to fix a
+ * mis-typed extraction, then merge).
+ */
+export const mergeEntityRequestSchema = z.object({
+  /** The entity merged INTO the survivor (:id), then deleted. */
+  victimId: z.string().uuid(),
+});
+export type MergeEntityRequest = z.infer<typeof mergeEntityRequestSchema>;
+
+/**
+ * PATCH /v1/entities/:id — correct a wrong extraction: rename and/or retype.
+ * Renaming keeps the OLD normalized name as an alias (and, on retype, the old
+ * (type, name) too) so re-extraction folds back in instead of recreating.
+ */
+export const updateEntityRequestSchema = z
+  .object({
+    canonicalName: z.string().trim().min(1).max(200).optional(),
+    type: entityTypeSchema.optional(),
+  })
+  .refine((body) => body.canonicalName !== undefined || body.type !== undefined, {
+    message: 'provide canonicalName and/or type',
+  });
+export type UpdateEntityRequest = z.infer<typeof updateEntityRequestSchema>;
+
+/**
+ * PATCH /v1/entities/:id/contact — re-link (or unlink) a `person` entity to a
+ * voice-profile contact. `null` unlinks. Only valid for `person` entities.
+ */
+export const relinkEntityContactRequestSchema = z.object({
+  voiceProfileId: z.string().uuid().nullable(),
+});
+export type RelinkEntityContactRequest = z.infer<typeof relinkEntityContactRequestSchema>;
