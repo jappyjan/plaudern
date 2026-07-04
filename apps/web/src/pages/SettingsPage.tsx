@@ -14,6 +14,7 @@ import {
   type CalendarFeedsResponse,
   type EmailSettingsDto,
   type GooglePendingResponse,
+  type McpTokenStatusDto,
   type PasskeyDto,
   type PlaudRegion,
   type PlaudSettingsDto,
@@ -27,14 +28,17 @@ import {
   deleteCalendarFeed,
   getConsentSettings,
   getEmailSettings,
+  getMcpTokenStatus,
   getNotificationPreferences,
   getGoogleAuthUrl,
   getGooglePending,
   getPlaudSettings,
   getSummarizationSettings,
   listCalendarFeeds,
+  mintMcpToken,
   purgeAllData,
   reconnectGoogle,
+  revokeMcpToken,
   rotateEmailToken,
   sendTestNotification,
   testCalendarFeed,
@@ -306,6 +310,8 @@ export function SettingsPage({
       <NotificationsSection />
 
       <CalendarFeedsSection />
+
+      <McpAccessSection />
 
       <DangerZoneSection
         plaudEnabled={settings?.enabled ?? false}
@@ -1267,6 +1273,213 @@ function CalendarFeedsSection() {
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * MCP (Model Context Protocol) access: lets any MCP-capable client (Claude
+ * Desktop, an agent SDK, …) reach Plaudern's memory tools over `/api/mcp`
+ * using a personal bearer token. Minting/rotating returns the plaintext
+ * exactly once — the server only ever stores its hash — so the UI has to
+ * surface it clearly and never again after this render.
+ */
+function McpAccessSection() {
+  const [status, setStatus] = useState<McpTokenStatusDto | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [mintedToken, setMintedToken] = useState<string | null>(null);
+  const [copiedToken, setCopiedToken] = useState(false);
+  const [copiedEndpoint, setCopiedEndpoint] = useState(false);
+  const [confirmRotateOpen, setConfirmRotateOpen] = useState(false);
+  const [confirmRevokeOpen, setConfirmRevokeOpen] = useState(false);
+  const [revoking, setRevoking] = useState(false);
+
+  const endpoint = `${window.location.origin}/api/mcp`;
+
+  const refresh = useCallback(async () => {
+    try {
+      setStatus(await getMcpTokenStatus());
+      setLoadError(null);
+    } catch (cause) {
+      setLoadError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const generateOrRotate = async () => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      const created = await mintMcpToken();
+      setStatus(created);
+      setMintedToken(created.token);
+      setCopiedToken(false);
+      setConfirmRotateOpen(false);
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const revoke = async () => {
+    setRevoking(true);
+    setActionError(null);
+    try {
+      await revokeMcpToken();
+      setMintedToken(null);
+      setConfirmRevokeOpen(false);
+      await refresh();
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setRevoking(false);
+    }
+  };
+
+  const copyToken = async () => {
+    if (!mintedToken) return;
+    try {
+      await navigator.clipboard.writeText(mintedToken);
+      setCopiedToken(true);
+      setTimeout(() => setCopiedToken(false), 2000);
+    } catch {
+      /* clipboard access denied — the token is still visible to copy by hand */
+    }
+  };
+
+  const copyEndpoint = async () => {
+    try {
+      await navigator.clipboard.writeText(endpoint);
+      setCopiedEndpoint(true);
+      setTimeout(() => setCopiedEndpoint(false), 2000);
+    } catch {
+      /* clipboard access denied — the URL is still visible to copy by hand */
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4 border-t border-default-200 pt-6">
+      <div>
+        <h2 className="text-lg font-semibold">MCP access</h2>
+        <p className="text-sm text-default-500">
+          Connect any MCP-capable client (Claude Desktop, an agent, …) to your Plaudern memory over
+          the Model Context Protocol, authenticated with a personal bearer token.
+        </p>
+      </div>
+
+      <div className="flex items-center gap-2 rounded-medium bg-default-50 p-3">
+        <code className="min-w-0 flex-1 truncate text-sm">{endpoint}</code>
+        <Button size="sm" variant="flat" onPress={() => void copyEndpoint()}>
+          {copiedEndpoint ? 'Copied!' : 'Copy'}
+        </Button>
+      </div>
+      <p className="text-xs text-default-400">
+        Point any MCP client at this URL with the bearer token below as its Authorization header.
+      </p>
+
+      {loadError && (
+        <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">
+          Failed to load settings: {loadError}
+        </div>
+      )}
+      {actionError && (
+        <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">{actionError}</div>
+      )}
+
+      {mintedToken && (
+        <div className="flex flex-col gap-2 rounded-medium border border-warning-200 bg-warning-50/40 p-3">
+          <p className="text-sm font-medium">
+            Save this token now — it won&apos;t be shown again.
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="min-w-0 flex-1 truncate text-sm">{mintedToken}</code>
+            <Button size="sm" variant="flat" onPress={() => void copyToken()}>
+              {copiedToken ? 'Copied!' : 'Copy'}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {status?.configured ? (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1 rounded-medium bg-default-50 p-3 text-sm">
+            <span>
+              Active token <code className="text-default-600">{status.tokenPrefix}…</code>
+            </span>
+            {status.createdAt && (
+              <span className="text-xs text-default-500">
+                Created {formatDateTime(status.createdAt)}
+              </span>
+            )}
+            {status.lastUsedAt && (
+              <span className="text-xs text-default-500">
+                Last used {formatDateTime(status.lastUsedAt)}
+              </span>
+            )}
+          </div>
+          <div className="flex gap-3">
+            <Button
+              size="sm"
+              variant="flat"
+              color="warning"
+              onPress={() => {
+                setActionError(null);
+                setConfirmRotateOpen(true);
+              }}
+            >
+              Rotate token
+            </Button>
+            <Button
+              size="sm"
+              variant="flat"
+              color="danger"
+              onPress={() => {
+                setActionError(null);
+                setConfirmRevokeOpen(true);
+              }}
+            >
+              Revoke token
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button
+          color="primary"
+          className="self-start"
+          isLoading={busy}
+          onPress={() => void generateOrRotate()}
+        >
+          Generate token
+        </Button>
+      )}
+
+      <ConfirmDeleteModal
+        isOpen={confirmRotateOpen}
+        title="Rotate MCP token?"
+        message="This mints a brand-new token and immediately invalidates the current one. Any MCP client still using the old token will stop working until it's updated."
+        confirmLabel="Rotate"
+        isDeleting={busy}
+        error={actionError}
+        onConfirm={() => void generateOrRotate()}
+        onClose={() => setConfirmRotateOpen(false)}
+      />
+
+      <ConfirmDeleteModal
+        isOpen={confirmRevokeOpen}
+        title="Revoke MCP token?"
+        message="This immediately disables the active token. Any MCP client using it will stop working until you generate a new one."
+        confirmLabel="Revoke"
+        isDeleting={revoking}
+        error={actionError}
+        onConfirm={() => void revoke()}
+        onClose={() => setConfirmRevokeOpen(false)}
+      />
     </div>
   );
 }

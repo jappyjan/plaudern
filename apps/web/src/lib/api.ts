@@ -18,6 +18,8 @@ import {
   ingestInitResponseSchema,
   itemEventsResponseSchema,
   linkResponseSchema,
+  mcpTokenCreatedSchema,
+  mcpTokenStatusSchema,
   plaudSettingsSchema,
   plaudSyncNowResponseSchema,
   plaudTestConnectionResponseSchema,
@@ -47,6 +49,8 @@ import {
   type InboxListResponse,
   type InboxPurgeResponse,
   type InboxSplitResponse,
+  type McpTokenCreatedDto,
+  type McpTokenStatusDto,
   type PlaudSettingsDto,
   type PlaudSyncNowResponse,
   type PlaudTestConnectionRequest,
@@ -279,6 +283,21 @@ export async function updateEmailSettings(
 /** Generates the address on first call, rotates (invalidating the old one) after. */
 export async function rotateEmailToken(): Promise<EmailSettingsDto> {
   return emailSettingsSchema.parse(await requestJson('/settings/email/rotate', { method: 'POST' }));
+}
+
+export async function getMcpTokenStatus(): Promise<McpTokenStatusDto> {
+  return mcpTokenStatusSchema.parse(await requestJson('/settings/mcp'));
+}
+
+/** Mints the token on first call, rotates it (invalidating the old one) after. The plaintext is returned only here. */
+export async function mintMcpToken(): Promise<McpTokenCreatedDto> {
+  return mcpTokenCreatedSchema.parse(
+    await requestJson('/settings/mcp/token', { method: 'POST' }),
+  );
+}
+
+export async function revokeMcpToken(): Promise<void> {
+  return requestVoid('/settings/mcp/token', { method: 'DELETE' });
 }
 
 export async function getSpeakerTranscript(itemId: string): Promise<SpeakerTranscriptDto> {
