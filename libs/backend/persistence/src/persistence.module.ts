@@ -8,6 +8,8 @@ import {
   ConsentSettingsEntity,
   EmailSettingsEntity,
   EmbeddingChunkEntity,
+  EntityMentionEntity,
+  EntityRegistryEntity,
   ExtractedPayloadEntity,
   ExtractionRunEntity,
   GeocodeCacheEntity,
@@ -47,6 +49,7 @@ import { CreateEmailSettings1720000000016 } from './migrations/1720000000016-Cre
 import { CreateNotificationTables1720000000017 } from './migrations/1720000000017-CreateNotificationTables';
 import { ExtractionDag1720000000018 } from './migrations/1720000000018-ExtractionDag';
 import { CreateEmbeddingChunks1720000000019 } from './migrations/1720000000019-CreateEmbeddingChunks';
+import { CreateEntityRegistry1720000000020 } from './migrations/1720000000020-CreateEntityRegistry';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -54,6 +57,8 @@ export const ALL_ENTITIES = [
   ExtractedPayloadEntity,
   ExtractionRunEntity,
   EmbeddingChunkEntity,
+  EntityRegistryEntity,
+  EntityMentionEntity,
   InboxTombstoneEntity,
   PlaudSettingsEntity,
   EmailSettingsEntity,
@@ -98,6 +103,7 @@ export const ALL_MIGRATIONS = [
   CreateNotificationTables1720000000017,
   ExtractionDag1720000000018,
   CreateEmbeddingChunks1720000000019,
+  CreateEntityRegistry1720000000020,
 ];
 
 /**

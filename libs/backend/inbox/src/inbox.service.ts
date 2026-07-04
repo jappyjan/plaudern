@@ -9,6 +9,8 @@ import type {
 } from '@plaudern/contracts';
 import {
   EmbeddingChunkEntity,
+  EntityMentionEntity,
+  EntityRegistryEntity,
   ExtractedPayloadEntity,
   InboxItemEntity,
   InboxTombstoneEntity,
@@ -277,9 +279,12 @@ export class InboxService {
         sourceType: item.sourceType,
       });
       await em.getRepository(RecordingMergeEntity).delete({ mergedItemId: item.id });
-      // Embedding chunks are FK children of the extractions; delete them first
-      // so behavior is identical on Postgres and the sqlite test database.
+      // Embedding chunks and entity mentions are FK children of the
+      // extractions; delete them first so behavior is identical on Postgres and
+      // the sqlite test database. (Registry entities are per-user, not per-item,
+      // so they survive a single-item delete and are only cleared on purge.)
       await em.getRepository(EmbeddingChunkEntity).delete({ inboxItemId: item.id });
+      await em.getRepository(EntityMentionEntity).delete({ inboxItemId: item.id });
       await em.getRepository(ExtractedPayloadEntity).delete({ inboxItemId: item.id });
       await em.getRepository(SourcePayloadEntity).delete({ inboxItemId: item.id });
       await em.getRepository(InboxItemEntity).delete({ id: item.id });
@@ -334,10 +339,12 @@ export class InboxService {
         await em.getRepository(SpeakerOccurrenceEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(RecordingEventLinkEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(EmbeddingChunkEntity).delete({ inboxItemId: In(itemIds) });
+        await em.getRepository(EntityMentionEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(ExtractedPayloadEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(SourcePayloadEntity).delete({ inboxItemId: In(itemIds) });
       }
       await em.getRepository(VoiceProfileEntity).delete({ userId });
+      await em.getRepository(EntityRegistryEntity).delete({ userId });
       await em.getRepository(InboxItemEntity).delete({ userId });
       await em.getRepository(InboxTombstoneEntity).delete({ userId });
     });

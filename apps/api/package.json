@@ -17,6 +17,7 @@
     "@plaudern/contracts": "workspace:*",
     "@plaudern/email-ingest": "workspace:*",
     "@plaudern/embeddings": "workspace:*",
+    "@plaudern/entities": "workspace:*",
     "@plaudern/extraction": "workspace:*",
     "@plaudern/geocoding": "workspace:*",
     "@plaudern/inbox": "workspace:*",

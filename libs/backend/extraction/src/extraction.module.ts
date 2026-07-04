@@ -6,6 +6,7 @@ import { TranscriptionExtractor, TranscriptionModule } from '@plaudern/transcrip
 import { DiarizationExtractor, SpeakerIdModule } from '@plaudern/speaker-id';
 import { SummaryExtractor, SummarizationModule } from '@plaudern/summarization';
 import { EmbeddingExtractor, EmbeddingModule } from '@plaudern/embeddings';
+import { EntitiesExtractor, EntitiesModule } from '@plaudern/entities';
 import { ExtractorGraph } from './extractor-graph';
 import { ExtractionPipelineService } from './extraction-pipeline.service';
 import { ExtractionRunsService } from './extraction-runs.service';
@@ -24,18 +25,26 @@ import { ExtractionController } from './extraction.controller';
     SpeakerIdModule,
     SummarizationModule,
     EmbeddingModule,
+    EntitiesModule,
     TypeOrmModule.forFeature([ExtractionRunEntity, InboxItemEntity]),
   ],
   providers: [
     {
       provide: EXTRACTORS,
-      inject: [TranscriptionExtractor, DiarizationExtractor, SummaryExtractor, EmbeddingExtractor],
+      inject: [
+        TranscriptionExtractor,
+        DiarizationExtractor,
+        SummaryExtractor,
+        EmbeddingExtractor,
+        EntitiesExtractor,
+      ],
       useFactory: (
         transcription: TranscriptionExtractor,
         diarization: DiarizationExtractor,
         summary: SummaryExtractor,
         embedding: EmbeddingExtractor,
-      ): Extractor[] => [transcription, diarization, summary, embedding],
+        entities: EntitiesExtractor,
+      ): Extractor[] => [transcription, diarization, summary, embedding, entities],
     },
     {
       // Built once at boot; construction validates the declared graph

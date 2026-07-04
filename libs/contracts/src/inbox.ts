@@ -23,6 +23,9 @@ export const extractionKindSchema = z.enum([
   // progress indicator on the merged item while the background job runs.
   'merge',
   'embedding',
+  // LLM extraction of named entities (people, organizations, places, …),
+  // normalized into a per-user entity registry (the knowledge-graph seed).
+  'entities',
 ]);
 export type ExtractionKind = z.infer<typeof extractionKindSchema>;
 
