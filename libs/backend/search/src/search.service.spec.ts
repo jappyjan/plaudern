@@ -81,12 +81,13 @@ describe('SearchService', () => {
       occurredAt?: string;
       transcript?: string;
       summaryTitle?: string;
+      userId?: string;
     } = {},
   ): Promise<void> {
     await items.save(
       items.create({
         id,
-        userId: USER,
+        userId: opts.userId ?? USER,
         deviceId: null,
         sourceType: (opts.sourceType ?? 'audio') as never,
         occurredAt: opts.occurredAt ?? '2026-07-01T09:00:00.000Z',
@@ -174,6 +175,7 @@ describe('SearchService', () => {
     itemId: string,
     vectors: number[][],
     text = 'chunk',
+    userId = USER,
   ): Promise<void> {
     const extractionId = await addExtraction(itemId, 'embedding');
     let i = 0;
@@ -182,7 +184,7 @@ describe('SearchService', () => {
         chunks.create({
           extractionId,
           inboxItemId: itemId,
-          userId: USER,
+          userId,
           source: 'transcript',
           chunkIndex: i++,
           text,
@@ -383,6 +385,45 @@ describe('SearchService', () => {
       expect(res.results[0].score).toBeGreaterThan(res.results[1].score);
       // The source item is never returned as its own neighbour.
       expect(res.results.map((r) => r.itemId)).not.toContain('a');
+    });
+  });
+
+  describe('user isolation', () => {
+    const OTHER = 'user-2';
+
+    it('never returns another user\'s items from keyword search', async () => {
+      await addItem('mine', { transcript: 'budget planning session' });
+      await addItem('theirs', { transcript: 'budget planning session', userId: OTHER });
+      embedding.enabled = false;
+
+      const res = await service.search(USER, { query: 'budget' });
+      expect(res.results.map((r) => r.itemId)).toEqual(['mine']);
+    });
+
+    it('never returns another user\'s items from filter-only browse', async () => {
+      await addItem('mine', { sourceType: 'audio' });
+      await addItem('theirs', { sourceType: 'audio', userId: OTHER });
+
+      const res = await service.search(USER, { filters: { sourceType: 'audio' } });
+      expect(res.results.map((r) => r.itemId)).toEqual(['mine']);
+    });
+
+    it('never returns another user\'s items from similar (vector path)', async () => {
+      await addItem('mine', { transcript: 'source' });
+      await addItem('mine-near', { transcript: 'near' });
+      await addItem('theirs-near', { transcript: 'their near', userId: OTHER });
+      await addChunks('mine', [[1, 0, 0]]);
+      await addChunks('mine-near', [[1, 0, 0]]);
+      // Identical vector, but owned by the other user — must never surface.
+      await addChunks('theirs-near', [[1, 0, 0]], 'chunk', OTHER);
+
+      const res = await service.similar(USER, 'mine');
+      expect(res.results.map((r) => r.itemId)).toEqual(['mine-near']);
+    });
+
+    it('rejects similar() on another user\'s item id (no existence leak)', async () => {
+      await addItem('theirs', { transcript: 't', userId: OTHER });
+      await expect(service.similar(USER, 'theirs')).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });

@@ -10,13 +10,17 @@ import { InboxService } from '@plaudern/inbox';
 import { SearchService } from '@plaudern/search';
 import { IngestionService } from '@plaudern/ingestion';
 
-/** A single semantic-search hit as returned to an MCP client. */
+/** A single hybrid-search hit as returned to an MCP client. */
 export interface SearchMemoryResult {
   itemId: string;
   source: EmbeddingChunkSource;
   /** The matching snippet of transcript or summary. */
   snippet: string;
-  /** Cosine similarity, rounded; higher is closer. */
+  /**
+   * Fused Reciprocal-Rank-Fusion score; higher is better. NB: rank-based, not
+   * cosine similarity — a top hit lands around 0.016-0.033, so absolute
+   * thresholds tuned against the old semantic-only cosine scores do not apply.
+   */
   score: number;
   /** Segment window (seconds) for transcript hits; null for summary hits. */
   startSeconds: number | null;
