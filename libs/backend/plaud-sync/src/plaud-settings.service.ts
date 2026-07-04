@@ -8,7 +8,7 @@ import type {
   UpdatePlaudSettingsRequest,
 } from '@plaudern/contracts';
 import { PlaudSettingsEntity } from '@plaudern/persistence';
-import { decryptSecret, encryptSecret } from './crypto';
+import { decryptSecret, encryptSecret } from '@plaudern/persistence';
 
 /** Owns the Plaud settings rows — exactly one per user. */
 @Injectable()

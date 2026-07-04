@@ -1,4 +1,3 @@
-export * from './crypto';
 export * from './plaud-api.client';
 export * from './plaud-settings.service';
 export * from './plaud-sync.service';

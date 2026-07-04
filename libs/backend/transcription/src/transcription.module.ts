@@ -1,63 +1,31 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import type { ConnectionOptions } from 'bullmq';
 import { InboxModule } from '@plaudern/inbox';
+import { BullJobQueue, InlineJobQueue, redisConnectionFromConfig } from '@plaudern/queue';
 import { TRANSCRIPTION_PROVIDER } from './transcription.provider';
 import { TRANSCRIPTION_QUEUE } from './transcription.job';
-import { SidecarTranscriptionProvider } from './providers/sidecar.provider';
 import { ElevenLabsTranscriptionProvider } from './providers/elevenlabs.provider';
 import { TranscriptionProcessor } from './transcription.processor';
 import { TranscriptionService } from './transcription.service';
 import { TranscriptionController } from './transcription.controller';
-import { InlineTranscriptionQueue } from './queues/inline.queue';
-import { BullTranscriptionQueue } from './queues/bull.queue';
-
-function redisConnection(config: ConfigService): ConnectionOptions {
-  const url = config.get<string>('REDIS_URL');
-  if (url) {
-    const parsed = new URL(url);
-    return {
-      host: parsed.hostname,
-      port: Number(parsed.port || '6379'),
-      password: parsed.password || undefined,
-      username: parsed.username || undefined,
-      db: parsed.pathname && parsed.pathname.length > 1 ? Number(parsed.pathname.slice(1)) : 0,
-    };
-  }
-  return {
-    host: config.get<string>('REDIS_HOST', 'localhost'),
-    port: Number(config.get<string>('REDIS_PORT', '6379')),
-  };
-}
 
 @Module({
   imports: [ConfigModule, InboxModule],
   providers: [
-    SidecarTranscriptionProvider,
-    ElevenLabsTranscriptionProvider,
-    // TRANSCRIPTION_PROVIDER selects the backend: the self-hosted faster-whisper
-    // sidecar (default) or the hosted ElevenLabs Scribe API. Diarization is
-    // independent of this choice.
-    {
-      provide: TRANSCRIPTION_PROVIDER,
-      inject: [ConfigService, SidecarTranscriptionProvider, ElevenLabsTranscriptionProvider],
-      useFactory: (
-        config: ConfigService,
-        sidecar: SidecarTranscriptionProvider,
-        elevenlabs: ElevenLabsTranscriptionProvider,
-      ) =>
-        config.get<string>('TRANSCRIPTION_PROVIDER', 'sidecar') === 'elevenlabs'
-          ? elevenlabs
-          : sidecar,
-    },
+    // Transcription always runs on the hosted ElevenLabs Scribe API. The DI
+    // token stays as the seam tests override with fakes.
+    { provide: TRANSCRIPTION_PROVIDER, useClass: ElevenLabsTranscriptionProvider },
     TranscriptionProcessor,
     {
       provide: TRANSCRIPTION_QUEUE,
       inject: [ConfigService, TranscriptionProcessor],
       useFactory: (config: ConfigService, processor: TranscriptionProcessor) =>
         config.get<string>('QUEUE_DRIVER', 'inline') === 'bull'
-          ? new BullTranscriptionQueue(redisConnection(config), processor)
-          : new InlineTranscriptionQueue(processor),
+          ? new BullJobQueue('transcription', 'transcribe', redisConnectionFromConfig(config), processor, {
+              concurrency: 2,
+              backoffDelayMs: 2_000,
+            })
+          : new InlineJobQueue(processor),
     },
     TranscriptionService,
   ],

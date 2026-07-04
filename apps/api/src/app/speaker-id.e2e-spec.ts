@@ -2,7 +2,7 @@ import 'reflect-metadata';
 
 // Configure the app for hardware-free, infra-free verification BEFORE the
 // modules load (ConfigModule reads process.env at init). Same Path A setup as
-// the ingestion e2e; the fake diarization provider emits one constant voice
+// the ingestion e2e; the fake pyannoteAI pipeline emits one constant voice
 // (matches the same profile across recordings) plus one per-recording voice.
 process.env.DATABASE_DRIVER = 'sqlite';
 process.env.DATABASE_URL = ':memory:';
@@ -10,18 +10,11 @@ process.env.STORAGE_DRIVER = 'memory';
 process.env.QUEUE_DRIVER = 'inline';
 process.env.AUTH_DISABLED = 'true'; // single-user mode — auth has its own spec
 
-import { INestApplication, VersioningType } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
+import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { VoiceProfileDto } from '@plaudern/contracts';
 import { InMemoryStorageService, StorageService } from '@plaudern/storage';
-import { TRANSCRIPTION_PROVIDER } from '@plaudern/transcription';
-import { DIARIZATION_PROVIDER } from '@plaudern/speaker-id';
-import {
-  FakeDiarizationProvider,
-  FakeTranscriptionProvider,
-} from '../testing/fake-providers';
-import { AppModule } from './app.module';
+import { createE2eApp } from '../testing/e2e-app';
 
 describe('Speaker identification (e2e, Path A)', () => {
   let app: INestApplication;
@@ -48,16 +41,7 @@ describe('Speaker identification (e2e, Path A)', () => {
   }
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(TRANSCRIPTION_PROVIDER)
-      .useValue(new FakeTranscriptionProvider())
-      .overrideProvider(DIARIZATION_PROVIDER)
-      .useValue(new FakeDiarizationProvider())
-      .compile();
-    app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.enableVersioning({ type: VersioningType.URI });
-    await app.init();
+    app = await createE2eApp();
 
     storage = app.get(StorageService) as InMemoryStorageService;
     itemIds.push(await ingestAudio('speaker-e2e-1'));

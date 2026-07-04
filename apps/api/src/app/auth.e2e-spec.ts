@@ -11,20 +11,13 @@ process.env.AUTH_DISABLED = 'false';
 process.env.GEOCODER = 'stub';
 
 import { randomUUID } from 'node:crypto';
-import { INestApplication, VersioningType } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
+import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AuthService, SESSION_COOKIE, SessionService } from '@plaudern/auth';
 import { DEFAULT_USER_ID, InboxItemEntity, UserEntity } from '@plaudern/persistence';
 import { InMemoryStorageService, StorageService } from '@plaudern/storage';
-import { TRANSCRIPTION_PROVIDER } from '@plaudern/transcription';
-import { DIARIZATION_PROVIDER } from '@plaudern/speaker-id';
-import {
-  FakeDiarizationProvider,
-  FakeTranscriptionProvider,
-} from '../testing/fake-providers';
-import { AppModule } from './app.module';
+import { createE2eApp } from '../testing/e2e-app';
 
 describe('Authentication & multi-user isolation (e2e, Path A)', () => {
   let app: INestApplication;
@@ -48,16 +41,7 @@ describe('Authentication & multi-user isolation (e2e, Path A)', () => {
   }
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(TRANSCRIPTION_PROVIDER)
-      .useValue(new FakeTranscriptionProvider())
-      .overrideProvider(DIARIZATION_PROVIDER)
-      .useValue(new FakeDiarizationProvider())
-      .compile();
-    app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.enableVersioning({ type: VersioningType.URI });
-    await app.init();
+    app = await createE2eApp();
 
     storage = app.get(StorageService) as InMemoryStorageService;
     sessions = app.get(SessionService);

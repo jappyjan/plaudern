@@ -1,19 +1,14 @@
 /**
- * A speaker-identification strategy: given one recording, produce its
- * speaker-labeled segments AND link each speaker to a persistent voice profile
- * (writing speaker_occurrences as a side effect). Two implementations back the
- * two SPEAKER_ID_PROVIDER modes:
- *   - EmbeddingSpeakerIdentifier  (`pyannote`)   — local sidecar + cosine matching
- *   - PyannoteAiSpeakerIdentifier (`pyannoteai`) — hosted API + voiceprint /identify
- *
- * The DiarizationProcessor depends only on this seam, so it is agnostic to how
- * identity is computed.
+ * The speaker-identification job/result shapes: given one recording, produce
+ * its speaker-labeled segments AND link each speaker to a persistent voice
+ * profile (writing speaker_occurrences as a side effect). Implemented by
+ * PyannoteAiSpeakerIdentifier (hosted pyannoteAI API + voiceprint /identify).
  */
 export interface SpeakerIdentificationJob {
   userId: string;
   inboxItemId: string;
   extractionId: string;
-  /** Storage key of the recording's audio; the identifier presigns it as needed. */
+  /** Storage key of the recording's audio; the identifier uploads it as needed. */
   storageKey: string;
   contentType: string;
 }
@@ -29,5 +24,3 @@ export interface SpeakerIdentifier {
   readonly id: string;
   identify(job: SpeakerIdentificationJob): Promise<SpeakerIdentificationResult>;
 }
-
-export const SPEAKER_IDENTIFIER = Symbol('SPEAKER_IDENTIFIER');

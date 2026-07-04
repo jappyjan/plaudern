@@ -36,7 +36,6 @@ export const voiceProfileRecordingSchema = z.object({
   /** null for the occurrence that created the profile. */
   similarity: z.number().nullable(),
 });
-export type VoiceProfileRecordingDto = z.infer<typeof voiceProfileRecordingSchema>;
 
 export const voiceProfileDetailSchema = voiceProfileSchema.extend({
   recordings: z.array(voiceProfileRecordingSchema),
@@ -54,7 +53,6 @@ export const mergeVoiceProfilesRequestSchema = z.object({
   /** Merged INTO the profile addressed by the URL, then deleted. */
   sourceProfileId: z.string().uuid(),
 });
-export type MergeVoiceProfilesRequest = z.infer<typeof mergeVoiceProfilesRequestSchema>;
 
 /** Speaker identity attached to a transcript segment or chip. */
 export const transcriptSpeakerSchema = z.object({

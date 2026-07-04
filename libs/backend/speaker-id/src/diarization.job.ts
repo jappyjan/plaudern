@@ -1,3 +1,5 @@
+import type { JobQueue } from '@plaudern/queue';
+
 export interface DiarizationJob {
   extractionId: string;
   inboxItemId: string;
@@ -8,6 +10,4 @@ export interface DiarizationJob {
 export const DIARIZATION_QUEUE = Symbol('DIARIZATION_QUEUE');
 
 /** Abstraction over the job queue so tests run inline without Redis. */
-export interface DiarizationQueue {
-  enqueue(job: DiarizationJob): Promise<void>;
-}
+export type DiarizationQueue = JobQueue<DiarizationJob>;

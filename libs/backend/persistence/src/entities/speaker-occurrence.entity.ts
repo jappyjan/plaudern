@@ -49,18 +49,10 @@ export class SpeakerOccurrenceEntity {
   @Column({ type: 'varchar' })
   label!: string;
 
-  /**
-   * L2-normalized embedding of this speaker in this recording.
-   * Null for occurrences produced by the pyannoteAI (voiceprint) path, which
-   * does not expose embeddings.
-   */
-  @Column({ type: 'simple-json', nullable: true })
-  embedding!: number[] | null;
-
   @Column({ type: 'float', default: 0 })
   speakingSeconds!: number;
 
-  /** Cosine similarity to the matched profile; null when this occurrence created the profile. */
+  /** 1 when /identify matched an existing profile; null when this occurrence created the profile. */
   @Column({ type: 'float', nullable: true })
   similarity!: number | null;
 

@@ -7,7 +7,7 @@
 #   SERVICE_USER_<ID> /
 #   SERVICE_PASSWORD_<ID>      -> Coolify generates & persists a random value the
 #                                 first time it's referenced.
-# Plain ${VARS} (e.g. HUGGING_FACE_TOKEN) are surfaced in the Coolify UI to fill in.
+# Plain ${VARS} (e.g. ELEVENLABS_API_KEY) are surfaced in the Coolify UI to fill in.
 #
 # Only `web`, `api` and `minio` are exposed; postgres/redis stay on the internal
 # network. Access is protected by passkey (WebAuthn) login — set AUTH_RP_ID to
@@ -51,8 +51,6 @@ services:
       - S3_FORCE_PATH_STYLE=true
       - QUEUE_DRIVER=bull
       - REDIS_URL=redis://:${SERVICE_PASSWORD_REDIS}@redis:6379
-      # Transcription runs on the self-hosted speaker-id sidecar
-      # (requires HUGGING_FACE_TOKEN on that service — see apps/speaker-id-ml/README.md).
       # General-purpose encryption key for secrets stored in the database
       # (e.g. the Plaud password): Coolify generates & persists it.
       - APP_ENCRYPTION_SECRET=${SERVICE_PASSWORD_APPENCRYPTION}
@@ -77,35 +75,22 @@ services:
       - SUMMARIZATION_API_KEY=${SUMMARIZATION_API_KEY}
       - SUMMARIZATION_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
       - SUMMARIZATION_MODEL=${SUMMARIZATION_MODEL:-deepseek-chat}
-      # Transcription. Default here is the hosted ElevenLabs Scribe API for
-      # markedly better accuracy/punctuation and multilingual auto-detection —
-      # fill in ELEVENLABS_API_KEY (get one at elevenlabs.io). Audio bytes are
-      # uploaded to ElevenLabs directly (storage stays private). Alternative:
-      # sidecar = self-hosted faster-whisper (also set the sidecar's
-      # LOAD_TRANSCRIPTION=true below). Fixed at boot, not switchable live.
-      - TRANSCRIPTION_PROVIDER=${TRANSCRIPTION_PROVIDER:-elevenlabs}
+      # Transcription: the hosted ElevenLabs Scribe API — fill in
+      # ELEVENLABS_API_KEY (get one at elevenlabs.io). Audio bytes are uploaded
+      # to ElevenLabs directly (storage stays private).
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
-      # Speaker diarization. Default here is the hosted pyannoteAI API so the box
-      # isn't burdened by the heavy local pyannote model — fill in
-      # PYANNOTEAI_API_KEY (get one at pyannote.ai). Alternatives: pyannote = run
-      # the full local sidecar instead (also set the sidecar's
-      # LOAD_DIARIZATION=true and HUGGING_FACE_TOKEN); off = disabled. Fixed at
-      # boot, not switchable live.
+      # Speaker diarization: the hosted pyannoteAI API — fill in
+      # PYANNOTEAI_API_KEY (get one at pyannote.ai), or set
+      # SPEAKER_ID_PROVIDER=off to disable. Audio is uploaded to pyannoteAI
+      # directly (storage stays private); voiceprints for new speakers are
+      # enrolled from clips sliced in-process with ffmpeg.
       - SPEAKER_ID_PROVIDER=${SPEAKER_ID_PROVIDER:-pyannoteai}
-      # Hosted pyannoteAI (used when SPEAKER_ID_PROVIDER=pyannoteai). Audio is
-      # uploaded to pyannoteAI directly (storage stays private); voiceprints for
-      # new speakers are enrolled from clips the sidecar slices.
       - PYANNOTEAI_API_KEY=${PYANNOTEAI_API_KEY}
       - PYANNOTEAI_MODEL=${PYANNOTEAI_MODEL:-precision-2}
       # Minimum confidence (0-100) to accept a voiceprint match. 0 force-matches
       # known voices into recordings they aren't in; 50 is pyannoteAI's
       # recommended strict floor. Raise toward 70 for stricter matching.
       - PYANNOTEAI_MATCH_THRESHOLD=${PYANNOTEAI_MATCH_THRESHOLD:-50}
-      # Sidecar: transcription (always) + voiceprint clip extraction (pyannoteai mode).
-      - SPEAKER_ID_URL=http://speaker-id:8000
-      - SPEAKER_ID_TOKEN=${SERVICE_PASSWORD_SPEAKERID}
-      # Cosine threshold for the local pyannote path only (ignored by pyannoteai).
-      - SPEAKER_MATCH_THRESHOLD=${SPEAKER_MATCH_THRESHOLD:-0.65}
     depends_on:
       postgres:
         condition: service_healthy
@@ -113,39 +98,11 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
-      # service_started, not healthy: when a local model is enabled the first
-      # boot downloads ~1.5 GB; failed jobs are retried by the queue meanwhile.
-      speaker-id:
-        condition: service_started
     healthcheck:
       test: ['CMD', 'node', '-e', "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 10
-
-  # ML sidecar: voiceprint clip extraction (ffmpeg), and optionally local
-  # transcription (faster-whisper) and diarization (pyannote). Internal-only.
-  # With the default hosted providers (ElevenLabs + pyannoteAI), both
-  # LOAD_TRANSCRIPTION and LOAD_DIARIZATION default to false: the sidecar loads
-  # no ML models (no ~1.5 GB downloads, no HUGGING_FACE_TOKEN needed) and just
-  # slices voiceprint clips. To run a model locally, set the matching provider
-  # back to the self-hosted path and flip its load flag on:
-  #   transcription: TRANSCRIPTION_PROVIDER=sidecar + LOAD_TRANSCRIPTION=true
-  #   diarization:   SPEAKER_ID_PROVIDER=pyannote  + LOAD_DIARIZATION=true
-  #                  + HUGGING_FACE_TOKEN (accept the model terms first — see
-  #                  apps/speaker-id-ml/README.md).
-  speaker-id:
-    build:
-      context: apps/speaker-id-ml
-    restart: unless-stopped
-    environment:
-      - LOAD_TRANSCRIPTION=${LOAD_TRANSCRIPTION:-false}
-      - LOAD_DIARIZATION=${LOAD_DIARIZATION:-false}
-      - HUGGING_FACE_TOKEN=${HUGGING_FACE_TOKEN:-}
-      - SPEAKER_ID_TOKEN=${SERVICE_PASSWORD_SPEAKERID}
-      - WHISPER_MODEL=${WHISPER_MODEL:-small}
-    volumes:
-      - hfcache:/cache/huggingface
 
   postgres:
     image: postgres:17-alpine
@@ -211,4 +168,3 @@ volumes:
   pgdata:
   miniodata:
   redisdata:
-  hfcache:

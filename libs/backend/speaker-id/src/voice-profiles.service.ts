@@ -11,7 +11,6 @@ import {
   SpeakerOccurrenceEntity,
   VoiceProfileEntity,
 } from '@plaudern/persistence';
-import { mergeCentroids } from './profile-matcher.service';
 
 interface OccurrenceWithItem extends SpeakerOccurrenceEntity {
   occurredAt: string;
@@ -90,19 +89,9 @@ export class VoiceProfilesService {
         { voiceProfileId: source.id },
         { voiceProfileId: target.id },
       );
-      if (
-        target.centroid &&
-        source.centroid &&
-        target.centroid.length === source.centroid.length
-      ) {
-        target.centroid = mergeCentroids(
-          target.centroid,
-          target.embeddingCount,
-          source.centroid,
-          source.embeddingCount,
-        );
-      }
-      target.embeddingCount += source.embeddingCount;
+      // Keep the merged person auto-matchable: adopt the source's voiceprint
+      // when the target has none.
+      if (!target.voiceprint && source.voiceprint) target.voiceprint = source.voiceprint;
       if (!target.name && source.name) target.name = source.name;
       await manager.save(target);
       await manager.delete(VoiceProfileEntity, { id: source.id });

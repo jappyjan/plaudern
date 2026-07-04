@@ -13,7 +13,7 @@ export interface UserScopedEvent {
  * events — isolation covers the live stream, not just the REST reads.
  *
  * This only works because every writer (HTTP handlers and the BullMQ worker
- * created inside BullTranscriptionQueue) runs in the same process as the API.
+ * created inside BullJobQueue) runs in the same process as the API.
  * If the queue worker is ever split into its own process, this must be
  * replaced with a shared channel (e.g. Redis pub/sub).
  */

@@ -1,5 +1,5 @@
 export interface TranscriptionInput {
-  /** Presigned internal GET URL; the sidecar downloads it itself. */
+  /** Presigned internal GET URL the provider downloads the audio from. */
   audioUrl: string;
   contentType: string;
   filename?: string;
@@ -14,8 +14,8 @@ export interface TranscriptionResult {
 }
 
 /**
- * Transcription backend (plan §5): the self-hosted whisper sidecar
- * (apps/speaker-id-ml). Tests override the DI token with fakes.
+ * Transcription backend: the hosted ElevenLabs Scribe API. Tests override the
+ * DI token with fakes.
  */
 export interface TranscriptionProvider {
   readonly id: string;

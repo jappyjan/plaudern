@@ -23,10 +23,9 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * Thin client for the hosted pyannoteAI API (https://api.pyannote.ai/v1).
  *
  * Every operation is an async job: POST returns a `jobId`, and the result is
- * read by polling `GET /jobs/{id}` until it succeeds. Unlike the self-hosted
- * sidecar (which holds one long request open, forcing node:http — see
- * sidecar-http.ts), each pyannoteAI call returns headers immediately, so global
- * fetch with a per-request timeout is fine here.
+ * read by polling `GET /jobs/{id}` until it succeeds. Each call returns
+ * headers immediately, so global fetch with a per-request timeout is fine
+ * here (no long silent computation on the wire).
  */
 export class PyannoteAiClient {
   private readonly logger = new Logger(PyannoteAiClient.name);
@@ -109,6 +108,13 @@ export class PyannoteAiClient {
   }
 
   private headers(): Record<string, string> {
+    // Checked at call time, not boot, so an instance without diarization
+    // configured still starts; the job then fails with a clear message.
+    if (!this.apiKey) {
+      throw new Error(
+        'PYANNOTEAI_API_KEY is not set — cannot use pyannoteAI (get a key at pyannote.ai, or set SPEAKER_ID_PROVIDER=off)',
+      );
+    }
     return { 'content-type': 'application/json', authorization: `Bearer ${this.apiKey}` };
   }
 
@@ -126,7 +132,6 @@ export class PyannoteAiClient {
     return json.jobId;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async poll(jobId: string): Promise<any> {
     const deadline = Date.now() + this.timeoutMs;
     for (;;) {
@@ -170,7 +175,6 @@ export class PyannoteAiClient {
    * `output.identification`. Both are arrays of {start,end,speaker}. Accept
    * either key so one parser serves both.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private parseDiarization(output: any): PyannoteAiDiarization {
     const raw = output?.identification ?? output?.diarization;
     if (!Array.isArray(raw)) {

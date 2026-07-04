@@ -9,21 +9,14 @@ process.env.QUEUE_DRIVER = 'inline';
 process.env.AUTH_DISABLED = 'true'; // single-user mode — auth has its own spec
 process.env.GEOCODER = 'stub';
 
-import { INestApplication, VersioningType } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
+import { INestApplication } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import request from 'supertest';
 import { InMemoryStorageService, StorageService } from '@plaudern/storage';
 import { InboxService } from '@plaudern/inbox';
 import { ExtractedPayloadEntity } from '@plaudern/persistence';
-import { TRANSCRIPTION_PROVIDER } from '@plaudern/transcription';
-import { DIARIZATION_PROVIDER } from '@plaudern/speaker-id';
-import {
-  FakeDiarizationProvider,
-  FakeTranscriptionProvider,
-} from '../testing/fake-providers';
-import { AppModule } from './app.module';
+import { createE2eApp } from '../testing/e2e-app';
 
 describe('Reprocess whole pipeline (e2e, Path A)', () => {
   let app: INestApplication;
@@ -32,16 +25,7 @@ describe('Reprocess whole pipeline (e2e, Path A)', () => {
   let extractionRepo: Repository<ExtractedPayloadEntity>;
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(TRANSCRIPTION_PROVIDER)
-      .useValue(new FakeTranscriptionProvider())
-      .overrideProvider(DIARIZATION_PROVIDER)
-      .useValue(new FakeDiarizationProvider())
-      .compile();
-    app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.enableVersioning({ type: VersioningType.URI });
-    await app.init();
+    app = await createE2eApp();
 
     storage = app.get(StorageService) as InMemoryStorageService;
     inbox = app.get(InboxService);

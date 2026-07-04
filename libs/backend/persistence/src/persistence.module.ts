@@ -30,6 +30,7 @@ import { CreateAuthTables1720000000008 } from './migrations/1720000000008-Create
 import { DeSentinelizeOwner1720000000009 } from './migrations/1720000000009-DeSentinelizeOwner';
 import { PyannoteAiVoiceprints1720000000010 } from './migrations/1720000000010-PyannoteAiVoiceprints';
 import { CreateSummarizationSettings1720000000011 } from './migrations/1720000000011-CreateSummarizationSettings';
+import { DropEmbeddingColumns1720000000012 } from './migrations/1720000000012-DropEmbeddingColumns';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -64,6 +65,7 @@ export const ALL_MIGRATIONS = [
   DeSentinelizeOwner1720000000009,
   PyannoteAiVoiceprints1720000000010,
   CreateSummarizationSettings1720000000011,
+  DropEmbeddingColumns1720000000012,
 ];
 
 /**

@@ -1,12 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { StorageService } from '@plaudern/storage';
 import { SpeakerOccurrenceEntity, VoiceProfileEntity } from '@plaudern/persistence';
 import { PyannoteAiClient } from './providers/pyannoteai-client';
-import { postJsonToSidecar } from './providers/sidecar-http';
+import { CLIP_EXTRACTOR, type ClipExtractor, type VoiceprintClip } from './clip-extractor';
 import type { SpeakerIdentificationJob } from './speaker-identifier';
 
 /** One diarized speaker after canonical relabeling, ready to persist. */
@@ -20,46 +19,33 @@ export interface DiarizedSpeakerLite {
   matchedProfile: VoiceProfileEntity | null;
 }
 
-interface SidecarClip {
-  label: string;
-  audio_base64: string;
-}
-
 /**
- * Persists pyannoteAI diarization/identification results, mirroring
- * ProfileMatcher's role for the embedding path but built on voiceprints:
+ * Persists pyannoteAI diarization/identification results:
  *
  *  - matched speakers link to their existing profile;
  *  - each new speaker with enough clean speech is auto-enrolled — its longest
- *    segments are sliced by the sidecar's ffmpeg (`/voiceprint-clips`),
- *    uploaded, and turned into a pyannoteAI voiceprint stored on a fresh
- *    `unconfirmed` profile so the next recording auto-identifies them;
+ *    segments are sliced into a clip by ffmpeg, uploaded, and turned into a
+ *    pyannoteAI voiceprint stored on a fresh `unconfirmed` profile so the next
+ *    recording auto-identifies them;
  *  - speakers too brief to enroll still get an `unconfirmed` profile (no
- *    voiceprint), matching the embedding path's "one profile per heard voice".
- *
- * Occurrences carry a null embedding — the hosted API exposes none.
+ *    voiceprint) — one profile per heard voice.
  */
 @Injectable()
 export class VoiceprintMatcherService {
   private readonly logger = new Logger(VoiceprintMatcherService.name);
-  private readonly sidecarUrl: string;
-  private readonly sidecarToken: string;
-  private readonly sidecarTimeoutMs: number;
   private readonly minEnrollSeconds: number;
   private readonly voiceprintMaxSeconds: number;
 
   constructor(
     config: ConfigService,
-    private readonly storage: StorageService,
     private readonly pyannote: PyannoteAiClient,
+    @Inject(CLIP_EXTRACTOR)
+    private readonly clips: ClipExtractor,
     @InjectRepository(VoiceProfileEntity)
     private readonly profiles: Repository<VoiceProfileEntity>,
     @InjectRepository(SpeakerOccurrenceEntity)
     private readonly occurrences: Repository<SpeakerOccurrenceEntity>,
   ) {
-    this.sidecarUrl = config.get<string>('SPEAKER_ID_URL', 'http://localhost:8000');
-    this.sidecarToken = config.get<string>('SPEAKER_ID_TOKEN', '');
-    this.sidecarTimeoutMs = Number(config.get<string>('SPEAKER_ID_TIMEOUT_MS', String(30 * 60_000)));
     this.minEnrollSeconds = Number(config.get<string>('PYANNOTEAI_MIN_ENROLL_SECONDS', '6'));
     this.voiceprintMaxSeconds = Number(config.get<string>('PYANNOTEAI_VOICEPRINT_MAX_SECONDS', '30'));
   }
@@ -79,8 +65,6 @@ export class VoiceprintMatcherService {
             userId: job.userId,
             name: null,
             status: 'unconfirmed',
-            centroid: null,
-            embeddingCount: 0,
             voiceprint: enrolled.get(speaker.label) ?? null,
           }),
         );
@@ -91,7 +75,6 @@ export class VoiceprintMatcherService {
           extractionId: job.extractionId,
           voiceProfileId: profile.id,
           label: speaker.label,
-          embedding: null,
           speakingSeconds: speaker.speakingSeconds,
           similarity: speaker.matchedProfile ? 1 : null,
         }),
@@ -101,8 +84,8 @@ export class VoiceprintMatcherService {
 
   /**
    * Enroll a voiceprint for every unmatched speaker with enough clean speech.
-   * One sidecar call slices all of them from a single audio download; each clip
-   * is uploaded, voiceprinted, then deleted. Best-effort: a speaker whose
+   * The audio is downloaded once and all clips sliced from it; each clip is
+   * uploaded, voiceprinted, then discarded. Best-effort: a speaker whose
    * enrollment fails simply gets no voiceprint (still a profile, just not
    * matchable next time) rather than failing the whole diarization.
    */
@@ -116,20 +99,13 @@ export class VoiceprintMatcherService {
     );
     if (candidates.length === 0) return enrolled;
 
-    let clips: SidecarClip[];
+    let clips: VoiceprintClip[];
     try {
-      const internalUrl = await this.storage.createInternalPresignedGetUrl(job.storageKey);
-      const res = await postJsonToSidecar<{ clips: SidecarClip[] }>(
-        `${this.sidecarUrl}/voiceprint-clips`,
-        {
-          audio_url: internalUrl,
-          max_seconds: this.voiceprintMaxSeconds,
-          speakers: candidates.map((c) => ({ label: c.label, segments: c.segments })),
-        },
-        this.sidecarToken,
-        this.sidecarTimeoutMs,
+      clips = await this.clips.extract(
+        job.storageKey,
+        candidates.map((c) => ({ label: c.label, segments: c.segments })),
+        this.voiceprintMaxSeconds,
       );
-      clips = res.clips ?? [];
     } catch (err) {
       this.logger.warn(`voiceprint clip extraction failed, skipping enrollment: ${(err as Error).message}`);
       return enrolled;
@@ -138,11 +114,7 @@ export class VoiceprintMatcherService {
     for (const clip of clips) {
       try {
         // Upload the clip straight to pyannoteAI — no temp object in our storage.
-        const mediaUrl = await this.pyannote.upload(
-          Buffer.from(clip.audio_base64, 'base64'),
-          'audio/wav',
-          randomUUID(),
-        );
+        const mediaUrl = await this.pyannote.upload(clip.wav, 'audio/wav', randomUUID());
         enrolled.set(clip.label, await this.pyannote.voiceprint(mediaUrl));
       } catch (err) {
         this.logger.warn(`voiceprint enrollment failed for ${clip.label}: ${(err as Error).message}`);

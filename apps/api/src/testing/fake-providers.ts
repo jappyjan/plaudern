@@ -5,9 +5,11 @@ import type {
   TranscriptionResult,
 } from '@plaudern/transcription';
 import type {
-  DiarizationInput,
-  DiarizationProvider,
-  DiarizationResult,
+  ClipExtractor,
+  ClipSpeaker,
+  PyannoteAiDiarization,
+  PyannoteAiVoiceprint,
+  VoiceprintClip,
 } from '@plaudern/speaker-id';
 import type {
   SummarizationInput,
@@ -16,9 +18,27 @@ import type {
 } from '@plaudern/summarization';
 
 /**
- * Deterministic test double, injected via overrideProvider(TRANSCRIPTION_PROVIDER).
- * Like the real sidecar it works off the presigned URL, and returns fixed text
- * with timestamps aligned to FakeDiarizationProvider.
+ * Deterministic test doubles for the hosted-API pipeline. The fakes share one
+ * world model so the REAL identifier + voiceprint matcher run end-to-end
+ * without network or ffmpeg:
+ *
+ *   Every recording has two speakers — 0–8s a CONSTANT voice (the same person
+ *   in every recording) and 8–16s a per-recording voice. The clip extractor
+ *   emits clip bytes accordingly, voiceprints are content hashes of clip
+ *   bytes, and /identify relabels the constant-voice segment with the known
+ *   profile whose voiceprint matches. So across recordings the constant voice
+ *   converges on ONE profile while each per-recording voice gets a fresh one.
+ */
+
+const CONSTANT_VOICE = Buffer.from('fake-voice-constant');
+
+const sha = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex').slice(0, 16);
+const voiceprintOf = (bytes: Buffer) => `vp:${sha(bytes)}`;
+
+/**
+ * Deterministic transcription double, injected via
+ * overrideProvider(TRANSCRIPTION_PROVIDER). Returns fixed text with timestamps
+ * aligned to the fake diarization (0–8s / 8–16s).
  */
 export class FakeTranscriptionProvider implements TranscriptionProvider {
   readonly id = 'fake-transcription';
@@ -28,48 +48,76 @@ export class FakeTranscriptionProvider implements TranscriptionProvider {
       text: `[test transcription, ${input.contentType}]`,
       language: 'en',
       segments: [
-        { start: 0, end: 2, text: `[test transcription,` },
-        { start: 2, end: 4, text: ` ${input.contentType}]` },
+        { start: 0, end: 8, text: `[test transcription,` },
+        { start: 8, end: 16, text: ` ${input.contentType}]` },
       ],
     };
   }
 }
 
-const DIM = 64;
+/**
+ * Clip-extractor double, injected via overrideProvider(CLIP_EXTRACTOR). The
+ * first-heard speaker (SPEAKER_00, the 0–8s window) is the constant voice;
+ * every other speaker's clip is derived from the recording's storage key, so
+ * distinct recordings yield distinct voiceprints.
+ */
+export class FakeClipExtractor implements ClipExtractor {
+  async extract(
+    storageKey: string,
+    speakers: ClipSpeaker[],
+    _maxSeconds: number,
+  ): Promise<VoiceprintClip[]> {
+    return speakers.map((speaker) => ({
+      label: speaker.label,
+      wav:
+        speaker.label === 'SPEAKER_00'
+          ? CONSTANT_VOICE
+          : Buffer.from(`fake-voice-${storageKey}-${speaker.label}`),
+    }));
+  }
+}
 
 /**
- * Deterministic test double, injected via overrideProvider(DIARIZATION_PROVIDER).
- * Emits two speakers per recording: SPEAKER_00 has a constant embedding so it
- * matches the SAME profile across every recording; SPEAKER_01's embedding is a
- * ±1 sign vector derived from the audio URL hash, so distinct recordings yield
- * near-orthogonal embeddings (cosine ≈ 0 ± 1/8) and therefore distinct
- * unconfirmed profiles.
+ * Hosted-API double, injected via overrideProvider(PyannoteAiClient). Mirrors
+ * the real client's surface: upload() returns a media:// handle, voiceprint()
+ * hashes the uploaded clip, diarize()/identify() return the fixed two-speaker
+ * diarization — with the constant voice relabeled to its matching known
+ * voiceprint's label, like the real /identify.
  */
-export class FakeDiarizationProvider implements DiarizationProvider {
-  readonly id = 'fake-diarization';
+export class FakePyannoteAiClient {
+  private readonly uploads = new Map<string, Buffer>();
 
-  async diarize(input: DiarizationInput): Promise<DiarizationResult> {
-    const constant = new Array<number>(DIM).fill(0);
-    constant[0] = 1;
+  async upload(bytes: Buffer, _contentType: string, keyHint: string): Promise<string> {
+    const url = `media://fake/${keyHint}`;
+    this.uploads.set(url, bytes);
+    return url;
+  }
 
-    const hash = createHash('sha256').update(input.audioUrl).digest();
-    const scale = 1 / Math.sqrt(DIM);
-    const hashed = Array.from({ length: DIM }, (_, i) => {
-      const bit = (hash[i >> 3] >> (i & 7)) & 1;
-      return bit ? scale : -scale;
-    });
+  async voiceprint(mediaUrl: string): Promise<string> {
+    const bytes = this.uploads.get(mediaUrl);
+    if (!bytes) throw new Error(`fake pyannoteAI: unknown media url ${mediaUrl}`);
+    return voiceprintOf(bytes);
+  }
 
+  async diarize(_mediaUrl: string): Promise<PyannoteAiDiarization> {
     return {
-      durationSeconds: 4,
+      durationSeconds: 16,
       segments: [
-        { start: 0, end: 2, speaker: 'SPEAKER_00' },
-        { start: 2, end: 4, speaker: 'SPEAKER_01' },
-      ],
-      speakers: [
-        { label: 'SPEAKER_00', embedding: constant, speakingSeconds: 2 },
-        { label: 'SPEAKER_01', embedding: hashed, speakingSeconds: 2 },
+        { start: 0, end: 8, speaker: 'SPEAKER_00' },
+        { start: 8, end: 16, speaker: 'SPEAKER_01' },
       ],
     };
+  }
+
+  async identify(
+    mediaUrl: string,
+    voiceprints: PyannoteAiVoiceprint[],
+    _threshold: number,
+  ): Promise<PyannoteAiDiarization> {
+    const diarization = await this.diarize(mediaUrl);
+    const known = voiceprints.find((v) => v.voiceprint === voiceprintOf(CONSTANT_VOICE));
+    if (known) diarization.segments[0].speaker = known.label;
+    return diarization;
   }
 }
 

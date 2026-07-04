@@ -4,10 +4,11 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import type { InboxItemDto } from '@plaudern/contracts';
 import { TRANSCRIPTION_PROVIDER } from '@plaudern/transcription';
-import { DIARIZATION_PROVIDER } from '@plaudern/speaker-id';
+import { CLIP_EXTRACTOR, PyannoteAiClient } from '@plaudern/speaker-id';
 import { startInfra, type Infra } from '../testing/containers';
 import {
-  FakeDiarizationProvider,
+  FakeClipExtractor,
+  FakePyannoteAiClient,
   FakeTranscriptionProvider,
 } from '../testing/fake-providers';
 
@@ -45,8 +46,10 @@ describe('Ingestion pipeline (integration, real Postgres + MinIO + Redis)', () =
     })
       .overrideProvider(TRANSCRIPTION_PROVIDER)
       .useValue(new FakeTranscriptionProvider())
-      .overrideProvider(DIARIZATION_PROVIDER)
-      .useValue(new FakeDiarizationProvider())
+      .overrideProvider(PyannoteAiClient)
+      .useValue(new FakePyannoteAiClient())
+      .overrideProvider(CLIP_EXTRACTOR)
+      .useValue(new FakeClipExtractor())
       .compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api');
@@ -151,7 +154,6 @@ async function waitForTranscriptionCount(
   timeoutMs = 30_000,
 ): Promise<InboxItemDto> {
   const deadline = Date.now() + timeoutMs;
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     const res = await request(app.getHttpServer()).get(`/api/v1/inbox/${id}`);
     const item = res.body as InboxItemDto;
@@ -171,7 +173,6 @@ async function waitForExtraction(
   timeoutMs = 30_000,
 ): Promise<InboxItemDto> {
   const deadline = Date.now() + timeoutMs;
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     const res = await request(app.getHttpServer()).get(`/api/v1/inbox/${id}`);
     const item = res.body as InboxItemDto;
