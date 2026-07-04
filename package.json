@@ -8,6 +8,8 @@
     "api:serve": "nx serve api",
     "api:build": "nx build api",
     "api:migrate": "nx run api:migrate",
+    "deploy:api": "pnpm --filter=@plaudern/api --prod --legacy --config.node-linker=hoisted deploy",
+    "verify:prod-deps": "node scripts/verify-prod-deps.mjs",
     "web:serve": "nx serve web",
     "web:build": "nx build web",
     "test": "nx run-many -t test",

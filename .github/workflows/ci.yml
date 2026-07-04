@@ -46,6 +46,13 @@ jobs:
       - name: Build (production compile)
         run: pnpm nx build api
 
+      # Reproduces the Dockerfile's `pnpm deploy:api` and asserts every
+      # transitive prod dependency resolves from the flat top-level node_modules
+      # the runtime uses — catches a lib third-party dep that would otherwise
+      # crash-loop the deployed API with MODULE_NOT_FOUND.
+      - name: Verify production dependencies resolve
+        run: pnpm verify:prod-deps
+
   web:
     name: Web (typecheck, build)
     runs-on: ubuntu-latest
