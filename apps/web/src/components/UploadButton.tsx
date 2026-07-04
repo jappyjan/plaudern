@@ -4,16 +4,17 @@ import { useIngest } from '../hooks/useIngest';
 import { extractFileMetadata } from '../lib/fileMetadata';
 import { UploadIcon } from './icons';
 
-interface UploadButtonProps {
+interface UploadFabProps {
   onSaved: (inboxItemId: string) => void;
 }
 
 /**
- * File-upload path. Capture metadata (recording time, GPS, device, tags) is
- * extracted from the file's own embedded tags; the browser's location is
- * deliberately NOT attached — where you upload from is not where you recorded.
+ * File-upload path, rendered as a floating action button. Capture metadata
+ * (recording time, GPS, device, tags) is extracted from the file's own
+ * embedded tags; the browser's location is deliberately NOT attached — where
+ * you upload from is not where you recorded.
  */
-export function UploadButton({ onSaved }: UploadButtonProps) {
+export function UploadFab({ onSaved }: UploadFabProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const { phase, progress, error, ingest, reset } = useIngest();
   const [currentFile, setCurrentFile] = useState<string | null>(null);
@@ -47,7 +48,7 @@ export function UploadButton({ onSaved }: UploadButtonProps) {
   };
 
   return (
-    <div className="flex flex-1 flex-col gap-2">
+    <div className="flex flex-col items-end gap-2">
       <input
         ref={inputRef}
         type="file"
@@ -56,23 +57,32 @@ export function UploadButton({ onSaved }: UploadButtonProps) {
         className="hidden"
         onChange={(event) => void handleFiles(event.target.files)}
       />
+      {/* Progress and errors float next to the FAB stack. */}
+      {busy && phase === 'uploading' && (
+        <div className="w-48 rounded-medium bg-content1 px-3 py-2 shadow-medium">
+          <p className="truncate text-xs text-default-500">{currentFile}</p>
+          <Progress aria-label="Upload progress" value={progress * 100} size="sm" />
+        </div>
+      )}
+      {error && (
+        <p className="max-w-60 rounded-medium bg-danger-50 px-3 py-2 text-xs text-danger shadow-medium">
+          {error}
+        </p>
+      )}
       <Button
-        variant="flat"
+        isIconOnly
+        radius="full"
         size="lg"
-        startContent={!busy && <UploadIcon className="h-5 w-5" />}
+        aria-label="Upload"
+        className="h-14 w-14 bg-content2 shadow-large"
         isLoading={busy}
         onPress={() => {
           reset();
           inputRef.current?.click();
         }}
-        className="w-full"
       >
-        {busy ? `Uploading ${currentFile ?? ''}` : 'Upload'}
+        {!busy && <UploadIcon className="h-6 w-6" />}
       </Button>
-      {busy && phase === 'uploading' && (
-        <Progress aria-label="Upload progress" value={progress * 100} size="sm" />
-      )}
-      {error && <p className="text-xs text-danger">{error}</p>}
     </div>
   );
 }
