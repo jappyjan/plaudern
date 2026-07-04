@@ -4,6 +4,7 @@ import {
   SUMMARY_LANGUAGE_LABELS,
   summaryLanguagePreferenceSchema,
   type CalendarFeedsResponse,
+  type EmailSettingsDto,
   type GooglePendingResponse,
   type PasskeyDto,
   type PlaudRegion,
@@ -17,6 +18,7 @@ import {
   createGoogleFeeds,
   deleteCalendarFeed,
   getConsentSettings,
+  getEmailSettings,
   getGoogleAuthUrl,
   getGooglePending,
   getPlaudSettings,
@@ -24,12 +26,14 @@ import {
   listCalendarFeeds,
   purgeAllData,
   reconnectGoogle,
+  rotateEmailToken,
   testCalendarFeed,
   testPlaudConnection,
   triggerCalendarSync,
   triggerPlaudSync,
   updateCalendarFeed,
   updateConsentSettings,
+  updateEmailSettings,
   updatePlaudSettings,
   updateSummarizationSettings,
 } from '../lib/api';
@@ -281,6 +285,8 @@ export function SettingsPage({
         </div>
       )}
 
+      <EmailSettingsSection />
+
       <SummarizationSection />
 
       <ConsentSection />
@@ -291,6 +297,118 @@ export function SettingsPage({
         plaudEnabled={settings?.enabled ?? false}
         onPurged={() => void refresh()}
       />
+    </div>
+  );
+}
+
+/**
+ * Email-in (plan §2, `sources/email`): every user gets a personal
+ * `inbox+<token>@<domain>` address. Forwarding anything to it becomes an
+ * inbox item, attachments included — the address itself is safe to display
+ * (unlike the Plaud password) since the backend can always re-derive it.
+ */
+function EmailSettingsSection() {
+  const [settings, setSettings] = useState<EmailSettingsDto | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      setSettings(await getEmailSettings());
+      setLoadError(null);
+    } catch (cause) {
+      setLoadError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const generateOrRotate = async () => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      setSettings(await rotateEmailToken());
+      setCopied(false);
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleEnabled = async (enabled: boolean) => {
+    setActionError(null);
+    try {
+      setSettings(await updateEmailSettings({ enabled }));
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  const copyAddress = async () => {
+    if (!settings?.address) return;
+    try {
+      await navigator.clipboard.writeText(settings.address);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard access denied — the address is still visible to copy by hand */
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4 border-t border-default-200 pt-6">
+      <div>
+        <h2 className="text-lg font-semibold">Email capture</h2>
+        <p className="text-sm text-default-500">
+          Forward anything — confirmations, tickets, letters — to your personal address below and
+          it becomes an inbox item, with attachments stored alongside it.
+        </p>
+      </div>
+
+      {loadError && (
+        <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">
+          Failed to load settings: {loadError}
+        </div>
+      )}
+      {actionError && (
+        <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">{actionError}</div>
+      )}
+
+      {settings?.configured ? (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2 rounded-medium bg-default-50 p-3">
+            <code className="min-w-0 flex-1 truncate text-sm">{settings.address}</code>
+            <Button size="sm" variant="flat" onPress={() => void copyAddress()}>
+              {copied ? 'Copied!' : 'Copy'}
+            </Button>
+          </div>
+          <Switch isSelected={settings.enabled} onValueChange={(v) => void toggleEnabled(v)}>
+            Accept email into this address
+          </Switch>
+          <Button
+            size="sm"
+            variant="flat"
+            color="warning"
+            className="self-start"
+            isLoading={busy}
+            onPress={() => void generateOrRotate()}
+          >
+            Rotate address
+          </Button>
+          <p className="text-xs text-default-400">
+            Rotating generates a brand-new address and immediately invalidates the one above.
+          </p>
+        </div>
+      ) : (
+        <Button color="primary" className="self-start" isLoading={busy} onPress={() => void generateOrRotate()}>
+          Generate my email address
+        </Button>
+      )}
     </div>
   );
 }

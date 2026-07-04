@@ -7,6 +7,7 @@ import {
   calendarFeedTestResponseSchema,
   calendarRecordingsResponseSchema,
   calendarSyncNowResponseSchema,
+  emailSettingsSchema,
   geocodeResponseSchema,
   googleAuthUrlResponseSchema,
   googlePendingResponseSchema,
@@ -34,6 +35,7 @@ import {
   type CalendarRecordingsResponse,
   type CalendarSyncNowResponse,
   type CreateCalendarFeedRequest,
+  type EmailSettingsDto,
   type GeocodeResponse,
   type GoogleAuthUrlResponse,
   type GooglePendingResponse,
@@ -57,6 +59,7 @@ import {
   type SummaryDto,
   type UpdateCalendarFeedRequest,
   type UpdateConsentSettingsRequest,
+  type UpdateEmailSettingsRequest,
   type UpdateSummarizationSettingsRequest,
   type UpdatePlaudSettingsRequest,
   type UpdateVoiceProfileRequest,
@@ -240,6 +243,23 @@ export async function triggerPlaudSync(): Promise<PlaudSyncNowResponse> {
   return plaudSyncNowResponseSchema.parse(
     await requestJson('/settings/plaud/sync', { method: 'POST' }),
   );
+}
+
+export async function getEmailSettings(): Promise<EmailSettingsDto> {
+  return emailSettingsSchema.parse(await requestJson('/settings/email'));
+}
+
+export async function updateEmailSettings(
+  req: UpdateEmailSettingsRequest,
+): Promise<EmailSettingsDto> {
+  return emailSettingsSchema.parse(
+    await requestJson('/settings/email', { method: 'PUT', body: JSON.stringify(req) }),
+  );
+}
+
+/** Generates the address on first call, rotates (invalidating the old one) after. */
+export async function rotateEmailToken(): Promise<EmailSettingsDto> {
+  return emailSettingsSchema.parse(await requestJson('/settings/email/rotate', { method: 'POST' }));
 }
 
 export async function getSpeakerTranscript(itemId: string): Promise<SpeakerTranscriptDto> {

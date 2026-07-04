@@ -10,9 +10,10 @@ export const SourceType = {
   File: 'file',
   Plaud: 'plaud',
   Web: 'web',
+  Email: 'email',
 } as const;
 
-export const sourceTypeSchema = z.enum(['audio', 'text', 'file', 'plaud', 'web']);
+export const sourceTypeSchema = z.enum(['audio', 'text', 'file', 'plaud', 'web', 'email']);
 export type SourceType = z.infer<typeof sourceTypeSchema>;
 
 /** Source types whose payload is audio and therefore get transcribed on commit. */

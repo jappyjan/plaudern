@@ -45,6 +45,7 @@ libs/
     transcription/ Transcription queue + ElevenLabs Scribe / local Whisper providers
     speaker-id/   Diarization queue + voice-profile matching + contact book API
     summarization/ AI title + Markdown summary (OpenAI-compatible LLM: DeepSeek by default, or local Ollama)
+    email-ingest/ Email-in adapter — per-user inbox+<token>@<domain> address + inbound webhook
 docker-compose.yml   Postgres + MinIO + Redis + api + web for local dev
 ```
 
@@ -53,13 +54,20 @@ docker-compose.yml   Postgres + MinIO + Redis + api + web for local dev
 - **Never-edited inbox** (`inbox_items`, `source_payloads`, `extracted_payloads`):
   no in-place updates of source data — reprocessing appends a new extraction row
   rather than mutating. Items can be deleted whole (rows + blobs); a tombstone
-  of the idempotency key (`inbox_tombstones`) keeps automated syncs (Plaud)
-  from re-importing deleted recordings.
+  of the idempotency key (`inbox_tombstones`) keeps automated syncs (Plaud,
+  email-in) from re-importing deleted items.
 - **Two-phase presigned upload**: `POST /v1/ingest/init` → client PUTs bytes
   directly to S3/MinIO → `POST /v1/ingest/:id/commit`. Large audio never streams
   through Node.
 - **Modular sources**: an `AdapterRegistry` keyed by source type (`audio`,
-  `text`, `file`, `plaud`). Adding an input = adding one adapter.
+  `text`, `file`, `plaud`, `email`). Adding an input = adding one adapter.
+- **Email-in** (`sources/email`): every user gets a personal
+  `inbox+<token>@<domain>` address (generate/rotate it from Settings). An
+  inbound-parse webhook (`POST /v1/webhooks/email`, guarded by
+  `EMAIL_WEBHOOK_SECRET`) accepts either a raw MIME body or a SendGrid/SES-style
+  JSON wrapper, parses it with `mailparser`, and turns one email into one inbox
+  item — subject/text as the payload, `occurredAt` from the `Date` header,
+  attachments stored via the storage abstraction, idempotent on `Message-ID`.
 - **Async transcription**: on commit, audio-bearing sources enqueue a job
   (BullMQ + Redis in prod, inline in tests) that transcribes via the hosted
   [ElevenLabs Scribe](https://elevenlabs.io) API (`ELEVENLABS_API_KEY`, the
@@ -266,7 +274,9 @@ self-hosted Whisper-compatible server — the local-model tier), and
 `SUMMARIZATION_API_KEY` (enables AI summaries; with
 `SUMMARIZATION_BASE_URL`/`SUMMARIZATION_MODEL` pointing at any
 OpenAI-compatible endpoint, DeepSeek by default — or `SUMMARIZATION_ENABLED=true`
-instead of a key for keyless local endpoints like Ollama).
+instead of a key for keyless local endpoints like Ollama), `EMAIL_INBOUND_DOMAIN` +
+`EMAIL_WEBHOOK_SECRET` (email-in adapter; point your inbound mail relay's
+webhook at `/api/v1/webhooks/email` with that secret).
 
 Authentication env: `AUTH_RP_ID` (WebAuthn relying-party id = the domain the
 web app is served from; default `localhost`), `AUTH_ORIGINS` (comma-separated

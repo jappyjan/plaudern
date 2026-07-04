@@ -3,6 +3,7 @@ export * from './source-payload.entity';
 export * from './extracted-payload.entity';
 export * from './inbox-tombstone.entity';
 export * from './plaud-settings.entity';
+export * from './email-settings.entity';
 export * from './summarization-settings.entity';
 export * from './consent-settings.entity';
 export * from './voice-profile.entity';
