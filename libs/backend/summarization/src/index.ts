@@ -8,5 +8,3 @@ export * from './summarization.controller';
 export * from './summarization.trigger';
 export * from './summarization.module';
 export * from './providers/openai.provider';
-export * from './queues/inline.queue';
-export * from './queues/bull.queue';

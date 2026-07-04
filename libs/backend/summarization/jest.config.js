@@ -10,9 +10,10 @@ module.exports = {
   testMatch: ['**/*.spec.ts'],
   moduleFileExtensions: ['ts', 'js', 'json'],
   moduleNameMapper: {
+    // Order matters: the specific contracts mapping must precede the generic
+    // backend-libs pattern.
     '^@plaudern/contracts$': `${wsRoot}/libs/contracts/src/index.ts`,
-    '^@plaudern/persistence$': `${wsRoot}/libs/backend/persistence/src/index.ts`,
-    '^@plaudern/inbox$': `${wsRoot}/libs/backend/inbox/src/index.ts`,
+    '^@plaudern/([^/]+)$': `${wsRoot}/libs/backend/$1/src/index.ts`,
   },
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.spec.json' }],

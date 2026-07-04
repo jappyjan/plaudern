@@ -9,38 +9,24 @@ process.env.QUEUE_DRIVER = 'inline';
 process.env.AUTH_DISABLED = 'true';
 process.env.GEOCODER = 'stub';
 
-import { INestApplication, VersioningType } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
+import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { SummaryDto } from '@plaudern/contracts';
 import { InMemoryStorageService, StorageService } from '@plaudern/storage';
-import { TRANSCRIPTION_PROVIDER } from '@plaudern/transcription';
-import { DIARIZATION_PROVIDER } from '@plaudern/speaker-id';
 import { SUMMARIZATION_PROVIDER } from '@plaudern/summarization';
-import {
-  FakeDiarizationProvider,
-  FakeSummarizationProvider,
-  FakeTranscriptionProvider,
-} from '../testing/fake-providers';
-import { AppModule } from './app.module';
+import { createE2eApp } from '../testing/e2e-app';
+import { FakeSummarizationProvider } from '../testing/fake-providers';
 
 describe('AI summarization pipeline (e2e, Path A)', () => {
   let app: INestApplication;
   let storage: InMemoryStorageService;
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(TRANSCRIPTION_PROVIDER)
-      .useValue(new FakeTranscriptionProvider())
-      .overrideProvider(DIARIZATION_PROVIDER)
-      .useValue(new FakeDiarizationProvider())
-      .overrideProvider(SUMMARIZATION_PROVIDER)
-      .useValue(new FakeSummarizationProvider())
-      .compile();
-    app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.enableVersioning({ type: VersioningType.URI });
-    await app.init();
+    app = await createE2eApp((builder) =>
+      builder
+        .overrideProvider(SUMMARIZATION_PROVIDER)
+        .useValue(new FakeSummarizationProvider()),
+    );
 
     storage = app.get(StorageService) as InMemoryStorageService;
   });
