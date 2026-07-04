@@ -4,6 +4,7 @@ export * from './diarization.processor';
 export * from './identifiers/pyannoteai.identifier';
 export * from './providers/pyannoteai-client';
 export * from './speaker-id.service';
+export * from './diarization.extractor';
 export * from './speaker-identifier';
 export * from './speaker-transcript.service';
 export * from './voice-profiles.service';

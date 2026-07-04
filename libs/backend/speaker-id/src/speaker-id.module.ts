@@ -13,6 +13,7 @@ import { VoiceprintMatcherService } from './voiceprint-matcher.service';
 import { ConsentSettingsService } from './consent-settings.service';
 import { DiarizationProcessor } from './diarization.processor';
 import { SpeakerIdService } from './speaker-id.service';
+import { DiarizationExtractor } from './diarization.extractor';
 import { SpeakerTranscriptService } from './speaker-transcript.service';
 import { VoiceProfilesService } from './voice-profiles.service';
 import {
@@ -57,10 +58,11 @@ import {
           : new InlineJobQueue(processor),
     },
     SpeakerIdService,
+    DiarizationExtractor,
     VoiceProfilesService,
     SpeakerTranscriptService,
     ConsentSettingsService,
   ],
-  exports: [SpeakerIdService],
+  exports: [SpeakerIdService, DiarizationExtractor],
 })
 export class SpeakerIdModule {}

@@ -6,6 +6,7 @@ import { InboxModule } from '@plaudern/inbox';
 import { BullJobQueue, InlineJobQueue, redisConnectionFromConfig } from '@plaudern/queue';
 import { TranscriptionModule } from '@plaudern/transcription';
 import { SpeakerIdModule } from '@plaudern/speaker-id';
+import { ExtractionModule } from '@plaudern/extraction';
 import { IngestionService } from './ingestion.service';
 import { IngestionController } from './ingestion.controller';
 import { SOURCE_ADAPTERS } from './source-adapter';
@@ -26,6 +27,9 @@ import { RecordingMergeController } from './merge/recording-merge.controller';
   imports: [
     ConfigModule,
     InboxModule,
+    // Adapters run the extraction DAG on commit; the merge service still
+    // reaches into the per-kind services for its stitching fast-path.
+    ExtractionModule,
     TranscriptionModule,
     SpeakerIdModule,
     TypeOrmModule.forFeature([RecordingMergeEntity, SpeakerOccurrenceEntity]),

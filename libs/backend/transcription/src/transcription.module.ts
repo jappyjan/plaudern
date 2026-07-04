@@ -8,6 +8,7 @@ import { ElevenLabsTranscriptionProvider } from './providers/elevenlabs.provider
 import { WhisperTranscriptionProvider } from './providers/whisper.provider';
 import { TranscriptionProcessor } from './transcription.processor';
 import { TranscriptionService } from './transcription.service';
+import { TranscriptionExtractor } from './transcription.extractor';
 import { TranscriptionController } from './transcription.controller';
 
 @Module({
@@ -48,8 +49,9 @@ import { TranscriptionController } from './transcription.controller';
           : new InlineJobQueue(processor),
     },
     TranscriptionService,
+    TranscriptionExtractor,
   ],
   controllers: [TranscriptionController],
-  exports: [TranscriptionService],
+  exports: [TranscriptionService, TranscriptionExtractor],
 })
 export class TranscriptionModule {}

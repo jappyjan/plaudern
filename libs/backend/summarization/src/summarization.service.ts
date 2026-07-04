@@ -4,14 +4,13 @@ import {
   Inject,
   Injectable,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InboxService } from '@plaudern/inbox';
 import {
   summaryPayloadSchema,
   type ExtractionStatus,
   type SummaryDto,
 } from '@plaudern/contracts';
-import type { ExtractedPayloadEntity, InboxItemEntity } from '@plaudern/persistence';
+import type { ExtractedPayloadEntity } from '@plaudern/persistence';
 import {
   SUMMARIZATION_PROVIDER,
   type SummarizationProvider,
@@ -22,71 +21,33 @@ import { SummaryContextService } from './summary-context.service';
 const ACTIVE_STATUSES: ExtractionStatus[] = ['queued', 'processing'];
 
 /**
- * Owns the summarization pipeline step. `maybeSummarize` is the readiness gate,
- * invoked whenever a transcription or diarization finishes: it enqueues a
- * summary only once both the transcript and (when applicable) the speakers are
- * ready, and never twice for the same generation. Also exposes a manual retry
- * and the read model backing the summary tab.
+ * Version of the summary extractor (kind@version), recorded on every appended
+ * row. Bump when the output meaningfully improves (better model or prompt) so
+ * backfill runs can catch older items up.
+ */
+export const SUMMARY_EXTRACTOR_VERSION = 1;
+
+/**
+ * Owns the summarization pipeline step. WHEN a summary runs is decided by the
+ * extraction DAG (`SummaryExtractor` + the generic pipeline in
+ * `@plaudern/extraction`, which replaced the bespoke SummarizationTrigger);
+ * this service owns HOW: enqueueing, the manual retry, and the read model
+ * backing the summary tab.
  */
 @Injectable()
 export class SummarizationService {
-  /** In-process guard so two near-simultaneous completions don't double-enqueue. */
-  private readonly evaluating = new Set<string>();
-  private readonly speakerIdOff: boolean;
-
   constructor(
-    config: ConfigService,
     private readonly inbox: InboxService,
     private readonly context: SummaryContextService,
     @Inject(SUMMARIZATION_PROVIDER)
     private readonly provider: SummarizationProvider,
     @Inject(SUMMARIZATION_QUEUE)
     private readonly queue: SummarizationQueue,
-  ) {
-    this.speakerIdOff = config.get<string>('SPEAKER_ID_PROVIDER', 'pyannote') === 'off';
-  }
+  ) {}
 
-  /**
-   * Decide whether the item is ready to summarize and, if so, enqueue it.
-   * Ready = latest transcription succeeded AND diarization is not still in
-   * flight (so speaker attribution is final), with no summary already covering
-   * this transcription+diarization generation.
-   */
-  async maybeSummarize(inboxItemId: string): Promise<void> {
-    if (!this.provider.enabled) return;
-    if (this.evaluating.has(inboxItemId)) return;
-    this.evaluating.add(inboxItemId);
-    try {
-      const item = await this.inbox.getItemById(inboxItemId);
-      if (!item) return;
-      const extractions = item.extractions ?? [];
-
-      const transcription = latestOfKind(extractions, 'transcription');
-      if (transcription?.status !== 'succeeded') return;
-
-      const diarization = latestOfKind(extractions, 'diarization');
-      if (diarization && ACTIVE_STATUSES.includes(diarization.status)) return;
-      // Diarization row not created yet, but it is on its way (audio + speaker
-      // id enabled): wait for it so the summary can attribute speakers.
-      if (!diarization && this.expectsDiarization(item)) return;
-
-      const summary = latestOfKind(extractions, 'summary');
-      const generationTs = Math.max(
-        ts(transcription.createdAt),
-        diarization ? ts(diarization.createdAt) : 0,
-      );
-      if (
-        summary &&
-        ts(summary.createdAt) >= generationTs &&
-        (summary.status === 'succeeded' || ACTIVE_STATUSES.includes(summary.status))
-      ) {
-        return; // this generation is already summarized or in progress
-      }
-
-      await this.enqueue(inboxItemId);
-    } finally {
-      this.evaluating.delete(inboxItemId);
-    }
+  /** Whether summarization is configured (SUMMARIZATION_API_KEY present). */
+  get enabled(): boolean {
+    return this.provider.enabled;
   }
 
   /**
@@ -107,7 +68,7 @@ export class SummarizationService {
     if (summary && ACTIVE_STATUSES.includes(summary.status)) {
       throw new ConflictException('a summary is already being generated');
     }
-    return this.enqueue(inboxItemId);
+    return this.enqueueSummary(inboxItemId);
   }
 
   /** Read model for the summary tab: latest summary + speaker roster. */
@@ -165,23 +126,23 @@ export class SummarizationService {
         if (transcription?.status !== 'succeeded') continue;
         const summary = latestOfKind(item.extractions ?? [], 'summary');
         if (summary && ACTIVE_STATUSES.includes(summary.status)) continue;
-        await this.enqueue(inboxItemId);
+        await this.enqueueSummary(inboxItemId);
       } catch {
         // Best-effort: swallow so redaction still succeeds.
       }
     }
   }
 
-  private async enqueue(inboxItemId: string): Promise<string> {
-    const extraction = await this.inbox.addExtraction(inboxItemId, 'summary', this.provider.id);
+  /** Append a fresh `queued` summary row and hand the job to the queue. */
+  async enqueueSummary(inboxItemId: string): Promise<string> {
+    const extraction = await this.inbox.addExtraction(
+      inboxItemId,
+      'summary',
+      this.provider.id,
+      SUMMARY_EXTRACTOR_VERSION,
+    );
     await this.queue.enqueue({ extractionId: extraction.id, inboxItemId });
     return extraction.id;
-  }
-
-  /** Audio-bearing sources get diarization unless speaker id is disabled. */
-  private expectsDiarization(item: InboxItemEntity): boolean {
-    if (this.speakerIdOff) return false;
-    return item.source?.contentType?.startsWith('audio/') ?? false;
   }
 }
 
@@ -193,10 +154,6 @@ function latestOfKind(
     .filter((e) => e.kind === kind)
     .slice()
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
-}
-
-function ts(value: Date | string): number {
-  return new Date(value).getTime();
 }
 
 function iso(value: Date | string | null): string | null {
