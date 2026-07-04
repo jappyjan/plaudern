@@ -108,7 +108,12 @@ export function EntitiesPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h2 className="text-lg font-semibold">Entities</h2>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">Entities</h2>
+        <Button as={Link} to="/entities/graph" size="sm" variant="flat" color="primary">
+          View graph
+        </Button>
+      </div>
 
       {entities.length === 0 ? (
         <EmptyState />

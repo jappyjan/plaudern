@@ -11,6 +11,7 @@ import { TopicsExtractor, TopicsModule } from '@plaudern/topics';
 import { ExtractorGraph } from './extractor-graph';
 import { ExtractionPipelineService } from './extraction-pipeline.service';
 import { ExtractionRunsService } from './extraction-runs.service';
+import { StartupBackfillService } from './startup-backfill.service';
 import { ExtractionController } from './extraction.controller';
 
 /**
@@ -69,6 +70,7 @@ import { ExtractionController } from './extraction.controller';
     },
     ExtractionPipelineService,
     ExtractionRunsService,
+    StartupBackfillService,
   ],
   controllers: [ExtractionController],
   exports: [ExtractionPipelineService, ExtractorGraph],

@@ -171,6 +171,18 @@ export function EntityDetailPage() {
             </div>
           </div>
 
+          <div className="flex flex-wrap gap-2">
+            <Button
+              as={Link}
+              to={`/entities/graph?seed=${entity.id}`}
+              size="sm"
+              variant="flat"
+              color="primary"
+            >
+              View in graph
+            </Button>
+          </div>
+
           {entity.type === 'person' &&
             (entity.voiceProfileId ? (
               <div className="flex flex-wrap items-center gap-2">

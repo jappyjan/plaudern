@@ -68,6 +68,15 @@ services:
       - PLAUD_POLL_INTERVAL_MS=${PLAUD_POLL_INTERVAL_MS:-300000}
       # Calendar feeds: the same secret encrypts subscribed feed URLs.
       - CALENDAR_POLL_INTERVAL_MS=${CALENDAR_POLL_INTERVAL_MS:-900000}
+      # Automatic startup backfill: on every API boot, each enabled extraction
+      # kind is re-run over past items whose step is missing or failed for the
+      # current extractor version, so merging a new/improved processing step
+      # migrates old data automatically (no manual backfill). ON by default;
+      # the sweep is non-blocking and self-throttling (advisory-locked so only
+      # one replica runs it, skip-if-still-running across reboots). Uncomment to
+      # disable, or to change the settle delay (ms) before the sweep starts.
+      # - STARTUP_BACKFILL_ENABLED=${STARTUP_BACKFILL_ENABLED:-true}
+      # - STARTUP_BACKFILL_DELAY_MS=${STARTUP_BACKFILL_DELAY_MS:-15000}
       # AI summarization (title + Markdown summary once a recording is
       # transcribed and diarized). Empty key = disabled (UI shows the transcript
       # only). Defaults target DeepSeek — the cheapest capable option; point
@@ -85,6 +94,19 @@ services:
       - TOPICS_API_KEY=${SUMMARIZATION_API_KEY}
       - TOPICS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
       - TOPICS_MODEL=${TOPICS_MODEL:-deepseek-chat}
+      # Embeddings power semantic recall (MCP search_memory, similarity,
+      # hybrid search). They CANNOT reuse the summarization key: DeepSeek has
+      # no embeddings API. Fill in EMBEDDINGS_API_KEY with an OpenAI key —
+      # a non-empty key auto-enables the extractor. Defaults target OpenAI
+      # text-embedding-3-small (1536 dims); for a keyless local endpoint such
+      # as Ollama set EMBEDDINGS_ENABLED=true and point BASE_URL/MODEL/
+      # DIMENSIONS at it instead. Changing model or dimensions later requires
+      # re-embedding (POST /v1/extractions/backfills {"kind":"embeddings"}).
+      - EMBEDDINGS_API_KEY=${EMBEDDINGS_API_KEY}
+      - EMBEDDINGS_BASE_URL=${EMBEDDINGS_BASE_URL:-https://api.openai.com/v1}
+      - EMBEDDINGS_MODEL=${EMBEDDINGS_MODEL:-text-embedding-3-small}
+      - EMBEDDINGS_DIMENSIONS=${EMBEDDINGS_DIMENSIONS:-1536}
+      - EMBEDDINGS_ENABLED=${EMBEDDINGS_ENABLED:-false}
       # Transcription: the hosted ElevenLabs Scribe API — fill in
       # ELEVENLABS_API_KEY (get one at elevenlabs.io). Audio bytes are uploaded
       # to ElevenLabs directly (storage stays private).
@@ -101,6 +123,31 @@ services:
       # known voices into recordings they aren't in; 50 is pyannoteAI's
       # recommended strict floor. Raise toward 70 for stricter matching.
       - PYANNOTEAI_MATCH_THRESHOLD=${PYANNOTEAI_MATCH_THRESHOLD:-50}
+      # Email-in (mailbox): every user gets an inbox+<token>@<domain> address;
+      # mail sent there becomes an inbox item. Set EMAIL_INBOUND_DOMAIN to the
+      # domain your inbound mail relay (SES, Mailgun, Postmark, a self-hosted
+      # Postfix, ...) receives for, and configure the relay to POST raw MIME to
+      # https://<api-domain>/api/v1/webhooks/email with the x-webhook-secret
+      # header set to EMAIL_WEBHOOK_SECRET (Coolify generates & persists it —
+      # copy the value into your relay's config). Domain empty = feature off.
+      - EMAIL_INBOUND_DOMAIN=${EMAIL_INBOUND_DOMAIN:-}
+      - EMAIL_WEBHOOK_SECRET=${SERVICE_PASSWORD_EMAILWEBHOOK}
+      # Outbound notifications — email channel via SMTP (any relay works).
+      # SMTP_HOST empty = channel off; the settings UI shows it unconfigured.
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-Plaudern <notifications@plaudern.local>}
+      # true = implicit TLS (set it when using port 465), false = STARTTLS.
+      - SMTP_SECURE=${SMTP_SECURE:-false}
+      # Outbound notifications — web-push channel. Generate a key pair once
+      # with `npx web-push generate-vapid-keys` and paste both here. Keys
+      # empty = channel off.
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
+      # Contact URI (mailto: or https:) sent to push services, per VAPID spec.
+      - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:admin@plaudern.local}
       # Native Google Calendar (optional): set these in Coolify to enable it.
       # REDIRECT_URI must be your API's public URL + /v1/calendar/google/callback.
       - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
