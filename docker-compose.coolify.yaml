@@ -90,6 +90,10 @@ services:
       # new speakers are enrolled from clips the sidecar slices.
       - PYANNOTEAI_API_KEY=${PYANNOTEAI_API_KEY}
       - PYANNOTEAI_MODEL=${PYANNOTEAI_MODEL:-precision-2}
+      # Minimum confidence (0-100) to accept a voiceprint match. 0 force-matches
+      # known voices into recordings they aren't in; 50 is pyannoteAI's
+      # recommended strict floor. Raise toward 70 for stricter matching.
+      - PYANNOTEAI_MATCH_THRESHOLD=${PYANNOTEAI_MATCH_THRESHOLD:-50}
       # Sidecar: transcription (always) + voiceprint clip extraction (pyannoteai mode).
       - SPEAKER_ID_URL=http://speaker-id:8000
       - SPEAKER_ID_TOKEN=${SERVICE_PASSWORD_SPEAKERID}
