@@ -136,12 +136,29 @@ export class TopicsService {
     const payload = parsePayload(topics.content);
     return {
       status: topics.status,
-      assignments: payload?.assignments ?? [],
+      // The immutable payload may reference topics deleted since the run;
+      // filter to surviving taxonomy entries so this read model agrees with
+      // listItemsByTopic (whose item_topics rows are pruned on delete).
+      assignments: await this.survivingAssignments(userId, payload?.assignments ?? []),
       model: payload?.model ?? null,
       error: topics.error,
       createdAt: iso(topics.createdAt),
       completedAt: iso(topics.completedAt),
     };
+  }
+
+  /** Drop assignments whose topic no longer exists in the user's taxonomy. */
+  private async survivingAssignments(
+    userId: string,
+    assignments: TopicAssignmentDto[],
+  ): Promise<TopicAssignmentDto[]> {
+    if (assignments.length === 0) return assignments;
+    const rows = await this.topics.find({
+      select: { id: true },
+      where: { userId, id: In(assignments.map((a) => a.topicId)) },
+    });
+    const alive = new Set(rows.map((r) => r.id));
+    return assignments.filter((a) => alive.has(a.topicId));
   }
 
   /**
