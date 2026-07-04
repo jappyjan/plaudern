@@ -1,29 +1,15 @@
 import { useRef, useState } from 'react';
-import { Button, Card, CardBody, Chip } from '@heroui/react';
-import { summaryPayloadSchema, type InboxItemDto, type SourceType } from '@plaudern/contracts';
+import { Button, Chip } from '@heroui/react';
+import { summaryPayloadSchema, type InboxItemDto } from '@plaudern/contracts';
 import { useNavigate } from 'react-router-dom';
 import { deleteInboxItem } from '../lib/api';
 import { formatDateTime, formatDuration } from '../lib/format';
 import { usePlaceName } from '../hooks/usePlaceName';
-import { AudioIcon, FileIcon, LinkIcon, LocationIcon, MicIcon, TextIcon, TrashIcon } from './icons';
+import { LocationIcon, MicIcon, SourceIcon, TrashIcon } from './icons';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
+import { DocumentRow } from './DocumentRow';
 import { TranscriptionChip } from './TranscriptionChip';
 import { MergeChip } from './MergeChip';
-
-function SourceIcon({ sourceType }: { sourceType: SourceType }) {
-  const className = 'h-5 w-5 shrink-0 text-default-500';
-  switch (sourceType) {
-    case 'audio':
-    case 'plaud':
-      return <AudioIcon className={className} />;
-    case 'text':
-      return <TextIcon className={className} />;
-    case 'web':
-      return <LinkIcon className={className} />;
-    default:
-      return <FileIcon className={className} />;
-  }
-}
 
 /** The AI summary's title, when one has been generated for this item. */
 function summaryTitle(item: InboxItemDto): string | null {
@@ -134,25 +120,20 @@ export function InboxItemCard({
   };
 
   return (
-    // The card is a <button> (isPressable), so the delete trigger is an
-    // absolutely-positioned sibling — nesting buttons is invalid HTML.
-    <div
-      className={`relative w-full ${selectable && selectionDisabled ? 'opacity-40' : ''}`}
-      // Long-pressing must not pop the browser context menu or text selection.
-      onContextMenu={onLongPress ? (event) => event.preventDefault() : undefined}
-    >
-      <Card
+    <>
+      <DocumentRow
+        variant="card"
         isPressable={!selectable || !selectionDisabled}
         onPress={handlePress}
         onPressStart={startLongPress}
         onPressEnd={cancelLongPress}
-        className={`w-full ${selected ? 'outline outline-2 outline-primary' : ''} ${
-          onLongPress ? 'select-none [-webkit-touch-callout:none]' : ''
-        }`}
-      >
-        <CardBody className="gap-1 py-2.5 pr-12">
-          {/* Main line: the title gets the full row width. */}
-          <div className="flex items-center gap-2">
+        selected={selected}
+        dimmed={selectable && selectionDisabled}
+        // Long-pressing must not pop the browser context menu or text selection.
+        onContextMenu={onLongPress ? (event) => event.preventDefault() : undefined}
+        className={onLongPress ? 'select-none [-webkit-touch-callout:none]' : ''}
+        leading={
+          <span className="flex items-center gap-2">
             {selectable && (
               <span
                 aria-hidden
@@ -166,10 +147,11 @@ export function InboxItemCard({
               </span>
             )}
             <SourceIcon sourceType={item.sourceType} />
-            <p className="min-w-0 flex-1 truncate text-sm font-medium">{itemTitle(item)}</p>
-          </div>
-          {/* Meta line: date, duration and tags, aligned under the title. */}
-          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 pl-7 text-xs text-default-500">
+          </span>
+        }
+        title={itemTitle(item)}
+        subtitle={
+          <>
             <span className="whitespace-nowrap">{formatDateTime(item.occurredAt)}</span>
             {duration !== null && (
               <span className="tabular-nums">{formatDuration(duration)}</span>
@@ -201,21 +183,25 @@ export function InboxItemCard({
                   merged
                 </Chip>
               )}
-          </div>
-        </CardBody>
-      </Card>
-      {!selectable && (
-        <Button
-          isIconOnly
-          size="sm"
-          variant="light"
-          aria-label="Delete"
-          className="absolute right-2 top-1/2 -translate-y-1/2 text-default-400 hover:text-danger"
-          onPress={() => setConfirmOpen(true)}
-        >
-          <TrashIcon className="h-4 w-4" />
-        </Button>
-      )}
+          </>
+        }
+        // The card is a <button> (isPressable), so the delete trigger is an
+        // absolutely-positioned sibling — nesting buttons is invalid HTML.
+        trailingAction={
+          !selectable && (
+            <Button
+              isIconOnly
+              size="sm"
+              variant="light"
+              aria-label="Delete"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-default-400 hover:text-danger"
+              onPress={() => setConfirmOpen(true)}
+            >
+              <TrashIcon className="h-4 w-4" />
+            </Button>
+          )
+        }
+      />
       <ConfirmDeleteModal
         isOpen={confirmOpen}
         isDeleting={deleting}
@@ -226,6 +212,6 @@ export function InboxItemCard({
           setDeleteError(null);
         }}
       />
-    </div>
+    </>
   );
 }
