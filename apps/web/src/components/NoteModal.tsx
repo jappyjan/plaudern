@@ -25,26 +25,32 @@ export function NoteModal({ isOpen, onClose, onSaved }: NoteModalProps) {
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // One key per draft: retrying a failed save of the same note stays idempotent.
+  const [draftKey, setDraftKey] = useState<string | null>(null);
 
   const close = () => {
     if (saving) return;
     setText('');
     setError(null);
+    setDraftKey(null);
     onClose();
   };
 
   const save = async () => {
     if (!text.trim()) return;
+    const idempotencyKey = draftKey ?? crypto.randomUUID();
+    setDraftKey(idempotencyKey);
     setSaving(true);
     setError(null);
     try {
       const item = await ingestText({
         text: text.trim(),
         occurredAt: new Date().toISOString(),
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey,
         metadata: { capturedVia: 'quick-note' },
       });
       setText('');
+      setDraftKey(null);
       onSaved(item.id);
       onClose();
     } catch (cause) {
@@ -65,6 +71,7 @@ export function NoteModal({ isOpen, onClose, onSaved }: NoteModalProps) {
             minRows={4}
             value={text}
             onValueChange={setText}
+            isDisabled={saving}
             autoFocus
           />
           {error && <p className="text-sm text-danger">{error}</p>}
