@@ -111,7 +111,10 @@ services:
       retries: 10
 
   postgres:
-    image: postgres:17-alpine
+    # pgvector/pgvector ships the `vector` extension used by embedding_chunks
+    # (ATT-659); it is otherwise a drop-in for the stock postgres:17 image.
+    # Alpine has no pgvector variant, so this is the Debian-based pg17 image.
+    image: pgvector/pgvector:pg17
     restart: unless-stopped
     environment:
       - POSTGRES_USER=${SERVICE_USER_POSTGRES}
