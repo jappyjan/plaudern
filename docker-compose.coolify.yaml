@@ -92,7 +92,8 @@ services:
       # recommended strict floor. Raise toward 70 for stricter matching.
       - PYANNOTEAI_MATCH_THRESHOLD=${PYANNOTEAI_MATCH_THRESHOLD:-50}
       # Native Google Calendar (optional): set these in Coolify to enable it.
-      # REDIRECT_URI must be your API's public URL + /v1/calendar/google/callback.
+      # REDIRECT_URI = the web app's public HTTPS URL + /api/v1/calendar/google/callback
+      # (nginx here proxies /api to this service, so use the web domain).
       - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
       - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-}
       - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-}
