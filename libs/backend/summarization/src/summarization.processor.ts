@@ -50,6 +50,7 @@ export class SummarizationProcessor {
         title: result.title,
         layout: result.layout,
         markdown: result.markdown,
+        offTopic: result.offTopic ?? null,
         model: result.model ?? null,
       };
       await this.inbox.completeExtraction(job.extractionId, {

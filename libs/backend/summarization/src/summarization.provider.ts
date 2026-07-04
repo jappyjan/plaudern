@@ -35,6 +35,8 @@ export interface SummarizationResult {
   layout: SummaryLayout;
   /** Markdown body; may contain mermaid fences and `@[LABEL]` speaker mentions. */
   markdown: string;
+  /** Optional markdown for off-topic tangents, kept separate from `markdown`. */
+  offTopic?: string | null;
   /** Concrete model that produced the summary, for provenance. */
   model?: string;
   raw?: unknown;

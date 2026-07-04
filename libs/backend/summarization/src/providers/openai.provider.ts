@@ -102,12 +102,20 @@ export class OpenAiSummarizationProvider implements SummarizationProvider {
   }
 }
 
-const SYSTEM_PROMPT = [
+export const SYSTEM_PROMPT = [
   'You summarize a transcribed audio recording for a note-taking app.',
   'Always respond with a single JSON object and nothing else, with keys:',
   '  "title": a short, specific, descriptive title (max ~8 words, no trailing punctuation),',
   '  "layout": one of the layout ids listed by the user,',
-  '  "markdown": the summary body as GitHub-flavored Markdown.',
+  '  "markdown": the summary body as GitHub-flavored Markdown,',
+  '  "offTopic": OPTIONAL — off-topic tangents as GitHub-flavored Markdown, or null.',
+  '',
+  'Off-topic rules:',
+  "- Off-topic means digressions, side conversations and tangents unrelated to the recording's main subject — e.g. small talk about the weather or lunch in the middle of a project meeting, or an aside about an unrelated topic.",
+  '- Keep "markdown" strictly about the main subject; never mix tangents into it.',
+  '- Summarize genuine tangents briefly in "offTopic" (bullet points preferred), attributing speakers the same way as in the main body.',
+  '- If the recording stays on topic, set "offTopic" to null or omit it. Never invent or pad tangents to fill this section.',
+  '- Write "offTopic" in the same output language as the rest, and follow all Markdown rules below. Do not add an "Off-topic" heading inside it — the app renders its own.',
   '',
   'Markdown rules:',
   '- Write in the output language stated in the user message.',
@@ -166,10 +174,12 @@ export function parseSummaryResponse(content: string): {
   title: string;
   layout: SummaryLayout;
   markdown: string;
+  offTopic: string | null;
 } {
   const json = extractJsonObject(content);
   const rawTitle = typeof json.title === 'string' ? json.title.trim() : '';
   const rawMarkdown = typeof json.markdown === 'string' ? json.markdown.trim() : '';
+  const rawOffTopic = typeof json.offTopic === 'string' ? json.offTopic.trim() : '';
   if (!rawMarkdown) {
     throw new Error('summarization response had no markdown body');
   }
@@ -178,6 +188,7 @@ export function parseSummaryResponse(content: string): {
     title: rawTitle || 'Untitled recording',
     layout: layoutParse.success ? layoutParse.data : 'general',
     markdown: rawMarkdown,
+    offTopic: rawOffTopic || null,
   };
 }
 

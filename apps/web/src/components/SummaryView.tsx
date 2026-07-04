@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Chip, Spinner } from '@heroui/react';
+import { Accordion, AccordionItem, Button, Chip, Spinner } from '@heroui/react';
 import type { SummaryDto, SummaryLayout } from '@plaudern/contracts';
 import { getSummary, retrySummary } from '../lib/api';
 import { Markdown } from './Markdown';
@@ -153,6 +153,25 @@ export function SummaryView({ itemId }: { itemId: string }) {
         </div>
 
         <Markdown>{summary.markdown}</Markdown>
+
+        {summary.offTopic && (
+          <Accordion isCompact className="rounded-medium border border-default-200 px-3">
+            <AccordionItem
+              key="off-topic"
+              aria-label="Off-topic"
+              title={<span className="text-sm font-medium text-default-500">Off-topic</span>}
+              subtitle={
+                <span className="text-xs text-default-400">
+                  Tangents kept out of the main summary
+                </span>
+              }
+            >
+              <div className="pb-2 text-sm text-default-600">
+                <Markdown>{summary.offTopic}</Markdown>
+              </div>
+            </AccordionItem>
+          </Accordion>
+        )}
 
         {loadError && <p className="text-xs text-danger">{loadError}</p>}
       </div>

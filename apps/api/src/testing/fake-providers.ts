@@ -148,6 +148,7 @@ export class FakeSummarizationProvider implements SummarizationProvider {
       title: 'Test summary title',
       layout: input.speakers.length > 1 ? 'meeting' : 'note',
       markdown,
+      offTopic: '- Off-topic aside for testing.',
       model: 'fake-model',
     };
   }
