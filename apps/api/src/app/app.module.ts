@@ -17,6 +17,7 @@ import { GeocodingModule } from '@plaudern/geocoding';
 import { CalendarModule } from '@plaudern/calendar';
 import { EmailIngestModule } from '@plaudern/email-ingest';
 import { NotificationsModule } from '@plaudern/notifications';
+import { McpModule } from '@plaudern/mcp';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -41,6 +42,7 @@ import { HealthController } from './health.controller';
     CalendarModule,
     EmailIngestModule,
     NotificationsModule,
+    McpModule,
   ],
   controllers: [HealthController],
 })

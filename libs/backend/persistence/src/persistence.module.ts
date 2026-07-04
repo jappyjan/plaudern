@@ -16,6 +16,7 @@ import {
   InboxItemEntity,
   InboxTombstoneEntity,
   ItemTopicEntity,
+  McpTokenEntity,
   NotificationCategoryPreferenceEntity,
   NotificationDeliveryEntity,
   NotificationSettingsEntity,
@@ -53,6 +54,7 @@ import { ExtractionDag1720000000018 } from './migrations/1720000000018-Extractio
 import { CreateEmbeddingChunks1720000000019 } from './migrations/1720000000019-CreateEmbeddingChunks';
 import { CreateEntityRegistry1720000000020 } from './migrations/1720000000020-CreateEntityRegistry';
 import { CreateTopics1720000000021 } from './migrations/1720000000021-CreateTopics';
+import { CreateMcpTokens1720000000022 } from './migrations/1720000000022-CreateMcpTokens';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -67,6 +69,7 @@ export const ALL_ENTITIES = [
   InboxTombstoneEntity,
   PlaudSettingsEntity,
   EmailSettingsEntity,
+  McpTokenEntity,
   GeocodeCacheEntity,
   VoiceProfileEntity,
   SpeakerOccurrenceEntity,
@@ -110,6 +113,7 @@ export const ALL_MIGRATIONS = [
   CreateEmbeddingChunks1720000000019,
   CreateEntityRegistry1720000000020,
   CreateTopics1720000000021,
+  CreateMcpTokens1720000000022,
 ];
 
 /**

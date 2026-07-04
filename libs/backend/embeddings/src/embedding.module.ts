@@ -9,6 +9,7 @@ import { EMBEDDING_QUEUE } from './embedding.job';
 import { OpenAiEmbeddingProvider } from './providers/openai.provider';
 import { EmbeddingProcessor } from './embedding.processor';
 import { EmbeddingService } from './embedding.service';
+import { EmbeddingSearchService } from './embedding.search';
 import { EmbeddingExtractor } from './embedding.extractor';
 
 @Module({
@@ -35,8 +36,9 @@ import { EmbeddingExtractor } from './embedding.extractor';
           : new InlineJobQueue(processor),
     },
     EmbeddingService,
+    EmbeddingSearchService,
     EmbeddingExtractor,
   ],
-  exports: [EmbeddingService, EmbeddingExtractor],
+  exports: [EmbeddingService, EmbeddingSearchService, EmbeddingExtractor],
 })
 export class EmbeddingModule {}

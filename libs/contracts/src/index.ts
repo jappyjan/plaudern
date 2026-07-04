@@ -14,3 +14,4 @@ export * from './calendar';
 export * from './notifications';
 export * from './auth';
 export * from './extraction';
+export * from './mcp';

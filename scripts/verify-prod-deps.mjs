@@ -112,13 +112,25 @@ function main() {
   // Resolve each dep exactly as the runtime does: from the deploy's top-level
   // node_modules (the only node_modules the flat dist tree can reach).
   const requireFrom = createRequire(join(nodeModules, 'noop.js'));
-  const missing = [];
-  for (const [dep, declaredBy] of thirdParty) {
+  const isReachable = (dep) => {
     try {
       requireFrom.resolve(dep, { paths: [nodeModules] });
+      return true;
     } catch {
-      missing.push({ dep, declaredBy: [...declaredBy] });
+      // Some packages are importable only via subpaths: their exports map has
+      // no working root ("."), so the bare-name probe above throws even though
+      // every import the code actually performs resolves fine (e.g.
+      // @modelcontextprotocol/sdk, whose published exports["."].require target
+      // dist/cjs/index.js doesn't exist in the tarball). The guarantee this
+      // script protects — the package was hoisted into the deploy's top-level
+      // node_modules — still holds if the package itself is there: subpath
+      // requires resolve through its exports map from that location.
+      return existsSync(join(nodeModules, ...dep.split('/'), 'package.json'));
     }
+  };
+  const missing = [];
+  for (const [dep, declaredBy] of thirdParty) {
+    if (!isReachable(dep)) missing.push({ dep, declaredBy: [...declaredBy] });
   }
 
   try {

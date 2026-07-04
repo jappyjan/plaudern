@@ -36,7 +36,8 @@
       "@plaudern/speaker-id": ["libs/backend/speaker-id/src/index.ts"],
       "@plaudern/calendar": ["libs/backend/calendar/src/index.ts"],
       "@plaudern/notifications": ["libs/backend/notifications/src/index.ts"],
-      "@plaudern/auth": ["libs/backend/auth/src/index.ts"]
+      "@plaudern/auth": ["libs/backend/auth/src/index.ts"],
+      "@plaudern/mcp": ["libs/backend/mcp/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]
