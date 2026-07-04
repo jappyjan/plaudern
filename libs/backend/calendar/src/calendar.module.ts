@@ -1,10 +1,13 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PersistenceModule } from '@plaudern/persistence';
 import { CALENDAR_PROVIDERS } from './provider';
 import { CALENDAR_FETCH, IcsFeedClient, type FetchLike } from './ics/ics-feed.client';
 import { IcsCalendarProvider } from './ics/ics-calendar.provider';
+import { GoogleCalendarClient, GOOGLE_OAUTH_CONFIG } from './google/google-calendar.client';
+import { GoogleCalendarProvider } from './google/google-calendar.provider';
+import { GoogleOAuthService } from './google/google-oauth.service';
 import { CalendarFeedsService } from './calendar-feeds.service';
 import { CalendarLinkService } from './calendar-link.service';
 import { CalendarSyncService } from './calendar-sync.service';
@@ -23,10 +26,22 @@ import { CalendarController } from './calendar.controller';
     IcsFeedClient,
     IcsCalendarProvider,
     {
-      // Future OAuth providers (google, …) get appended here.
+      provide: GOOGLE_OAUTH_CONFIG,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        clientId: config.get<string>('GOOGLE_OAUTH_CLIENT_ID', ''),
+        clientSecret: config.get<string>('GOOGLE_OAUTH_CLIENT_SECRET', ''),
+        redirectUri: config.get<string>('GOOGLE_OAUTH_REDIRECT_URI', ''),
+        appBaseUrl: config.get<string>('GOOGLE_APP_BASE_URL', ''),
+      }),
+    },
+    GoogleCalendarClient,
+    GoogleCalendarProvider,
+    GoogleOAuthService,
+    {
       provide: CALENDAR_PROVIDERS,
-      useFactory: (ics: IcsCalendarProvider) => [ics],
-      inject: [IcsCalendarProvider],
+      useFactory: (ics: IcsCalendarProvider, google: GoogleCalendarProvider) => [ics, google],
+      inject: [IcsCalendarProvider, GoogleCalendarProvider],
     },
     CalendarFeedsService,
     CalendarLinkService,

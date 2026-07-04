@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { sourceTypeSchema } from './source-type';
 
-/** Calendar providers. `ics` = read-only iCal feed URL; more (google, …) later. */
-export const calendarProviderTypeSchema = z.enum(['ics']);
+/** Calendar providers. `ics` = read-only iCal feed URL; `google` = per-user OAuth. */
+export const calendarProviderTypeSchema = z.enum(['ics', 'google']);
 export type CalendarProviderType = z.infer<typeof calendarProviderTypeSchema>;
 
 export const calendarSyncStatusSchema = z.enum(['ok', 'error']);
@@ -59,6 +59,8 @@ export type UpdateCalendarFeedRequest = z.infer<typeof updateCalendarFeedRequest
 export const calendarFeedsResponseSchema = z.object({
   feeds: z.array(calendarFeedSchema),
   syncRunning: z.boolean(),
+  /** True when the server has Google OAuth env configured — gates the Connect button. */
+  googleConfigured: z.boolean(),
 });
 export type CalendarFeedsResponse = z.infer<typeof calendarFeedsResponseSchema>;
 
@@ -155,3 +157,32 @@ export const linkResponseSchema = z.object({
   origin: linkOriginSchema,
 });
 export type LinkResponse = z.infer<typeof linkResponseSchema>;
+
+// --- Google Calendar (native OAuth) ---
+
+export const googleAuthUrlResponseSchema = z.object({ url: z.string().url() });
+export type GoogleAuthUrlResponse = z.infer<typeof googleAuthUrlResponseSchema>;
+
+export const googleCalendarChoiceSchema = z.object({
+  id: z.string(),
+  summary: z.string(),
+  primary: z.boolean(),
+});
+export type GoogleCalendarChoice = z.infer<typeof googleCalendarChoiceSchema>;
+
+export const googlePendingResponseSchema = z.object({
+  email: z.string(),
+  calendars: z.array(googleCalendarChoiceSchema),
+});
+export type GooglePendingResponse = z.infer<typeof googlePendingResponseSchema>;
+
+export const createGoogleFeedsRequestSchema = z.object({
+  pendingId: z.string().min(1),
+  calendarIds: z.array(z.string().min(1)).min(1),
+});
+export type CreateGoogleFeedsRequest = z.infer<typeof createGoogleFeedsRequestSchema>;
+
+export const googleReconnectRequestSchema = z.object({
+  pendingId: z.string().min(1),
+});
+export type GoogleReconnectRequest = z.infer<typeof googleReconnectRequestSchema>;

@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import {
   calendarEventDetailSchema,
   calendarEventsResponseSchema,
@@ -7,6 +8,8 @@ import {
   calendarRecordingsResponseSchema,
   calendarSyncNowResponseSchema,
   geocodeResponseSchema,
+  googleAuthUrlResponseSchema,
+  googlePendingResponseSchema,
   inboxItemSchema,
   inboxListResponseSchema,
   inboxPurgeResponseSchema,
@@ -30,6 +33,8 @@ import {
   type CalendarSyncNowResponse,
   type CreateCalendarFeedRequest,
   type GeocodeResponse,
+  type GoogleAuthUrlResponse,
+  type GooglePendingResponse,
   type IngestInitRequest,
   type IngestInitResponse,
   type InboxItemDto,
@@ -324,6 +329,35 @@ export async function createCalendarLink(
 export async function deleteCalendarLink(inboxItemId: string, eventId: string): Promise<void> {
   const res = await fetch(`${BASE}/calendar/links/${inboxItemId}/${eventId}`, { method: 'DELETE' });
   if (!res.ok) throw new ApiError(res.status, `DELETE /calendar/links failed (${res.status})`);
+}
+
+export async function getGoogleAuthUrl(): Promise<GoogleAuthUrlResponse> {
+  return googleAuthUrlResponseSchema.parse(await requestJson('/calendar/google/auth-url'));
+}
+
+export async function getGooglePending(id: string): Promise<GooglePendingResponse> {
+  return googlePendingResponseSchema.parse(await requestJson(`/calendar/google/pending/${id}`));
+}
+
+export async function createGoogleFeeds(
+  pendingId: string,
+  calendarIds: string[],
+): Promise<CalendarFeedDto[]> {
+  return z
+    .array(calendarFeedSchema)
+    .parse(
+      await requestJson('/calendar/google/feeds', {
+        method: 'POST',
+        body: JSON.stringify({ pendingId, calendarIds }),
+      }),
+    );
+}
+
+export async function reconnectGoogle(pendingId: string): Promise<{ updated: number }> {
+  return (await requestJson('/calendar/google/reconnect', {
+    method: 'POST',
+    body: JSON.stringify({ pendingId }),
+  })) as { updated: number };
 }
 
 /**

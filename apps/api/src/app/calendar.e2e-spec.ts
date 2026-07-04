@@ -100,7 +100,7 @@ describe('Calendar feeds + linking (e2e)', () => {
 
   it('starts with no feeds', async () => {
     const res = await request(app.getHttpServer()).get('/api/v1/calendar/feeds').expect(200);
-    expect(res.body).toEqual({ feeds: [], syncRunning: false });
+    expect(res.body).toEqual({ feeds: [], syncRunning: false, googleConfigured: false });
   });
 
   it('tests a feed URL without storing it', async () => {

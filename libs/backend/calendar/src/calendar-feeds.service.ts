@@ -9,8 +9,8 @@ import type {
   CreateCalendarFeedRequest,
   UpdateCalendarFeedRequest,
 } from '@plaudern/contracts';
-import { CalendarFeedEntity } from '@plaudern/persistence';
-import { decryptSecret, encryptSecret } from '@plaudern/persistence';
+import { CalendarFeedEntity, decryptSecret, encryptSecret } from '@plaudern/persistence';
+import type { GoogleCalendarSummary } from './google/google-calendar.client';
 import { maskFeedUrl, normalizeFeedUrl } from './ics/ics-feed.client';
 
 /**
@@ -104,10 +104,85 @@ export class CalendarFeedsService {
 
   getDecryptedUrl(feed: CalendarFeedEntity): string {
     try {
-      return decryptSecret(feed.urlEncrypted, this.requireSecret());
+      return decryptSecret(feed.urlEncrypted ?? '', this.requireSecret());
     } catch {
       throw new Error(
         'stored feed URL cannot be decrypted (APP_ENCRYPTION_SECRET missing or changed) — re-enter the feed URL in settings',
+      );
+    }
+  }
+
+  /** Create one feed row per selected Google calendar. Skips calendars already
+   *  subscribed for this account. `ponytail:` the refresh token is duplicated
+   *  across rows — fine single-user; a google_connections table if multi-account. */
+  async createGoogleFeeds(
+    userId: string,
+    input: {
+      email: string;
+      refreshToken: string;
+      calendars: GoogleCalendarSummary[];
+    },
+  ): Promise<CalendarFeedEntity[]> {
+    const secret = this.requireSecret();
+    const encrypted = encryptSecret(input.refreshToken, secret);
+    const existing = await this.repo.find({
+      where: { userId, googleAccountEmail: input.email },
+    });
+    const already = new Set(existing.map((f) => f.googleCalendarId));
+    const created: CalendarFeedEntity[] = [];
+    for (const cal of input.calendars) {
+      if (already.has(cal.id)) continue;
+      const feed = await this.repo.save(
+        this.repo.create({
+          userId,
+          name: cal.summary,
+          providerType: 'google',
+          urlEncrypted: null,
+          urlHash: null,
+          urlMasked: `${input.email} · ${cal.summary}`,
+          googleCalendarId: cal.id,
+          googleAccountEmail: input.email,
+          googleRefreshTokenEncrypted: encrypted,
+          color: null,
+          enabled: true,
+          autoLink: false,
+        }),
+      );
+      created.push(feed);
+    }
+    return created;
+  }
+
+  /** Reconnect: re-encrypt the refresh token on every feed for an account and
+   *  clear any error state so the next sync retries. Returns rows updated. */
+  async updateGoogleRefreshToken(
+    userId: string,
+    email: string,
+    refreshToken: string,
+  ): Promise<number> {
+    const secret = this.requireSecret();
+    const encrypted = encryptSecret(refreshToken, secret);
+    const feeds = await this.repo.find({
+      where: { userId, googleAccountEmail: email },
+    });
+    for (const feed of feeds) {
+      feed.googleRefreshTokenEncrypted = encrypted;
+      feed.lastSyncStatus = null;
+      feed.lastSyncError = null;
+      await this.repo.save(feed);
+    }
+    return feeds.length;
+  }
+
+  getDecryptedRefreshToken(feed: CalendarFeedEntity): string {
+    if (!feed.googleRefreshTokenEncrypted) {
+      throw new Error('google feed has no stored refresh token — reconnect in settings');
+    }
+    try {
+      return decryptSecret(feed.googleRefreshTokenEncrypted, this.requireSecret());
+    } catch {
+      throw new Error(
+        'stored google token cannot be decrypted (APP_ENCRYPTION_SECRET missing or changed) — reconnect in settings',
       );
     }
   }
@@ -135,7 +210,7 @@ export class CalendarFeedsService {
       enabled: feed.enabled,
       autoLink: feed.autoLink,
       color: feed.color,
-      urlMasked: feed.urlMasked,
+      urlMasked: feed.urlMasked ?? '',
       lastSyncAt: feed.lastSyncAt,
       lastSyncStatus: feed.lastSyncStatus,
       lastSyncError: feed.lastSyncError,

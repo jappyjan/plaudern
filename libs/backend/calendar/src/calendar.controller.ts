@@ -9,13 +9,16 @@ import {
   Post,
   Put,
   Query,
+  Redirect,
   BadRequestException,
 } from '@nestjs/common';
 import {
   calendarFeedTestRequestSchema,
   calendarRangeQuerySchema,
   createCalendarFeedRequestSchema,
+  createGoogleFeedsRequestSchema,
   createLinkRequestSchema,
+  googleReconnectRequestSchema,
   updateCalendarFeedRequestSchema,
   type CalendarEventDetailDto,
   type CalendarEventsResponse,
@@ -24,15 +27,18 @@ import {
   type CalendarFeedTestResponse,
   type CalendarRecordingsResponse,
   type CalendarSyncNowResponse,
+  type GoogleAuthUrlResponse,
+  type GooglePendingResponse,
   type ItemEventsResponse,
   type LinkResponse,
 } from '@plaudern/contracts';
-import { CurrentUser, type AuthenticatedUser } from '@plaudern/auth';
+import { CurrentUser, Public, type AuthenticatedUser } from '@plaudern/auth';
 import { CalendarEventsService } from './calendar-events.service';
 import { CalendarFeedsService } from './calendar-feeds.service';
 import { CalendarLinkService } from './calendar-link.service';
 import { CalendarSyncService } from './calendar-sync.service';
 import { IcsCalendarProvider } from './ics/ics-calendar.provider';
+import { GoogleOAuthService } from './google/google-oauth.service';
 
 @Controller({ path: 'calendar', version: '1' })
 export class CalendarController {
@@ -44,12 +50,17 @@ export class CalendarController {
     private readonly links: CalendarLinkService,
     private readonly sync: CalendarSyncService,
     private readonly icsProvider: IcsCalendarProvider,
+    private readonly google: GoogleOAuthService,
   ) {}
 
   @Get('feeds')
   async listFeeds(@CurrentUser() user: AuthenticatedUser): Promise<CalendarFeedsResponse> {
     const feeds = await this.feeds.list(user.id);
-    return { feeds: feeds.map((feed) => this.feeds.toDto(feed)), syncRunning: this.sync.isRunning };
+    return {
+      feeds: feeds.map((feed) => this.feeds.toDto(feed)),
+      syncRunning: this.sync.isRunning,
+      googleConfigured: this.google.isConfigured(),
+    };
   }
 
   @Post('feeds')
@@ -160,6 +171,55 @@ export class CalendarController {
     @Param('eventId') eventId: string,
   ): Promise<void> {
     await this.links.unlink(user.id, inboxItemId, eventId);
+  }
+
+  @Get('google/auth-url')
+  googleAuthUrl(@CurrentUser() user: AuthenticatedUser): GoogleAuthUrlResponse {
+    return { url: this.google.buildAuthUrl(user.id) };
+  }
+
+  // Public: this is the Google → browser OAuth redirect target. The user is
+  // identified by the userId carried in the signed OAuth `state`, not a session.
+  @Public()
+  @Get('google/callback')
+  @Redirect()
+  async googleCallback(
+    @Query('code') code: string | undefined,
+    @Query('state') state: string | undefined,
+  ): Promise<{ url: string }> {
+    if (!code || !state) throw new BadRequestException('missing code/state');
+    const url = await this.google.handleCallback(code, state);
+    return { url };
+  }
+
+  @Get('google/pending/:id')
+  googlePending(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ): GooglePendingResponse {
+    return this.google.getPending(user.id, id);
+  }
+
+  @Post('google/feeds')
+  async googleCreateFeeds(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: unknown,
+  ): Promise<CalendarFeedDto[]> {
+    const req = createGoogleFeedsRequestSchema.parse(body);
+    const feeds = await this.google.confirmFeeds(user.id, req.pendingId, req.calendarIds);
+    this.fireAndForgetSync('post-google-connect', user.id);
+    return feeds.map((feed) => this.feeds.toDto(feed));
+  }
+
+  @Post('google/reconnect')
+  async googleReconnect(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: unknown,
+  ): Promise<{ updated: number }> {
+    const req = googleReconnectRequestSchema.parse(body);
+    const updated = await this.google.reconnect(user.id, req.pendingId);
+    this.fireAndForgetSync('post-google-reconnect', user.id);
+    return { updated };
   }
 
   private fireAndForgetSync(trigger: string, userId: string): void {
