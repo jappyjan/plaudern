@@ -75,6 +75,16 @@ services:
       - SUMMARIZATION_API_KEY=${SUMMARIZATION_API_KEY}
       - SUMMARIZATION_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
       - SUMMARIZATION_MODEL=${SUMMARIZATION_MODEL:-deepseek-chat}
+      # Entity/relation extraction and topic classification reuse the
+      # summarization key and endpoint (same DeepSeek account) — a non-empty
+      # key auto-enables them. Only the models are independently overridable;
+      # set the *_MODEL vars in Coolify to diverge from the summarization tier.
+      - ENTITY_EXTRACTION_API_KEY=${SUMMARIZATION_API_KEY}
+      - ENTITY_EXTRACTION_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
+      - ENTITY_EXTRACTION_MODEL=${ENTITY_EXTRACTION_MODEL:-deepseek-chat}
+      - TOPICS_API_KEY=${SUMMARIZATION_API_KEY}
+      - TOPICS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
+      - TOPICS_MODEL=${TOPICS_MODEL:-deepseek-chat}
       # Transcription: the hosted ElevenLabs Scribe API — fill in
       # ELEVENLABS_API_KEY (get one at elevenlabs.io). Audio bytes are uploaded
       # to ElevenLabs directly (storage stays private).
