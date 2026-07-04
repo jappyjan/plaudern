@@ -460,6 +460,9 @@ export async function getEntityNeighborhood(
  * The subgraph connecting 2–3 entities: shortest paths from the first id to
  * each of the others. Pass `includeCooccurrence=false` to traverse only
  * LLM-evidenced edges.
+ *
+ * Not called by any page yet — this is the client for the upcoming graph-view
+ * feature.
  */
 export async function connectEntities(
   ids: string[],

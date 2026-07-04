@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Card, CardBody, CardHeader, Chip, Spinner } from '@heroui/react';
 import type {
   EntityDetailWithRelationsDto,
@@ -29,23 +29,39 @@ export function EntityDetailPage() {
   const [neighbors, setNeighbors] = useState<Map<string, GraphEntityDto>>(new Map());
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    if (!id) return;
-    try {
-      const [detail, neighborhood] = await Promise.all([
-        getEntity(id),
-        getEntityNeighborhood(id),
-      ]);
-      setEntity(detail);
-      setNeighbors(new Map(neighborhood.neighbors.map((n) => [n.id, n])));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    }
-  }, [id]);
-
   useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
+    // Reset so entity→entity navigation (relation links) shows the spinner
+    // instead of the previous entity, and a stale error never masks a load.
+    setEntity(null);
+    setNeighbors(new Map());
+    setError(null);
+    if (!id) return;
+
+    void (async () => {
+      try {
+        const detail = await getEntity(id);
+        if (!cancelled) setEntity(detail);
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+      }
+    })();
+
+    // Fetched independently of the detail: if the neighborhood call fails we
+    // degrade to unnamed relation endpoints instead of blanking the page.
+    void (async () => {
+      try {
+        const neighborhood = await getEntityNeighborhood(id);
+        if (!cancelled) setNeighbors(new Map(neighborhood.neighbors.map((n) => [n.id, n])));
+      } catch {
+        // Non-fatal: relations render as "Unknown entity" without it.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   if (error) {
     return (
@@ -198,13 +214,8 @@ function RelationRow({
   // Weak co-occurrence edges (entities merely mentioned together) are muted so
   // LLM-stated relations stand out.
   const cooccurrence = edge.origin === 'cooccurrence';
-  return (
-    <Link
-      to={`/entities/${otherId}`}
-      className={`flex flex-row items-center justify-between gap-2 rounded-medium p-2 hover:bg-default-100 ${
-        cooccurrence ? 'opacity-60' : ''
-      }`}
-    >
+  const content = (
+    <>
       <div className="min-w-0">
         <span className="truncate text-sm font-medium">
           {other?.canonicalName ?? 'Unknown entity'}
@@ -229,6 +240,26 @@ function RelationRow({
           )
         )}
       </div>
+    </>
+  );
+
+  // Endpoints the neighborhood didn't resolve would 404 as a link — render
+  // them as plain muted text instead.
+  if (!other) {
+    return (
+      <div className="flex flex-row items-center justify-between gap-2 rounded-medium p-2 opacity-60">
+        {content}
+      </div>
+    );
+  }
+  return (
+    <Link
+      to={`/entities/${otherId}`}
+      className={`flex flex-row items-center justify-between gap-2 rounded-medium p-2 hover:bg-default-100 ${
+        cooccurrence ? 'opacity-60' : ''
+      }`}
+    >
+      {content}
     </Link>
   );
 }
