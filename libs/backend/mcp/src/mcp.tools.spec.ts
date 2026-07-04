@@ -1,6 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import type { InboxItemEntity } from '@plaudern/persistence';
-import type { EmbeddingSearchHit } from '@plaudern/embeddings';
+import type { SearchResponse } from '@plaudern/contracts';
 import { McpToolsService } from './mcp.tools';
 
 type Fakes = {
@@ -56,34 +56,76 @@ function extraction(over: Record<string, unknown>) {
 
 describe('McpToolsService', () => {
   describe('searchMemory', () => {
-    it('maps search hits to snippets with rounded scores and item refs', async () => {
+    it('maps hybrid search results to snippets, stripping highlight markers', async () => {
       const { service, fakes } = build();
-      const hits: EmbeddingSearchHit[] = [
-        {
-          inboxItemId: 'item-9',
-          chunkId: 'chunk-9',
-          source: 'transcript',
-          text: 'we agreed to launch on Friday',
-          startSeconds: 12.5,
-          endSeconds: 20,
-          score: 0.876543,
-        },
-      ];
-      fakes.search.search.mockResolvedValue(hits);
+      const response: SearchResponse = {
+        results: [
+          {
+            itemId: 'item-9',
+            title: 'Launch plan',
+            sourceType: 'audio',
+            occurredAt: '2026-07-01T09:00:00.000Z',
+            snippet: 'we agreed to <mark>launch</mark> on Friday',
+            snippetSource: 'transcript',
+            startSeconds: 12.5,
+            endSeconds: 20,
+            semanticScore: 0.87,
+            semanticRank: 1,
+            keywordScore: 0.12,
+            keywordRank: 1,
+            fusedScore: 0.0328,
+            rank: 1,
+          },
+        ],
+        legs: { semantic: 'ran', keyword: 'ran', notes: [] },
+      };
+      fakes.search.search.mockResolvedValue(response);
 
       const result = await service.searchMemory('user-1', { query: 'launch date', limit: 5 });
 
-      expect(fakes.search.search).toHaveBeenCalledWith('user-1', 'launch date', 5);
+      expect(fakes.search.search).toHaveBeenCalledWith('user-1', {
+        query: 'launch date',
+        limit: 5,
+      });
       expect(result).toEqual([
         {
           itemId: 'item-9',
           source: 'transcript',
           snippet: 'we agreed to launch on Friday',
-          score: 0.877,
+          score: 0.0328,
           startSeconds: 12.5,
           endSeconds: 20,
         },
       ]);
+    });
+
+    it('falls back to a summary source when a result has no snippet source', async () => {
+      const { service, fakes } = build();
+      const response: SearchResponse = {
+        results: [
+          {
+            itemId: 'item-1',
+            title: null,
+            sourceType: 'text',
+            occurredAt: '2026-07-01T09:00:00.000Z',
+            snippet: null,
+            snippetSource: null,
+            startSeconds: null,
+            endSeconds: null,
+            semanticScore: null,
+            semanticRank: null,
+            keywordScore: 0.2,
+            keywordRank: 1,
+            fusedScore: 0.0164,
+            rank: 1,
+          },
+        ],
+        legs: { semantic: 'unavailable', keyword: 'ran', notes: ['semantic unavailable'] },
+      };
+      fakes.search.search.mockResolvedValue(response);
+
+      const result = await service.searchMemory('user-1', { query: 'note', limit: 5 });
+      expect(result[0]).toMatchObject({ itemId: 'item-1', source: 'summary', snippet: '' });
     });
   });
 

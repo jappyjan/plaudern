@@ -1,27 +1,20 @@
 {
-  "name": "@plaudern/mcp",
+  "name": "@plaudern/search",
   "version": "0.1.0",
   "private": true,
   "type": "commonjs",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.29.0",
     "@plaudern/auth": "workspace:*",
     "@plaudern/contracts": "workspace:*",
-    "@plaudern/inbox": "workspace:*",
-    "@plaudern/ingestion": "workspace:*",
-    "@plaudern/persistence": "workspace:*",
-    "@plaudern/search": "workspace:*",
-    "zod": "4.4.3"
+    "@plaudern/embeddings": "workspace:*",
+    "@plaudern/persistence": "workspace:*"
   },
   "peerDependencies": {
     "@nestjs/common": "^11.0.0",
     "@nestjs/typeorm": "^11.0.0",
-    "express": "^5.0.0",
+    "rxjs": "^7.0.0",
     "typeorm": "^1.0.0"
-  },
-  "devDependencies": {
-    "@types/express": "5.0.0"
   }
 }
