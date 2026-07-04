@@ -6,6 +6,7 @@ import { getSpeakerTranscript } from '../lib/api';
 import { formatDuration } from '../lib/format';
 import { speakerColor, speakerDisplayName } from '../lib/speakerColors';
 import { CollapsibleText } from './CollapsibleText';
+import { CollapsibleContent } from './CollapsibleContent';
 
 const POLL_INTERVAL_MS = 3000;
 
@@ -86,7 +87,7 @@ export function SpeakerTranscript({
       )}
 
       {view.mode === 'segmented' ? (
-        <div className="flex flex-col gap-3">
+        <CollapsibleContent className="flex flex-col gap-3">
           {view.segments.map((segment, i) => (
             <div key={i} className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
@@ -113,7 +114,7 @@ export function SpeakerTranscript({
               <p className="whitespace-pre-wrap text-sm">{segment.text}</p>
             </div>
           ))}
-        </div>
+        </CollapsibleContent>
       ) : (
         <CollapsibleText
           text={view.text ?? transcription.content ?? ''}
