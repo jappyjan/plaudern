@@ -72,6 +72,13 @@ services:
       PLAUD_POLL_INTERVAL_MS: ${PLAUD_POLL_INTERVAL_MS:-300000}
       # Calendar feeds: APP_ENCRYPTION_SECRET also encrypts the feed URLs.
       CALENDAR_POLL_INTERVAL_MS: ${CALENDAR_POLL_INTERVAL_MS:-900000}
+      # --- AI summarization ---
+      # Empty API key = summarization disabled (UI just shows the transcript).
+      # Defaults target DeepSeek; point BASE_URL/MODEL at any OpenAI-compatible
+      # endpoint (OpenAI, OpenRouter, a local gateway, …).
+      SUMMARIZATION_API_KEY: ${SUMMARIZATION_API_KEY:-}
+      SUMMARIZATION_BASE_URL: ${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
+      SUMMARIZATION_MODEL: ${SUMMARIZATION_MODEL:-deepseek-chat}
       # --- Speaker diarization ---
       # pyannote  = local speaker-id sidecar (default; embeddings + cosine match)
       # pyannoteai = hosted pyannoteAI API (offloads the heavy model; set

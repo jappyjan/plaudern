@@ -14,6 +14,7 @@ import {
   RecordingEventLinkEntity,
   SourcePayloadEntity,
   SpeakerOccurrenceEntity,
+  SummarizationSettingsEntity,
   UserEntity,
   VoiceProfileEntity,
 } from './entities';
@@ -28,6 +29,7 @@ import { CalendarFeedAutoLink1720000000007 } from './migrations/1720000000007-Ca
 import { CreateAuthTables1720000000008 } from './migrations/1720000000008-CreateAuthTables';
 import { DeSentinelizeOwner1720000000009 } from './migrations/1720000000009-DeSentinelizeOwner';
 import { PyannoteAiVoiceprints1720000000010 } from './migrations/1720000000010-PyannoteAiVoiceprints';
+import { CreateSummarizationSettings1720000000011 } from './migrations/1720000000011-CreateSummarizationSettings';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -44,6 +46,7 @@ export const ALL_ENTITIES = [
   UserEntity,
   PasskeyCredentialEntity,
   AuthSessionEntity,
+  SummarizationSettingsEntity,
 ];
 
 // Referenced as classes (not a glob) so migrations load identically under
@@ -60,6 +63,7 @@ export const ALL_MIGRATIONS = [
   CreateAuthTables1720000000008,
   DeSentinelizeOwner1720000000009,
   PyannoteAiVoiceprints1720000000010,
+  CreateSummarizationSettings1720000000011,
 ];
 
 /**

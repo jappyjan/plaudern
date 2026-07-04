@@ -44,6 +44,7 @@ libs/
     ingestion/    Source-adapter registry + presigned upload API
     transcription/ Queue (BullMQ / inline) + sidecar whisper provider
     speaker-id/   Diarization queue + voice-profile matching + contact book API
+    summarization/ AI title + Markdown summary (OpenAI-compatible LLM, DeepSeek by default)
 docker-compose.yml   Postgres + MinIO + Redis (+ api + web + speaker-id) for local dev
 ```
 
@@ -77,6 +78,23 @@ docker-compose.yml   Postgres + MinIO + Redis (+ api + web + speaker-id) for loc
   read time. The pyannote path's models are gated on Hugging Face — see
   `apps/speaker-id-ml/README.md` for the one-time `HUGGING_FACE_TOKEN` setup
   (not needed when using `pyannoteai`).
+- **AI summarization**: once a recording is transcribed and diarized, the next
+  pipeline step (`libs/backend/summarization`) hands the speaker-attributed
+  transcript to an LLM that writes a short descriptive **title** and a
+  **Markdown summary**, picking a layout that fits the content (meeting,
+  interview, lecture, to-dos, note, …). The summary supports **mermaid
+  diagrams** and mentions speakers with `@[LABEL]` tokens that the web app turns
+  into the same clickable speaker chips as the transcript. It runs as another
+  append-only extraction (`kind: summary`), triggered in-process when the
+  transcription/diarization finish, so job ordering never matters and a
+  reprocess regenerates it. The **summary language** is a per-user setting
+  (Settings → AI summaries): `Automatic` follows each recording's spoken
+  language, or pick a fixed language applied to every future summary. Any
+  **OpenAI-compatible** `/chat/completions` endpoint works — the default
+  targets **DeepSeek** (`deepseek-chat`), the cheapest capable option; leave
+  `SUMMARIZATION_API_KEY` empty to disable the step (the UI then just shows the
+  transcript). Detail pages show the summary and transcript in a **tabbed
+  view**, defaulting to the summary once it's ready.
 - **Capture metadata travels with the item**: `occurredAt` (when it was
   recorded) plus a free-form `metadata` field (GPS location, recording device,
   file tags) set at ingest time — the envelope is immutable, so metadata is
@@ -134,10 +152,12 @@ pnpm nx serve web                           # http://localhost:5173 (proxies /ap
 - **Record**: in-browser `MediaRecorder` (webm/opus on Chrome/Firefox, mp4 on
   Safari). `occurredAt` = recording start; browser geolocation (if you grant
   it) and user agent land in `metadata`.
-- **Inbox**: newest-first list with transcription status; item detail plays the
-  audio via a presigned URL, polls the transcription until it lands, and shows
-  the capture metadata (time, location with an OpenStreetMap link, device,
-  tags).
+- **Inbox**: newest-first list with transcription status (and the AI title once
+  summarized); item detail plays the audio via a presigned URL, polls the
+  transcription until it lands, and shows the capture metadata (time, location
+  with an OpenStreetMap link, device, tags). The transcript and AI **summary**
+  live in a tabbed view (Markdown + mermaid, clickable speaker mentions),
+  defaulting to the summary when one exists.
 - **Calendar**: subscribe to iCal/ICS feed URLs (Google Calendar's "secret
   address", Outlook, iCloud, …) in settings — the URL is a secret and is
   stored AES-encrypted. A month view shows events and recordings per day;
@@ -223,7 +243,9 @@ curl -s localhost:3000/api/v1/inbox
 Backend env: `apps/api/.env.example` (DB, S3/MinIO, Redis, sidecar). Key
 switches: `DATABASE_DRIVER` (postgres|sqlite), `STORAGE_DRIVER` (s3|memory),
 `QUEUE_DRIVER` (bull|inline), `SPEAKER_ID_PROVIDER` (pyannote|pyannoteai|off;
-`pyannoteai` needs `PYANNOTEAI_API_KEY`).
+`pyannoteai` needs `PYANNOTEAI_API_KEY`), `SUMMARIZATION_API_KEY` (enables AI
+summaries; with `SUMMARIZATION_BASE_URL`/`SUMMARIZATION_MODEL` pointing at any
+OpenAI-compatible endpoint, DeepSeek by default).
 
 Authentication env: `AUTH_RP_ID` (WebAuthn relying-party id = the domain the
 web app is served from; default `localhost`), `AUTH_ORIGINS` (comma-separated

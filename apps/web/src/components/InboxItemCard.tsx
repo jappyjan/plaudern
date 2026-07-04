@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button, Card, CardBody, Chip } from '@heroui/react';
-import type { InboxItemDto, SourceType } from '@plaudern/contracts';
+import { summaryPayloadSchema, type InboxItemDto, type SourceType } from '@plaudern/contracts';
 import { useNavigate } from 'react-router-dom';
 import { deleteInboxItem } from '../lib/api';
 import { formatDateTime, formatDuration } from '../lib/format';
@@ -22,7 +22,24 @@ function SourceIcon({ sourceType }: { sourceType: SourceType }) {
   }
 }
 
+/** The AI summary's title, when one has been generated for this item. */
+function summaryTitle(item: InboxItemDto): string | null {
+  const summary = item.extractions.find(
+    (e) => e.kind === 'summary' && e.status === 'succeeded',
+  );
+  if (!summary?.content) return null;
+  try {
+    const parsed = summaryPayloadSchema.safeParse(JSON.parse(summary.content));
+    return parsed.success && parsed.data.title ? parsed.data.title : null;
+  } catch {
+    return null;
+  }
+}
+
 function itemTitle(item: InboxItemDto): string {
+  // Prefer the AI-generated descriptive title once it's available.
+  const aiTitle = summaryTitle(item);
+  if (aiTitle) return aiTitle;
   const tags = item.metadata?.tags as Record<string, unknown> | undefined;
   if (typeof tags?.title === 'string' && tags.title) return tags.title;
   if (item.source?.originalFilename) return item.source.originalFilename;
@@ -90,6 +107,11 @@ export function InboxItemCard({
               </Chip>
             )}
             <TranscriptionChip item={item} />
+            {item.extractions.some((e) => e.kind === 'summary' && e.status === 'succeeded') && (
+              <Chip size="sm" variant="flat" color="secondary">
+                summary
+              </Chip>
+            )}
           </div>
         </CardBody>
       </Card>

@@ -70,6 +70,13 @@ services:
       - PLAUD_POLL_INTERVAL_MS=${PLAUD_POLL_INTERVAL_MS:-300000}
       # Calendar feeds: the same secret encrypts subscribed feed URLs.
       - CALENDAR_POLL_INTERVAL_MS=${CALENDAR_POLL_INTERVAL_MS:-900000}
+      # AI summarization (title + Markdown summary once a recording is
+      # transcribed and diarized). Empty key = disabled (UI shows the transcript
+      # only). Defaults target DeepSeek — the cheapest capable option; point
+      # BASE_URL/MODEL at any OpenAI-compatible endpoint to switch providers.
+      - SUMMARIZATION_API_KEY=${SUMMARIZATION_API_KEY}
+      - SUMMARIZATION_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
+      - SUMMARIZATION_MODEL=${SUMMARIZATION_MODEL:-deepseek-chat}
       # Transcription. Default here is the hosted ElevenLabs Scribe API for
       # markedly better accuracy/punctuation and multilingual auto-detection —
       # fill in ELEVENLABS_API_KEY (get one at elevenlabs.io). Audio bytes are

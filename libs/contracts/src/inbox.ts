@@ -14,7 +14,7 @@ export const extractionStatusSchema = z.enum([
 ]);
 export type ExtractionStatus = z.infer<typeof extractionStatusSchema>;
 
-export const extractionKindSchema = z.enum(['transcription', 'ocr', 'diarization']);
+export const extractionKindSchema = z.enum(['transcription', 'ocr', 'diarization', 'summary']);
 export type ExtractionKind = z.infer<typeof extractionKindSchema>;
 
 /**

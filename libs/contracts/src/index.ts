@@ -3,6 +3,7 @@ export * from './inbox';
 export * from './ingestion';
 export * from './settings';
 export * from './speakers';
+export * from './summary';
 export * from './events';
 export * from './geocode';
 export * from './calendar';

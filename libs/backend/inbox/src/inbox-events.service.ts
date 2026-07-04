@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { filter, map, Subject, type Observable } from 'rxjs';
 import type { InboxEvent } from '@plaudern/contracts';
 
-interface UserScopedEvent {
+export interface UserScopedEvent {
   userId: string;
   event: InboxEvent;
 }
@@ -23,6 +23,15 @@ export class InboxEventsService {
 
   emit(userId: string, event: InboxEvent): void {
     this.subject.next({ userId, event });
+  }
+
+  /**
+   * Unfiltered, user-tagged stream of every event — for in-process pipeline
+   * steps (e.g. summarization) that react to extraction completions across all
+   * users. SSE subscribers use the per-user `stream` instead.
+   */
+  allEvents(): Observable<UserScopedEvent> {
+    return this.subject.asObservable();
   }
 
   stream(userId: string): Observable<InboxEvent> {

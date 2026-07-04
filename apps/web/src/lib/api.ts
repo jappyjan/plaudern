@@ -17,6 +17,8 @@ import {
   plaudSyncNowResponseSchema,
   plaudTestConnectionResponseSchema,
   speakerTranscriptSchema,
+  summarizationSettingsSchema,
+  summarySchema,
   voiceProfileDetailSchema,
   voiceProfileListResponseSchema,
   type CalendarEventDetailDto,
@@ -40,7 +42,10 @@ import {
   type ItemEventsResponse,
   type LinkResponse,
   type SpeakerTranscriptDto,
+  type SummarizationSettingsDto,
+  type SummaryDto,
   type UpdateCalendarFeedRequest,
+  type UpdateSummarizationSettingsRequest,
   type UpdatePlaudSettingsRequest,
   type UpdateVoiceProfileRequest,
   type VoiceProfileDetailDto,
@@ -132,6 +137,20 @@ export async function reprocessItem(id: string): Promise<InboxItemDto> {
   );
 }
 
+/** Re-run transcription only; the summary follows automatically. */
+export async function retryTranscription(id: string): Promise<InboxItemDto> {
+  return inboxItemSchema.parse(
+    await requestJson(`/inbox/${id}/transcription/retry`, { method: 'POST' }),
+  );
+}
+
+/** Re-run speaker identification (diarization) only; the summary follows. */
+export async function retryDiarization(id: string): Promise<InboxItemDto> {
+  return inboxItemSchema.parse(
+    await requestJson(`/inbox/${id}/diarization/retry`, { method: 'POST' }),
+  );
+}
+
 /** Reverse-geocode coordinates to a place (label/city null when unavailable). */
 export async function getPlaceName(lat: number, lon: number): Promise<GeocodeResponse> {
   const query = new URLSearchParams({ lat: String(lat), lon: String(lon) });
@@ -178,6 +197,30 @@ export async function triggerPlaudSync(): Promise<PlaudSyncNowResponse> {
 
 export async function getSpeakerTranscript(itemId: string): Promise<SpeakerTranscriptDto> {
   return speakerTranscriptSchema.parse(await requestJson(`/inbox/${itemId}/speaker-transcript`));
+}
+
+/** AI-generated title + Markdown summary (and speaker roster for mentions). */
+export async function getSummary(itemId: string): Promise<SummaryDto> {
+  return summarySchema.parse(await requestJson(`/inbox/${itemId}/summary`));
+}
+
+/** Manually (re)generate the summary; returns the refreshed (in-flight) summary. */
+export async function retrySummary(itemId: string): Promise<SummaryDto> {
+  return summarySchema.parse(
+    await requestJson(`/inbox/${itemId}/summary/retry`, { method: 'POST' }),
+  );
+}
+
+export async function getSummarizationSettings(): Promise<SummarizationSettingsDto> {
+  return summarizationSettingsSchema.parse(await requestJson('/settings/summarization'));
+}
+
+export async function updateSummarizationSettings(
+  req: UpdateSummarizationSettingsRequest,
+): Promise<SummarizationSettingsDto> {
+  return summarizationSettingsSchema.parse(
+    await requestJson('/settings/summarization', { method: 'PUT', body: JSON.stringify(req) }),
+  );
 }
 
 export async function listSpeakers(): Promise<VoiceProfileListResponse> {
