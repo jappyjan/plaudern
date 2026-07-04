@@ -1,4 +1,4 @@
-import { buildUserPrompt, parseSummaryResponse } from './openai.provider';
+import { buildUserPrompt, parseSummaryResponse, SYSTEM_PROMPT } from './openai.provider';
 import type { SummarizationInput } from '../summarization.provider';
 
 const baseInput: SummarizationInput = {
@@ -49,7 +49,12 @@ describe('parseSummaryResponse', () => {
     const out = parseSummaryResponse(
       JSON.stringify({ title: 'Weekly sync', layout: 'meeting', markdown: '## Notes\n- a' }),
     );
-    expect(out).toEqual({ title: 'Weekly sync', layout: 'meeting', markdown: '## Notes\n- a' });
+    expect(out).toEqual({
+      title: 'Weekly sync',
+      layout: 'meeting',
+      markdown: '## Notes\n- a',
+      offTopic: null,
+    });
   });
 
   it('tolerates a ```json code fence', () => {
@@ -85,5 +90,32 @@ describe('parseSummaryResponse', () => {
       'Here you go: {"title":"T","layout":"todo","markdown":"- [ ] x"} — done',
     );
     expect(out.layout).toBe('todo');
+  });
+
+  it('passes an offTopic string through', () => {
+    const out = parseSummaryResponse(
+      JSON.stringify({
+        title: 'T',
+        layout: 'meeting',
+        markdown: 'body',
+        offTopic: '- weather chat',
+      }),
+    );
+    expect(out.offTopic).toBe('- weather chat');
+  });
+
+  it('coerces a null, missing, blank or non-string offTopic to null', () => {
+    const base = { title: 'T', layout: 'note', markdown: 'body' };
+    for (const offTopic of [null, undefined, '  \n', 42]) {
+      const out = parseSummaryResponse(JSON.stringify({ ...base, offTopic }));
+      expect(out.offTopic).toBeNull();
+    }
+  });
+});
+
+describe('SYSTEM_PROMPT', () => {
+  it('instructs the model to separate off-topic tangents into "offTopic"', () => {
+    expect(SYSTEM_PROMPT).toContain('"offTopic"');
+    expect(SYSTEM_PROMPT).toContain('Off-topic rules:');
   });
 });

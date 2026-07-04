@@ -84,6 +84,12 @@ export const summaryPayloadSchema = z.object({
   layout: summaryLayoutSchema,
   /** Markdown body. Speakers are mentioned as `@[SPEAKER_00]` tokens. */
   markdown: z.string(),
+  /**
+   * Optional markdown covering off-topic tangents/digressions, kept out of the
+   * main body. Absent/null on older summaries and when the recording stayed on
+   * topic.
+   */
+  offTopic: z.string().nullable().optional(),
   model: z.string().nullable().optional(),
 });
 export type SummaryPayload = z.infer<typeof summaryPayloadSchema>;
@@ -112,6 +118,8 @@ export const summarySchema = z.object({
   title: z.string().nullable(),
   layout: summaryLayoutSchema.nullable(),
   markdown: z.string().nullable(),
+  /** Off-topic tangents as markdown; null when none or on older summaries. */
+  offTopic: z.string().nullable().default(null),
   provider: z.string().nullable(),
   model: z.string().nullable(),
   error: z.string().nullable(),

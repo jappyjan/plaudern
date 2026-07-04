@@ -76,6 +76,7 @@ describe('AI summarization pipeline (e2e, Path A)', () => {
     expect(summary.layout).toBe('meeting');
     expect(summary.model).toBe('fake-model');
     expect(summary.markdown).toContain('```mermaid');
+    expect(summary.offTopic).toContain('Off-topic aside');
 
     // Both diarized speakers are in the roster and mentioned by label so the UI
     // can turn them into clickable chips.
@@ -189,5 +190,6 @@ describe('AI summarization pipeline (e2e, Path A)', () => {
     const summary = res.body as SummaryDto;
     expect(summary.status).toBeNull();
     expect(summary.markdown).toBeNull();
+    expect(summary.offTopic).toBeNull();
   });
 });
