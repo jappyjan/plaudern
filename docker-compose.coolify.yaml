@@ -85,6 +85,19 @@ services:
       - TOPICS_API_KEY=${SUMMARIZATION_API_KEY}
       - TOPICS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
       - TOPICS_MODEL=${TOPICS_MODEL:-deepseek-chat}
+      # Embeddings power semantic recall (MCP search_memory, similarity,
+      # hybrid search). They CANNOT reuse the summarization key: DeepSeek has
+      # no embeddings API. Fill in EMBEDDINGS_API_KEY with an OpenAI key —
+      # a non-empty key auto-enables the extractor. Defaults target OpenAI
+      # text-embedding-3-small (1536 dims); for a keyless local endpoint such
+      # as Ollama set EMBEDDINGS_ENABLED=true and point BASE_URL/MODEL/
+      # DIMENSIONS at it instead. Changing model or dimensions later requires
+      # re-embedding (POST /v1/extractions/backfills {"kind":"embeddings"}).
+      - EMBEDDINGS_API_KEY=${EMBEDDINGS_API_KEY}
+      - EMBEDDINGS_BASE_URL=${EMBEDDINGS_BASE_URL:-https://api.openai.com/v1}
+      - EMBEDDINGS_MODEL=${EMBEDDINGS_MODEL:-text-embedding-3-small}
+      - EMBEDDINGS_DIMENSIONS=${EMBEDDINGS_DIMENSIONS:-1536}
+      - EMBEDDINGS_ENABLED=${EMBEDDINGS_ENABLED:-false}
       # Transcription: the hosted ElevenLabs Scribe API — fill in
       # ELEVENLABS_API_KEY (get one at elevenlabs.io). Audio bytes are uploaded
       # to ElevenLabs directly (storage stays private).
