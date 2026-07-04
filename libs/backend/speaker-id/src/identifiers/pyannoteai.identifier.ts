@@ -41,9 +41,15 @@ export class PyannoteAiSpeakerIdentifier implements SpeakerIdentifier {
     @InjectRepository(VoiceProfileEntity)
     private readonly profiles: Repository<VoiceProfileEntity>,
   ) {
-    // pyannoteAI's confidence scale differs from cosine, so it has its own knob
-    // and default (0 = accept pyannoteAI's own best match).
-    this.threshold = Number(config.get<string>('PYANNOTEAI_MATCH_THRESHOLD', '0'));
+    // pyannoteAI's confidence scale (0-100) differs from cosine, so it has its
+    // own knob. It is passed to /identify as matching.threshold: the minimum
+    // confidence to accept a voiceprint match. 0 means "always take the closest
+    // voiceprint no matter how low the confidence", which — with exclusive
+    // matching — forces every known voice onto some speaker in every recording.
+    // Default to pyannoteAI's recommended strict-matching floor so a voice only
+    // matches when it's actually present; raise toward 70 for stricter, lower
+    // for more lenient.
+    this.threshold = Number(config.get<string>('PYANNOTEAI_MATCH_THRESHOLD', '50'));
   }
 
   async identify(job: SpeakerIdentificationJob): Promise<SpeakerIdentificationResult> {
