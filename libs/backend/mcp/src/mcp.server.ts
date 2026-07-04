@@ -24,9 +24,10 @@ function jsonResult(payload: unknown) {
  * the closed-over `userId` scopes every tool call to the token owner.
  *
  * Tool names/descriptions are chosen so future capabilities can slot in without
- * renaming these: `search_memory` is semantic-only today (hybrid/keyword search
- * can extend it), and the read/list/capture verbs stay stable as dossiers or
- * open-loops arrive later.
+ * renaming these: `search_memory` runs the full hybrid pipeline (keyword FTS +
+ * semantic pgvector fused with RRF, JJ-38; structured filters can extend it),
+ * and the read/list/capture verbs stay stable as dossiers or open-loops arrive
+ * later.
  */
 export function buildMcpServer(userId: string, tools: McpToolsService): McpServer {
   const server = new McpServer(SERVER_INFO, {
@@ -42,9 +43,13 @@ export function buildMcpServer(userId: string, tools: McpToolsService): McpServe
     {
       title: 'Search memory',
       description:
-        'Semantic search over the user\'s memory (transcripts and summaries of their ' +
-        'recordings, notes and web clips). Returns the best-matching snippets with the ' +
-        'id of the item each came from — pass that id to get_item for the full content.',
+        'Hybrid search over the user\'s memory (transcripts and summaries of their ' +
+        'recordings, notes and web clips): keyword full-text search and semantic ' +
+        'similarity, fused into one ranking. When semantic search is unconfigured it ' +
+        'degrades to keyword-only automatically. Returns the best-matching snippets ' +
+        'with a fused relevance score (higher is better; scores are rank-based, not ' +
+        'cosine similarity) and the id of the item each came from — pass that id to ' +
+        'get_item for the full content.',
       inputSchema: {
         // Bounded like other free-text inputs (cf. ingestWebRequestSchema's url cap).
         query: z.string().min(1).max(4096).describe('Natural-language search query.'),
