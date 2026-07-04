@@ -15,7 +15,18 @@ COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm nx build api
 # Self-contained production node_modules for the API (excludes dev deps).
-RUN pnpm --filter=@plaudern/api --prod --legacy deploy /prod
+#
+# The `deploy:api` script pins `--config.node-linker=hoisted`, which is REQUIRED,
+# not cosmetic. The compiled server is shipped as a flat `dist/server/...` tree
+# with a single top-level node_modules, so at runtime Node resolves every
+# `require(...)` by walking up to /app/node_modules. pnpm's default isolated
+# linker only symlinks @plaudern/api's *direct* deps there; a workspace lib's own
+# third-party deps (e.g. mailparser, declared only in @plaudern/email-ingest) land
+# under a nested node_modules the flat dist tree never reaches -> MODULE_NOT_FOUND
+# crash loop. Hoisting lifts every transitive dep to the top level so any lib
+# dependency resolves. The same script backs `verify:prod-deps`, which fails CI if
+# any prod dependency would be unresolvable in this layout.
+RUN pnpm deploy:api /prod
 
 # ---------- runtime ----------
 FROM node:22-bookworm-slim AS runtime
