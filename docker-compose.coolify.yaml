@@ -68,6 +68,15 @@ services:
       - PLAUD_POLL_INTERVAL_MS=${PLAUD_POLL_INTERVAL_MS:-300000}
       # Calendar feeds: the same secret encrypts subscribed feed URLs.
       - CALENDAR_POLL_INTERVAL_MS=${CALENDAR_POLL_INTERVAL_MS:-900000}
+      # Automatic startup backfill: on every API boot, each enabled extraction
+      # kind is re-run over past items whose step is missing or failed for the
+      # current extractor version, so merging a new/improved processing step
+      # migrates old data automatically (no manual backfill). ON by default;
+      # the sweep is non-blocking and self-throttling (advisory-locked so only
+      # one replica runs it, skip-if-still-running across reboots). Uncomment to
+      # disable, or to change the settle delay (ms) before the sweep starts.
+      # - STARTUP_BACKFILL_ENABLED=${STARTUP_BACKFILL_ENABLED:-true}
+      # - STARTUP_BACKFILL_DELAY_MS=${STARTUP_BACKFILL_DELAY_MS:-15000}
       # AI summarization (title + Markdown summary once a recording is
       # transcribed and diarized). Empty key = disabled (UI shows the transcript
       # only). Defaults target DeepSeek — the cheapest capable option; point

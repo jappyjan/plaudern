@@ -5,7 +5,11 @@ import {
   Index,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import type { ExtractionKind, ExtractionRunStatus } from '@plaudern/contracts';
+import type {
+  ExtractionKind,
+  ExtractionRunStatus,
+  ExtractionRunTrigger,
+} from '@plaudern/contracts';
 
 /**
  * A backfill run: "re-run `kind@version` over past items" (VISION §8). The run
@@ -19,11 +23,19 @@ export class ExtractionRunEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ type: 'uuid' })
-  userId!: string;
+  /**
+   * Owner of a user-triggered run. NULL for `trigger: 'startup'` sweeps, which
+   * are system-wide (they scan every user's items on API boot).
+   */
+  @Column({ type: 'uuid', nullable: true })
+  userId!: string | null;
 
   @Column({ type: 'varchar' })
   kind!: ExtractionKind;
+
+  /** How this run was started: an explicit request, or the automatic boot sweep. */
+  @Column({ type: 'varchar', default: 'manual' })
+  trigger!: ExtractionRunTrigger;
 
   /** Extractor version this run targets (the registered version at start time). */
   @Column({ type: 'int' })
