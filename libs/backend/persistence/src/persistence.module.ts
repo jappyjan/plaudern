@@ -15,6 +15,7 @@ import {
   GeocodeCacheEntity,
   InboxItemEntity,
   InboxTombstoneEntity,
+  ItemTopicEntity,
   NotificationCategoryPreferenceEntity,
   NotificationDeliveryEntity,
   NotificationSettingsEntity,
@@ -26,6 +27,7 @@ import {
   SourcePayloadEntity,
   SpeakerOccurrenceEntity,
   SummarizationSettingsEntity,
+  TopicEntity,
   UserEntity,
   VoiceProfileEntity,
 } from './entities';
@@ -50,6 +52,7 @@ import { CreateNotificationTables1720000000017 } from './migrations/172000000001
 import { ExtractionDag1720000000018 } from './migrations/1720000000018-ExtractionDag';
 import { CreateEmbeddingChunks1720000000019 } from './migrations/1720000000019-CreateEmbeddingChunks';
 import { CreateEntityRegistry1720000000020 } from './migrations/1720000000020-CreateEntityRegistry';
+import { CreateTopics1720000000021 } from './migrations/1720000000021-CreateTopics';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -59,6 +62,8 @@ export const ALL_ENTITIES = [
   EmbeddingChunkEntity,
   EntityRegistryEntity,
   EntityMentionEntity,
+  TopicEntity,
+  ItemTopicEntity,
   InboxTombstoneEntity,
   PlaudSettingsEntity,
   EmailSettingsEntity,
@@ -104,6 +109,7 @@ export const ALL_MIGRATIONS = [
   ExtractionDag1720000000018,
   CreateEmbeddingChunks1720000000019,
   CreateEntityRegistry1720000000020,
+  CreateTopics1720000000021,
 ];
 
 /**
