@@ -36,7 +36,14 @@
       "@plaudern/speaker-id": ["libs/backend/speaker-id/src/index.ts"],
       "@plaudern/calendar": ["libs/backend/calendar/src/index.ts"],
       "@plaudern/notifications": ["libs/backend/notifications/src/index.ts"],
-      "@plaudern/auth": ["libs/backend/auth/src/index.ts"]
+      "@plaudern/auth": ["libs/backend/auth/src/index.ts"],
+      "@plaudern/mcp": ["libs/backend/mcp/src/index.ts"],
+      "@modelcontextprotocol/sdk/server/mcp.js": [
+        "node_modules/@modelcontextprotocol/sdk/dist/cjs/server/mcp.d.ts"
+      ],
+      "@modelcontextprotocol/sdk/server/streamableHttp.js": [
+        "node_modules/@modelcontextprotocol/sdk/dist/cjs/server/streamableHttp.d.ts"
+      ]
     }
   },
   "exclude": ["node_modules", "tmp"]
