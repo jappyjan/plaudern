@@ -4,8 +4,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import type { EntityType, RelationType } from '@plaudern/contracts';
 import {
   EntityAliasEntity,
@@ -15,7 +15,7 @@ import {
   EntitySuppressionEntity,
   VoiceProfileEntity,
 } from '@plaudern/persistence';
-import { isUniqueViolation, normalize } from './entities-registry.service';
+import { normalize } from './entities-registry.service';
 
 /**
  * Relation types whose direction carries no meaning (mirrors
@@ -28,6 +28,12 @@ const SYMMETRIC_RELATION_TYPES: ReadonlySet<RelationType> = new Set([
   'discussed_with',
 ]);
 
+/** The identity an alias must never shadow: the entity's own (type, name). */
+interface OwnIdentity {
+  type: EntityType;
+  normalizedName: string;
+}
+
 /**
  * Manual entity corrections (JJ-63): merge two entities, rename/retype one,
  * re-link a person to a voice-profile contact, and delete/suppress one. The
@@ -35,25 +41,16 @@ const SYMMETRIC_RELATION_TYPES: ReadonlySet<RelationType> = new Set([
  * `entity_suppressions` side tables the registry upsert path consults, so a
  * merge/rename/delete is not undone by the next extraction run or backfill.
  *
- * Every method is user-scoped at every step. Mutations return the survivor's
- * entity id (or void); the controller re-reads the full detail read model.
+ * Every mutation runs in ONE database transaction: a crash mid-merge (mentions
+ * repointed, alias not yet recorded, victim not yet deleted) must roll back
+ * whole, or the very durability the side tables exist for is lost. Merge also
+ * takes pessimistic row locks on both entities in deterministic id order (on
+ * drivers that support them) so two opposite-direction merges serialize
+ * instead of deleting both rows. Every step is user-scoped.
  */
 @Injectable()
 export class EntitiesCorrectionService {
-  constructor(
-    @InjectRepository(EntityRegistryEntity)
-    private readonly entities: Repository<EntityRegistryEntity>,
-    @InjectRepository(EntityMentionEntity)
-    private readonly mentions: Repository<EntityMentionEntity>,
-    @InjectRepository(EntityRelationEntity)
-    private readonly relations: Repository<EntityRelationEntity>,
-    @InjectRepository(VoiceProfileEntity)
-    private readonly profiles: Repository<VoiceProfileEntity>,
-    @InjectRepository(EntityAliasEntity)
-    private readonly aliasRecords: Repository<EntityAliasEntity>,
-    @InjectRepository(EntitySuppressionEntity)
-    private readonly suppressions: Repository<EntitySuppressionEntity>,
-  ) {}
+  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
 
   /**
    * Merge the victim into the survivor: union aliases (+ the person's voice
@@ -66,112 +63,157 @@ export class EntitiesCorrectionService {
     if (survivorId === victimId) {
       throw new BadRequestException('cannot merge an entity into itself');
     }
-    const survivor = await this.entities.findOne({ where: { id: survivorId, userId } });
-    if (!survivor) throw new NotFoundException('entity not found');
-    const victim = await this.entities.findOne({ where: { id: victimId, userId } });
-    if (!victim) throw new NotFoundException('entity not found');
-    if (survivor.type !== victim.type) {
-      throw new BadRequestException(
-        'entities must be the same type to merge — change the type first, then merge',
-      );
-    }
+    return this.dataSource.transaction(async (manager) => {
+      // Lock both rows in deterministic id order (no AB/BA deadlock) and
+      // re-verify existence under the lock, so two concurrent opposite-direction
+      // merges serialize — the second sees the first's delete and 404s instead
+      // of both entities disappearing.
+      const [firstId, secondId] = [survivorId, victimId].sort();
+      const first = await this.lockEntity(manager, userId, firstId);
+      const second = await this.lockEntity(manager, userId, secondId);
+      const survivor = survivorId === firstId ? first : second;
+      const victim = victimId === firstId ? first : second;
+      if (!survivor || !victim) throw new NotFoundException('entity not found');
+      if (survivor.type !== victim.type) {
+        throw new BadRequestException(
+          'entities must be the same type to merge — change the type first, then merge',
+        );
+      }
 
-    await this.repointMentions(victimId, survivorId);
-    await this.repointRelations(victimId, survivorId);
+      await this.repointMentions(manager, victimId, survivorId);
+      await this.repointRelations(manager, victimId, survivorId);
 
-    // Union the victim's known spellings onto the survivor. The user chose the
-    // survivor, so its canonical name is kept; the victim's becomes an alias.
-    const aliases = new Set(survivor.aliases ?? []);
-    for (const alias of victim.aliases ?? []) aliases.add(alias);
-    aliases.add(victim.canonicalName);
-    survivor.aliases = [...aliases];
-    if (!survivor.voiceProfileId && victim.voiceProfileId) {
-      survivor.voiceProfileId = victim.voiceProfileId;
-    }
-    await this.entities.save(survivor);
+      // Union the victim's known spellings onto the survivor. The user chose the
+      // survivor, so its canonical name is kept; the victim's becomes an alias.
+      const aliases = new Set(survivor.aliases ?? []);
+      for (const alias of victim.aliases ?? []) aliases.add(alias);
+      aliases.add(victim.canonicalName);
+      survivor.aliases = [...aliases];
+      if (!survivor.voiceProfileId && victim.voiceProfileId) {
+        survivor.voiceProfileId = victim.voiceProfileId;
+      }
+      await manager.save(survivor);
 
-    // Alias records so future extraction/backfill resolves the victim's names to
-    // the survivor instead of recreating a duplicate. Existing alias rows that
-    // pointed at the victim are repointed (their unique key is unchanged, so no
-    // conflict is possible).
-    const victimAliasRows = await this.aliasRecords.find({ where: { entityId: victimId } });
-    for (const row of victimAliasRows) row.entityId = survivorId;
-    if (victimAliasRows.length > 0) await this.aliasRecords.save(victimAliasRows);
-    await this.recordAlias(userId, survivor.type, victim.normalizedName, survivorId, survivor.normalizedName);
-    for (const alias of victim.aliases ?? []) {
-      await this.recordAlias(userId, survivor.type, normalize(alias), survivorId, survivor.normalizedName);
-    }
+      // Alias records so future extraction/backfill resolves the victim's names
+      // to the survivor instead of recreating a duplicate. Existing alias rows
+      // that pointed at the victim are repointed (their unique key is unchanged,
+      // so no conflict is possible).
+      const own: OwnIdentity = { type: survivor.type, normalizedName: survivor.normalizedName };
+      const victimAliasRows = await manager.find(EntityAliasEntity, {
+        where: { entityId: victimId },
+      });
+      for (const row of victimAliasRows) row.entityId = survivorId;
+      if (victimAliasRows.length > 0) await manager.save(victimAliasRows);
+      await this.recordAlias(manager, userId, survivor.type, victim.normalizedName, survivorId, own);
+      for (const alias of victim.aliases ?? []) {
+        await this.recordAlias(manager, userId, survivor.type, normalize(alias), survivorId, own);
+      }
 
-    // The victim's mentions/relations/aliases are all repointed; drop it.
-    await this.entities.delete({ id: victimId, userId });
-    return survivorId;
+      // The victim's mentions/relations/aliases are all repointed; drop it.
+      await manager.delete(EntityRegistryEntity, { id: victimId, userId });
+      return survivorId;
+    });
   }
 
   /**
    * Correct a wrong extraction: rename and/or retype. The OLD identity (old
    * name, and on retype the old type) is preserved as an alias so re-extraction
-   * folds back in instead of recreating the pre-correction row. Renaming to a
-   * previously suppressed name un-suppresses it. Returns the entity id.
+   * folds back in instead of recreating the pre-correction row. On retype,
+   * every alias pointing here (names merged in earlier) is additionally
+   * registered under the NEW type, so those spellings keep resolving here no
+   * matter which type the model assigns. Renaming to a previously suppressed
+   * name un-suppresses it. Returns the entity id.
    */
   async update(
     userId: string,
     id: string,
     changes: { canonicalName?: string; type?: EntityType },
   ): Promise<string> {
-    const row = await this.entities.findOne({ where: { id, userId } });
-    if (!row) throw new NotFoundException('entity not found');
+    return this.dataSource.transaction(async (manager) => {
+      const row = await this.lockEntity(manager, userId, id);
+      if (!row) throw new NotFoundException('entity not found');
 
-    const oldType = row.type;
-    const oldNormalized = row.normalizedName;
-    const oldCanonical = row.canonicalName;
-    const newType = changes.type ?? oldType;
-    const newCanonical =
-      changes.canonicalName !== undefined ? changes.canonicalName.trim() : oldCanonical;
-    const newNormalized =
-      changes.canonicalName !== undefined ? normalize(newCanonical) : oldNormalized;
+      const oldType = row.type;
+      const oldNormalized = row.normalizedName;
+      const oldCanonical = row.canonicalName;
+      const newType = changes.type ?? oldType;
+      const newCanonical =
+        changes.canonicalName !== undefined ? changes.canonicalName.trim() : oldCanonical;
+      const newNormalized =
+        changes.canonicalName !== undefined ? normalize(newCanonical) : oldNormalized;
 
-    const nameChanged = newNormalized !== oldNormalized;
-    const typeChanged = newType !== oldType;
+      const nameChanged = newNormalized !== oldNormalized;
+      const typeChanged = newType !== oldType;
 
-    if (nameChanged || typeChanged) {
-      const clash = await this.entities.findOne({
-        where: { userId, type: newType, normalizedName: newNormalized },
-      });
-      if (clash && clash.id !== id) {
-        throw new ConflictException(
-          'another entity already uses that name and type — merge into it instead',
-        );
+      if (nameChanged || typeChanged) {
+        const clash = await manager.findOne(EntityRegistryEntity, {
+          where: { userId, type: newType, normalizedName: newNormalized },
+        });
+        if (clash && clash.id !== id) {
+          throw new ConflictException(
+            'another entity already uses that name and type — merge into it instead',
+          );
+        }
+        // The user explicitly wants this identity: un-suppress it and drop any
+        // alias that would otherwise shadow it (a live entity always wins, but
+        // keep the tables tidy).
+        await manager.delete(EntitySuppressionEntity, {
+          userId,
+          type: newType,
+          normalizedName: newNormalized,
+        });
+        await manager.delete(EntityAliasEntity, {
+          userId,
+          type: newType,
+          normalizedName: newNormalized,
+        });
+
+        // Every pre-correction identity resolves back to this entity so a later
+        // extraction under the old name/type folds in rather than recreating.
+        const own: OwnIdentity = { type: newType, normalizedName: newNormalized };
+        for (const [t, n] of [
+          [oldType, oldNormalized],
+          [newType, oldNormalized],
+          [oldType, newNormalized],
+        ] as [EntityType, string][]) {
+          await this.recordAlias(manager, userId, t, n, id, own);
+        }
+        if (nameChanged) {
+          const aliases = new Set(row.aliases ?? []);
+          aliases.add(oldCanonical);
+          row.aliases = [...aliases];
+        }
+        if (typeChanged) {
+          // Names merged into this entity earlier carry the old type on their
+          // alias rows. Keep those (the model may keep emitting the old type)
+          // and register new-type counterparts, without stealing a name that
+          // already resolves elsewhere under the new type.
+          const pointingHere = await manager.find(EntityAliasEntity, {
+            where: { userId, entityId: id },
+          });
+          for (const aliasRow of pointingHere) {
+            if (aliasRow.type === newType) continue;
+            await this.recordAlias(
+              manager,
+              userId,
+              newType,
+              aliasRow.normalizedName,
+              id,
+              own,
+              false,
+            );
+          }
+        }
       }
-      // The user explicitly wants this identity: un-suppress it and drop any
-      // alias that would otherwise shadow it (a live entity always wins, but
-      // keep the tables tidy).
-      await this.suppressions.delete({ userId, type: newType, normalizedName: newNormalized });
-      await this.aliasRecords.delete({ userId, type: newType, normalizedName: newNormalized });
 
-      // Every pre-correction identity resolves back to this entity so a later
-      // extraction under the old name/type folds in rather than recreating.
-      for (const [t, n] of [
-        [oldType, oldNormalized],
-        [newType, oldNormalized],
-        [oldType, newNormalized],
-      ] as [EntityType, string][]) {
-        if (t === newType && n === newNormalized) continue; // the entity itself
-        await this.recordAlias(userId, t, n, id, newNormalized, newType);
-      }
-      if (nameChanged) {
-        const aliases = new Set(row.aliases ?? []);
-        aliases.add(oldCanonical);
-        row.aliases = [...aliases];
-      }
-    }
-
-    row.type = newType;
-    row.canonicalName = newCanonical;
-    row.normalizedName = newNormalized;
-    // A non-person entity never carries a voice-profile link.
-    if (newType !== 'person') row.voiceProfileId = null;
-    await this.entities.save(row);
-    return id;
+      row.type = newType;
+      row.canonicalName = newCanonical;
+      row.normalizedName = newNormalized;
+      // A non-person entity never carries a voice-profile link.
+      if (newType !== 'person') row.voiceProfileId = null;
+      await manager.save(row);
+      return id;
+    });
   }
 
   /** Re-link (or unlink, with null) a person entity to a voice-profile contact. */
@@ -180,71 +222,99 @@ export class EntitiesCorrectionService {
     id: string,
     voiceProfileId: string | null,
   ): Promise<string> {
-    const row = await this.entities.findOne({ where: { id, userId } });
-    if (!row) throw new NotFoundException('entity not found');
-    if (row.type !== 'person') {
-      throw new BadRequestException('only person entities link to a voice-profile contact');
-    }
-    if (voiceProfileId !== null) {
-      const profile = await this.profiles.findOne({ where: { id: voiceProfileId, userId } });
-      if (!profile) throw new NotFoundException('voice profile not found');
-    }
-    row.voiceProfileId = voiceProfileId;
-    await this.entities.save(row);
-    return id;
+    return this.dataSource.transaction(async (manager) => {
+      const row = await this.lockEntity(manager, userId, id);
+      if (!row) throw new NotFoundException('entity not found');
+      if (row.type !== 'person') {
+        throw new BadRequestException('only person entities link to a voice-profile contact');
+      }
+      if (voiceProfileId !== null) {
+        const profile = await manager.findOne(VoiceProfileEntity, {
+          where: { id: voiceProfileId, userId },
+        });
+        if (!profile) throw new NotFoundException('voice profile not found');
+      }
+      row.voiceProfileId = voiceProfileId;
+      await manager.save(row);
+      return id;
+    });
   }
 
   /**
    * Delete/suppress an entity: record all of its normalized names (canonical +
-   * aliases + any alias records pointing at it) as suppressions so extraction
-   * never recreates it, clean its mentions/relations/alias rows, then delete
-   * the row. Idempotent-ish: a missing entity throws NotFound.
+   * aliases, plus any alias records pointing at it, each under the type its
+   * alias row carries) as suppressions so extraction never recreates it, clean
+   * its mentions/relations/alias rows, then delete the row.
    */
   async suppress(userId: string, id: string): Promise<void> {
-    const row = await this.entities.findOne({ where: { id, userId } });
-    if (!row) throw new NotFoundException('entity not found');
+    await this.dataSource.transaction(async (manager) => {
+      const row = await this.lockEntity(manager, userId, id);
+      if (!row) throw new NotFoundException('entity not found');
 
-    const names = new Set<string>([row.normalizedName]);
-    for (const alias of row.aliases ?? []) {
-      const normalized = normalize(alias);
-      if (normalized) names.add(normalized);
-    }
-    // Names merged into this entity (alias records pointing at it) must be
-    // suppressed too, or they resurrect as fresh entities after deletion.
-    const aliasRows = await this.aliasRecords.find({ where: { entityId: id } });
-    for (const aliasRow of aliasRows) names.add(aliasRow.normalizedName);
+      const names = new Map<string, { type: EntityType; normalizedName: string }>();
+      const add = (type: EntityType, normalizedName: string) => {
+        if (normalizedName) names.set(`${type}:${normalizedName}`, { type, normalizedName });
+      };
+      add(row.type, row.normalizedName);
+      for (const alias of row.aliases ?? []) add(row.type, normalize(alias));
+      // Names merged into this entity (alias records pointing at it) must be
+      // suppressed too — under their own recorded type, which may differ after
+      // a retype — or they resurrect as fresh entities after deletion.
+      const aliasRows = await manager.find(EntityAliasEntity, { where: { entityId: id } });
+      for (const aliasRow of aliasRows) add(aliasRow.type, aliasRow.normalizedName);
 
-    for (const normalized of names) {
-      await this.recordSuppression(userId, row.type, normalized);
-    }
+      for (const { type, normalizedName } of names.values()) {
+        await this.recordSuppression(manager, userId, type, normalizedName);
+      }
 
-    // Clean derived data explicitly — don't depend on FK cascade being present
-    // under sqlite's synchronize schema.
-    await this.mentions.delete({ entityId: id });
-    await this.relations.delete({ sourceEntityId: id });
-    await this.relations.delete({ targetEntityId: id });
-    await this.aliasRecords.delete({ entityId: id });
-    await this.entities.delete({ id, userId });
+      // Clean derived data explicitly — don't depend on FK cascade being present
+      // under sqlite's synchronize schema.
+      await manager.delete(EntityMentionEntity, { entityId: id });
+      await manager.delete(EntityRelationEntity, { sourceEntityId: id });
+      await manager.delete(EntityRelationEntity, { targetEntityId: id });
+      await manager.delete(EntityAliasEntity, { entityId: id });
+      await manager.delete(EntityRegistryEntity, { id, userId });
+    });
   }
 
-  /** Repoint the victim's mentions to the survivor, deduping on (extraction, entity). */
-  private async repointMentions(victimId: string, survivorId: string): Promise<void> {
-    const rows = await this.mentions.find({ where: { entityId: victimId } });
+  /**
+   * Load one entity under a pessimistic write lock (SELECT … FOR UPDATE) where
+   * the driver supports it. sqlite — the test driver — doesn't; its
+   * transactions serialize writers anyway.
+   */
+  private lockEntity(
+    manager: EntityManager,
+    userId: string,
+    id: string,
+  ): Promise<EntityRegistryEntity | null> {
+    const lock =
+      this.dataSource.options.type === 'postgres'
+        ? { lock: { mode: 'pessimistic_write' as const } }
+        : {};
+    return manager.findOne(EntityRegistryEntity, { where: { id, userId }, ...lock });
+  }
+
+  /**
+   * Repoint the victim's mentions to the survivor, deduping on the
+   * (extraction, entity) unique key. Runs inside the merge transaction, so the
+   * pre-checks see this transaction's own writes.
+   */
+  private async repointMentions(
+    manager: EntityManager,
+    victimId: string,
+    survivorId: string,
+  ): Promise<void> {
+    const rows = await manager.find(EntityMentionEntity, { where: { entityId: victimId } });
     for (const row of rows) {
-      const clash = await this.mentions.findOne({
+      const clash = await manager.findOne(EntityMentionEntity, {
         where: { extractionId: row.extractionId, entityId: survivorId },
       });
       if (clash) {
-        await this.mentions.delete({ id: row.id });
+        await manager.delete(EntityMentionEntity, { id: row.id });
         continue;
       }
       row.entityId = survivorId;
-      try {
-        await this.mentions.save(row);
-      } catch (err) {
-        if (!isUniqueViolation(err)) throw err;
-        await this.mentions.delete({ id: row.id });
-      }
+      await manager.save(row);
     }
   }
 
@@ -253,21 +323,25 @@ export class EntitiesCorrectionService {
    * self-edges, re-canonicalizing symmetric edges, and deduping on the evidence
    * unique key (extraction, source, target, relationType).
    */
-  private async repointRelations(victimId: string, survivorId: string): Promise<void> {
-    const rows = await this.relations.find({
+  private async repointRelations(
+    manager: EntityManager,
+    victimId: string,
+    survivorId: string,
+  ): Promise<void> {
+    const rows = await manager.find(EntityRelationEntity, {
       where: [{ sourceEntityId: victimId }, { targetEntityId: victimId }],
     });
     for (const row of rows) {
       let source = row.sourceEntityId === victimId ? survivorId : row.sourceEntityId;
       let target = row.targetEntityId === victimId ? survivorId : row.targetEntityId;
       if (source === target) {
-        await this.relations.delete({ id: row.id }); // self-edge after merge
+        await manager.delete(EntityRelationEntity, { id: row.id }); // self-edge after merge
         continue;
       }
       if (SYMMETRIC_RELATION_TYPES.has(row.relationType) && target < source) {
         [source, target] = [target, source];
       }
-      const clash = await this.relations.findOne({
+      const clash = await manager.findOne(EntityRelationEntity, {
         where: {
           extractionId: row.extractionId,
           sourceEntityId: source,
@@ -276,71 +350,59 @@ export class EntitiesCorrectionService {
         },
       });
       if (clash && clash.id !== row.id) {
-        await this.relations.delete({ id: row.id });
+        await manager.delete(EntityRelationEntity, { id: row.id });
         continue;
       }
       row.sourceEntityId = source;
       row.targetEntityId = target;
-      try {
-        await this.relations.save(row);
-      } catch (err) {
-        if (!isUniqueViolation(err)) throw err;
-        await this.relations.delete({ id: row.id });
-      }
+      await manager.save(row);
     }
   }
 
   /**
-   * Point a normalized name at a surviving entity. No-op when the name is empty
-   * or equals the survivor's own canonical normalized name (the entity row
-   * already covers it). Repoints an existing row; ignores unique-index races.
+   * Point a normalized name at a surviving entity. No-op when the name is
+   * empty or equals the survivor's own current identity (the entity row
+   * already covers it). With `overwrite` (the default) an existing row is
+   * repointed; without it a name already resolving elsewhere is left alone.
    */
   private async recordAlias(
+    manager: EntityManager,
     userId: string,
     type: EntityType,
     normalizedName: string,
     entityId: string,
-    ownNormalized: string,
-    ownType?: EntityType,
+    own: OwnIdentity,
+    overwrite = true,
   ): Promise<void> {
     if (!normalizedName) return;
-    if (normalizedName === ownNormalized && (ownType === undefined || ownType === type)) return;
-    const existing = await this.aliasRecords.findOne({
+    if (type === own.type && normalizedName === own.normalizedName) return;
+    const existing = await manager.findOne(EntityAliasEntity, {
       where: { userId, type, normalizedName },
     });
     if (existing) {
-      if (existing.entityId !== entityId) {
+      if (overwrite && existing.entityId !== entityId) {
         existing.entityId = entityId;
-        await this.aliasRecords.save(existing);
+        await manager.save(existing);
       }
       return;
     }
-    try {
-      await this.aliasRecords.save(
-        this.aliasRecords.create({ userId, type, normalizedName, entityId }),
-      );
-    } catch (err) {
-      if (!isUniqueViolation(err)) throw err;
-    }
+    await manager.save(
+      manager.create(EntityAliasEntity, { userId, type, normalizedName, entityId }),
+    );
   }
 
-  /** Record a suppressed (type, normalizedName); idempotent, race-safe. */
+  /** Record a suppressed (type, normalizedName); idempotent. */
   private async recordSuppression(
+    manager: EntityManager,
     userId: string,
     type: EntityType,
     normalizedName: string,
   ): Promise<void> {
     if (!normalizedName) return;
-    const existing = await this.suppressions.findOne({
+    const existing = await manager.findOne(EntitySuppressionEntity, {
       where: { userId, type, normalizedName },
     });
     if (existing) return;
-    try {
-      await this.suppressions.save(
-        this.suppressions.create({ userId, type, normalizedName }),
-      );
-    } catch (err) {
-      if (!isUniqueViolation(err)) throw err;
-    }
+    await manager.save(manager.create(EntitySuppressionEntity, { userId, type, normalizedName }));
   }
 }

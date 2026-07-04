@@ -46,14 +46,7 @@ describe('EntitiesCorrectionService', () => {
       dataSource.getRepository(EntityAliasEntity),
       dataSource.getRepository(EntitySuppressionEntity),
     );
-    corrections = new EntitiesCorrectionService(
-      dataSource.getRepository(EntityRegistryEntity),
-      dataSource.getRepository(EntityMentionEntity),
-      dataSource.getRepository(EntityRelationEntity),
-      dataSource.getRepository(VoiceProfileEntity),
-      dataSource.getRepository(EntityAliasEntity),
-      dataSource.getRepository(EntitySuppressionEntity),
-    );
+    corrections = new EntitiesCorrectionService(dataSource);
   });
 
   afterEach(async () => {
@@ -312,5 +305,91 @@ describe('EntitiesCorrectionService', () => {
     await expect(
       corrections.update(OTHER_USER, bob.id, { canonicalName: 'X' }),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('merge is atomic: a mid-merge failure rolls the whole mutation back', async () => {
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+    await ingest(item, ext, [{ type: 'person', name: 'Detlef Müller', mentions: [] }]);
+    const item2 = await createItem('2026-07-02T10:00:00Z');
+    const ext2 = await createEntitiesExtraction(item2, new Date('2026-07-02T10:00:00Z'));
+    await ingest(item2, ext2, [{ type: 'person', name: 'Detlef', mentions: [] }]);
+    const survivor = (await entityByName('Detlef Müller'))!;
+    const victim = (await entityByName('Detlef'))!;
+
+    // Fail AFTER mentions/relations were repointed but BEFORE the alias is
+    // recorded and the victim deleted — exactly the crash window that would
+    // otherwise leave a ghost victim that resurrects on the next backfill.
+    const spy = jest
+      .spyOn(corrections as unknown as { recordAlias: () => Promise<void> }, 'recordAlias')
+      .mockRejectedValue(new Error('boom'));
+    await expect(corrections.merge(USER, survivor.id, victim.id)).rejects.toThrow('boom');
+    spy.mockRestore();
+
+    // Everything rolled back: victim intact, its mention still points at it,
+    // no alias leaked, survivor untouched.
+    expect(await entityByName('Detlef')).not.toBeNull();
+    const victimMentions = await dataSource
+      .getRepository(EntityMentionEntity)
+      .find({ where: { entityId: victim.id } });
+    expect(victimMentions).toHaveLength(1);
+    expect(await dataSource.getRepository(EntityAliasEntity).count()).toBe(0);
+    expect((await entityByName('Detlef Müller'))!.aliases).toEqual(survivor.aliases);
+
+    // And the same merge succeeds once the failure is gone.
+    await corrections.merge(USER, survivor.id, victim.id);
+    expect(await entityByName('Detlef')).toBeNull();
+    expect((await registry.list(USER))[0].mentionCount).toBe(2);
+  });
+
+  it('after retype-after-merge, a wrong-type extraction cannot mutate the entity', async () => {
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+    await ingest(item, ext, [
+      { type: 'person', name: 'Detlef Müller', mentions: [] },
+      { type: 'person', name: 'Detlef', mentions: [] },
+    ]);
+    const survivor = (await entityByName('Detlef Müller'))!;
+    const victim = (await entityByName('Detlef'))!;
+    await corrections.merge(USER, survivor.id, victim.id);
+    await corrections.update(USER, survivor.id, { type: 'organization' });
+
+    // A voice profile matching the merged-away name: a wrong-type fold must
+    // never link it onto the (now) organization.
+    await dataSource
+      .getRepository(VoiceProfileEntity)
+      .save({ userId: USER, name: 'Detlef', status: 'confirmed' });
+
+    // The model still emits person "Detlef", with a new surface form.
+    const item2 = await createItem('2026-07-02T10:00:00Z');
+    const ext2 = await createEntitiesExtraction(item2, new Date('2026-07-02T10:00:00Z'));
+    await ingest(item2, ext2, [
+      { type: 'person', name: 'Detlef', mentions: ['Detlef der Große'] },
+    ]);
+
+    // No resurrected person duplicate, and the organization was not mutated —
+    // no alias accretion, no rename, no voice link — but the mention still
+    // lands on it (durability without cross-type mutation).
+    const all = await dataSource
+      .getRepository(EntityRegistryEntity)
+      .find({ where: { userId: USER } });
+    expect(all).toHaveLength(1);
+    const org = all[0];
+    expect(org.id).toBe(survivor.id);
+    expect(org.type).toBe('organization');
+    expect(org.canonicalName).toBe('Detlef Müller');
+    expect(org.aliases).not.toContain('Detlef der Große');
+    expect(org.voiceProfileId).toBeNull();
+    expect((await registry.detail(USER, org.id)).mentionCount).toBe(2);
+
+    // An extraction under the corrected type folds in fully — the retype
+    // registered new-type counterparts for the merged-in names.
+    const item3 = await createItem('2026-07-03T10:00:00Z');
+    const ext3 = await createEntitiesExtraction(item3, new Date('2026-07-03T10:00:00Z'));
+    await ingest(item3, ext3, [{ type: 'organization', name: 'Detlef', mentions: [] }]);
+    expect(
+      await dataSource.getRepository(EntityRegistryEntity).count({ where: { userId: USER } }),
+    ).toBe(1);
+    expect((await registry.detail(USER, org.id)).mentionCount).toBe(3);
   });
 });

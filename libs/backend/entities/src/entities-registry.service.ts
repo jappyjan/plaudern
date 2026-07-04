@@ -194,7 +194,13 @@ export class EntitiesRegistryService {
         where: { userId, type, normalizedName },
       });
       if (alias) {
-        row = await this.entities.findOne({ where: { id: alias.entityId, userId } });
+        const target = await this.entities.findOne({ where: { id: alias.entityId, userId } });
+        // Cross-type redirect: the name was merged/renamed into an entity that
+        // was later retyped. Record the mention against the survivor (no
+        // resurrected duplicate) but do NOT mutate it — a person-extraction
+        // must never rename, alias-accrete, or voice-link an organization.
+        if (target && target.type !== type) return target;
+        row = target;
       }
     }
     if (!row) {
@@ -214,7 +220,9 @@ export class EntitiesRegistryService {
     // Adopt the longer spelling as canonical (e.g. "Angela Merkel" over "Angela").
     if (name.length > row.canonicalName.length) row.canonicalName = name;
 
-    if (type === 'person' && !row.voiceProfileId) {
+    // Guarded on the ROW's type (not the requested one) so a voice link can
+    // never be written onto a non-person, whatever path resolved the row.
+    if (row.type === 'person' && !row.voiceProfileId) {
       const profileId = profilesByName.get(normalizedName);
       if (profileId) row.voiceProfileId = profileId;
     }
