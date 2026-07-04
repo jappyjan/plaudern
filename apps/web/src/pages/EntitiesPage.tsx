@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Card, CardBody, Chip, Input, Select, SelectItem, Spinner } from '@heroui/react';
+import { Button, Card, CardBody, Chip, Input, Select, SelectItem, Spinner } from '@heroui/react';
 import type { EntityType, RegistryEntityDto } from '@plaudern/contracts';
 import { Link } from 'react-router-dom';
-import { listEntities } from '../lib/api';
+import { autoLinkEntities, listEntities } from '../lib/api';
 import {
   ENTITY_TYPE_COLOR,
   ENTITY_TYPE_LABEL,
@@ -20,6 +20,8 @@ export function EntitiesPage() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<EntityType | 'all'>('all');
+  const [linking, setLinking] = useState(false);
+  const [linkResult, setLinkResult] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -37,6 +39,34 @@ export function EntitiesPage() {
       cancelled = true;
     };
   }, []);
+
+  // People never linked to a contact (an explicit unlink is respected and
+  // doesn't count) — when any exist, offer the auto-link sweep.
+  const unlinkedPeople = useMemo(
+    () =>
+      (entities ?? []).filter(
+        (e) => e.type === 'person' && !e.voiceProfileId && e.voiceProfileLinkOrigin !== 'suppressed',
+      ).length,
+    [entities],
+  );
+
+  const runAutoLink = async () => {
+    setLinking(true);
+    setLinkResult(null);
+    try {
+      const { linked } = await autoLinkEntities();
+      if (linked > 0) setEntities((await listEntities()).entities);
+      setLinkResult(
+        linked > 0
+          ? `Linked ${linked} ${linked === 1 ? 'person' : 'people'} to contacts.`
+          : 'No new matches — name more contacts to link more people.',
+      );
+    } catch (cause) {
+      setLinkResult(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setLinking(false);
+    }
+  };
 
   const filtered = useMemo(() => {
     if (!entities) return [];
@@ -95,6 +125,11 @@ export function EntitiesPage() {
               onClear={() => setQuery('')}
               className="max-w-64"
             />
+            {unlinkedPeople > 0 && (
+              <Button size="sm" variant="flat" isLoading={linking} onPress={() => void runAutoLink()}>
+                Auto-link contacts
+              </Button>
+            )}
             <Select
               size="sm"
               label="Type"
@@ -113,6 +148,8 @@ export function EntitiesPage() {
               </>
             </Select>
           </div>
+
+          {linkResult && <p className="text-xs text-default-500">{linkResult}</p>}
 
           {groups.length === 0 ? (
             <p className="text-sm text-default-500">No entities match your search.</p>
@@ -147,7 +184,8 @@ function EntityRow({ entity }: { entity: RegistryEntityDto }) {
           <p className="truncate text-sm font-medium">{entity.canonicalName}</p>
           <p className="text-xs text-default-500">
             {entity.mentionCount} recording{entity.mentionCount === 1 ? '' : 's'}
-            {entity.voiceProfileId && ' · linked contact'}
+            {entity.voiceProfileId &&
+              ` · linked to ${entity.voiceProfileName ?? 'a contact'}`}
           </p>
         </div>
         <Chip size="sm" variant="flat" color={ENTITY_TYPE_COLOR[entity.type]} className="shrink-0">

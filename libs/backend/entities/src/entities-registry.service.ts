@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import type {
@@ -6,19 +11,30 @@ import type {
   EntityType,
   ExtractedEntity,
   RegistryEntityDto,
+  UpdateEntityRequest,
 } from '@plaudern/contracts';
 import {
   EntityMentionEntity,
   EntityRegistryEntity,
   ExtractedPayloadEntity,
+  SpeakerOccurrenceEntity,
   VoiceProfileEntity,
 } from '@plaudern/persistence';
+
+/** A named contact-book profile, prepared for name matching. */
+export interface ContactCandidate {
+  id: string;
+  /** normalize()d profile name. */
+  normalized: string;
+}
 
 /**
  * Owns the per-user entity registry (JJ-32): normalizing/deduping extracted
  * entities into `entities` rows, recording `entity_mentions` edges, and linking
- * `person` entities to the voice-profile contact book. Also serves the read
- * models (list, detail) — restricting mention aggregates to each item's LATEST
+ * `person` entities to the voice-profile contact book — automatically (exact
+ * name, or partial name disambiguated by who actually speaks in the recording)
+ * and manually (link/unlink/convert, JJ-63). Also serves the read models
+ * (list, detail) — restricting mention aggregates to each item's LATEST
  * succeeded `entities` extraction so append-only reprocessing supersedes old
  * links, exactly like the diarization contact book.
  */
@@ -33,6 +49,8 @@ export class EntitiesRegistryService {
     private readonly extractions: Repository<ExtractedPayloadEntity>,
     @InjectRepository(VoiceProfileEntity)
     private readonly profiles: Repository<VoiceProfileEntity>,
+    @InjectRepository(SpeakerOccurrenceEntity)
+    private readonly occurrences: Repository<SpeakerOccurrenceEntity>,
   ) {}
 
   /**
@@ -72,7 +90,11 @@ export class EntitiesRegistryService {
     }
     if (byKey.size === 0) return 0;
 
-    const profilesByName = await this.namedProfiles(userId);
+    const contacts = await this.contactCandidates(userId);
+    // The recording's own speakers are the disambiguation context: a partial
+    // name match ("Detlef" → "Detlef Müller") is only trusted outright when
+    // unique, otherwise the candidate actually speaking in this item wins.
+    const speakerIds = await this.speakersForItems([inboxItemId]);
     let linked = 0;
     for (const { entity, surfaceForms, surfaceForm } of byKey.values()) {
       const registryEntity = await this.upsertEntity(
@@ -80,7 +102,8 @@ export class EntitiesRegistryService {
         entity.type,
         entity.name,
         [...surfaceForms],
-        profilesByName,
+        contacts,
+        speakerIds,
       );
       await this.upsertMention(
         userId,
@@ -109,19 +132,20 @@ export class EntitiesRegistryService {
     });
     if (rows.length === 0) return [];
     const current = await this.currentMentions(rows.map((r) => r.id));
+    const names = await this.profileNames(rows);
     return rows
-      .map((row) => this.toDto(row, current.get(row.id) ?? []))
+      .map((row) => this.toDto(row, current.get(row.id) ?? [], names))
       .filter((dto) => includeUnreferenced || dto.mentionCount > 0)
       .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
   }
 
   /** One registry entity with its mentions (from the latest extraction/item). */
   async detail(userId: string, id: string): Promise<EntityDetailDto> {
-    const row = await this.entities.findOne({ where: { id, userId } });
-    if (!row) throw new NotFoundException('entity not found');
+    const row = await this.getOwned(userId, id);
     const mentions = (await this.currentMentions([id])).get(id) ?? [];
+    const names = await this.profileNames([row]);
     return {
-      ...this.toDto(row, mentions),
+      ...this.toDto(row, mentions, names),
       mentions: mentions
         .slice()
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
@@ -132,6 +156,136 @@ export class EntitiesRegistryService {
           createdAt: m.createdAt.toISOString(),
         })),
     };
+  }
+
+  /**
+   * Correct a registry entity (JJ-63): rename and/or re-type it. A rename
+   * moves the dedupe key, so the old canonical name is kept as an alias;
+   * re-typing away from `person` drops any contact link. Colliding with an
+   * existing (type, name) row is rejected — merging is separate tooling.
+   */
+  async update(userId: string, id: string, req: UpdateEntityRequest): Promise<EntityDetailDto> {
+    const row = await this.getOwned(userId, id);
+    if (req.canonicalName !== undefined) {
+      const name = req.canonicalName.trim();
+      const normalizedName = normalize(name);
+      if (normalizedName !== row.normalizedName) {
+        const aliases = new Set(row.aliases ?? []);
+        aliases.add(row.canonicalName);
+        row.aliases = [...aliases];
+      }
+      row.canonicalName = name;
+      row.normalizedName = normalizedName;
+    }
+    if (req.type !== undefined && req.type !== row.type) {
+      row.type = req.type;
+      if (req.type !== 'person') {
+        row.voiceProfileId = null;
+        row.voiceProfileLinkOrigin = null;
+      }
+    }
+    try {
+      await this.entities.save(row);
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
+      throw new ConflictException(
+        'another entity with this type and name already exists',
+      );
+    }
+    return this.detail(userId, id);
+  }
+
+  /** Manually link a `person` entity to a contact-book voice profile. */
+  async linkContact(userId: string, id: string, voiceProfileId: string): Promise<EntityDetailDto> {
+    const row = await this.getOwned(userId, id);
+    if (row.type !== 'person') {
+      throw new BadRequestException('only person entities can link to a contact');
+    }
+    const profile = await this.profiles.findOne({ where: { id: voiceProfileId, userId } });
+    if (!profile) throw new NotFoundException('voice profile not found');
+    row.voiceProfileId = profile.id;
+    row.voiceProfileLinkOrigin = 'manual';
+    await this.entities.save(row);
+    return this.detail(userId, id);
+  }
+
+  /**
+   * Remove an entity's contact link and suppress auto-linking for it — an
+   * explicit unlink is a correction, so background sweeps and future ingests
+   * must not silently redo what the user undid. A manual link stays possible.
+   */
+  async unlinkContact(userId: string, id: string): Promise<EntityDetailDto> {
+    const row = await this.getOwned(userId, id);
+    if (row.type !== 'person') {
+      throw new BadRequestException('only person entities can link to a contact');
+    }
+    row.voiceProfileId = null;
+    row.voiceProfileLinkOrigin = 'suppressed';
+    await this.entities.save(row);
+    return this.detail(userId, id);
+  }
+
+  /**
+   * Promote a `person` entity to a real contact: create a confirmed voice
+   * profile named after it (no voiceprint — one attaches when the person is
+   * first heard and merged) and link the entity to it.
+   */
+  async convertToContact(userId: string, id: string): Promise<EntityDetailDto> {
+    const row = await this.getOwned(userId, id);
+    if (row.type !== 'person') {
+      throw new BadRequestException('only person entities can become a contact');
+    }
+    if (row.voiceProfileId) {
+      throw new BadRequestException('entity is already linked to a contact');
+    }
+    const profile = await this.profiles.save(
+      this.profiles.create({
+        userId,
+        name: row.canonicalName,
+        status: 'confirmed',
+      }),
+    );
+    row.voiceProfileId = profile.id;
+    row.voiceProfileLinkOrigin = 'manual';
+    await this.entities.save(row);
+    return this.detail(userId, id);
+  }
+
+  /**
+   * Sweep every unlinked (and not suppressed) person entity and auto-link the
+   * ones that now match a named contact — e.g. after a speaker finally gets a
+   * name in the contact book. Ambiguous partial matches fall back to the
+   * recordings the entity is mentioned in: a candidate who actually speaks
+   * there wins. Returns how many entities gained a link.
+   */
+  async autoLinkContacts(userId: string): Promise<number> {
+    const rows = await this.entities.find({ where: { userId, type: 'person' as EntityType } });
+    const unlinked = rows.filter(
+      (r) => !r.voiceProfileId && r.voiceProfileLinkOrigin !== 'suppressed',
+    );
+    if (unlinked.length === 0) return 0;
+    const contacts = await this.contactCandidates(userId);
+    if (contacts.length === 0) return 0;
+
+    const current = await this.currentMentions(unlinked.map((r) => r.id));
+    let linked = 0;
+    for (const row of unlinked) {
+      const names = [row.normalizedName, ...(row.aliases ?? []).map(normalize)];
+      let profileId = resolveContactLink(names, contacts, null);
+      if (!profileId) {
+        const itemIds = [...new Set((current.get(row.id) ?? []).map((m) => m.inboxItemId))];
+        if (itemIds.length > 0) {
+          const speakerIds = await this.speakersForItems(itemIds);
+          profileId = resolveContactLink(names, contacts, speakerIds);
+        }
+      }
+      if (!profileId) continue;
+      row.voiceProfileId = profileId;
+      row.voiceProfileLinkOrigin = 'auto';
+      await this.entities.save(row);
+      linked += 1;
+    }
+    return linked;
   }
 
   /**
@@ -163,7 +317,8 @@ export class EntitiesRegistryService {
     type: EntityType,
     name: string,
     surfaceForms: string[],
-    profilesByName: Map<string, string>,
+    contacts: ContactCandidate[],
+    speakerIds: Set<string>,
   ): Promise<EntityRegistryEntity> {
     const normalizedName = normalize(name);
     let row = await this.entities.findOne({ where: { userId, type, normalizedName } });
@@ -175,6 +330,7 @@ export class EntitiesRegistryService {
         normalizedName,
         aliases: [],
         voiceProfileId: null,
+        voiceProfileLinkOrigin: null,
       });
     }
 
@@ -184,9 +340,17 @@ export class EntitiesRegistryService {
     // Adopt the longer spelling as canonical (e.g. "Angela Merkel" over "Angela").
     if (name.length > row.canonicalName.length) row.canonicalName = name;
 
-    if (type === 'person' && !row.voiceProfileId) {
-      const profileId = profilesByName.get(normalizedName);
-      if (profileId) row.voiceProfileId = profileId;
+    if (
+      type === 'person' &&
+      !row.voiceProfileId &&
+      row.voiceProfileLinkOrigin !== 'suppressed'
+    ) {
+      const names = [row.normalizedName, ...row.aliases.map(normalize)];
+      const profileId = resolveContactLink(names, contacts, speakerIds);
+      if (profileId) {
+        row.voiceProfileId = profileId;
+        row.voiceProfileLinkOrigin = 'auto';
+      }
     }
 
     try {
@@ -200,7 +364,10 @@ export class EntitiesRegistryService {
       if (!winner) throw new Error('failed to upsert entity');
       const merged = new Set([...(winner.aliases ?? []), ...row.aliases]);
       winner.aliases = [...merged];
-      if (!winner.voiceProfileId && row.voiceProfileId) winner.voiceProfileId = row.voiceProfileId;
+      if (!winner.voiceProfileId && row.voiceProfileId) {
+        winner.voiceProfileId = row.voiceProfileId;
+        winner.voiceProfileLinkOrigin = row.voiceProfileLinkOrigin;
+      }
       return this.entities.save(winner);
     }
   }
@@ -220,17 +387,53 @@ export class EntitiesRegistryService {
     );
   }
 
-  /** Named voice profiles keyed by normalized name, for person linking. */
-  private async namedProfiles(userId: string): Promise<Map<string, string>> {
+  private async getOwned(userId: string, id: string): Promise<EntityRegistryEntity> {
+    const row = await this.entities.findOne({ where: { id, userId } });
+    if (!row) throw new NotFoundException('entity not found');
+    return row;
+  }
+
+  /** Named voice profiles prepared for person auto-linking. */
+  private async contactCandidates(userId: string): Promise<ContactCandidate[]> {
     const rows = await this.profiles.find({ where: { userId } });
-    const map = new Map<string, string>();
-    for (const row of rows) {
-      if (!row.name) continue;
-      // First writer wins so linking is stable when two profiles share a name.
-      const key = normalize(row.name);
-      if (!map.has(key)) map.set(key, row.id);
+    return rows
+      .filter((row) => row.name)
+      .map((row) => ({ id: row.id, normalized: normalize(row.name as string) }));
+  }
+
+  /**
+   * Voice profiles that speak in the given items, restricted to each item's
+   * latest succeeded diarization — the "who is actually in the room" context
+   * used to disambiguate partial name matches.
+   */
+  private async speakersForItems(itemIds: string[]): Promise<Set<string>> {
+    const result = new Set<string>();
+    if (itemIds.length === 0) return result;
+    const rows = await this.occurrences.find({ where: { inboxItemId: In(itemIds) } });
+    if (rows.length === 0) return result;
+    const extractionRows = await this.extractions.find({
+      where: { inboxItemId: In(itemIds), kind: 'diarization', status: 'succeeded' },
+    });
+    const latestByItem = new Map<string, ExtractedPayloadEntity>();
+    for (const row of extractionRows) {
+      const current = latestByItem.get(row.inboxItemId);
+      if (!current || row.createdAt > current.createdAt) latestByItem.set(row.inboxItemId, row);
     }
-    return map;
+    const latestExtractionIds = new Set([...latestByItem.values()].map((r) => r.id));
+    for (const row of rows) {
+      if (latestExtractionIds.has(row.extractionId)) result.add(row.voiceProfileId);
+    }
+    return result;
+  }
+
+  /** Display names of the profiles linked by the given rows, keyed by id. */
+  private async profileNames(rows: EntityRegistryEntity[]): Promise<Map<string, string | null>> {
+    const ids = [...new Set(rows.map((r) => r.voiceProfileId).filter((id): id is string => !!id))];
+    const names = new Map<string, string | null>();
+    if (ids.length === 0) return names;
+    const profiles = await this.profiles.find({ where: { id: In(ids) } });
+    for (const profile of profiles) names.set(profile.id, profile.name);
+    return names;
   }
 
   /**
@@ -266,7 +469,11 @@ export class EntitiesRegistryService {
     return result;
   }
 
-  private toDto(row: EntityRegistryEntity, mentions: EntityMentionEntity[]): RegistryEntityDto {
+  private toDto(
+    row: EntityRegistryEntity,
+    mentions: EntityMentionEntity[],
+    profileNames: Map<string, string | null>,
+  ): RegistryEntityDto {
     const itemIds = new Set(mentions.map((m) => m.inboxItemId));
     const lastSeen = mentions.reduce<Date | null>(
       (max, m) => (max === null || m.createdAt > max ? m.createdAt : max),
@@ -278,6 +485,10 @@ export class EntitiesRegistryService {
       canonicalName: row.canonicalName,
       aliases: row.aliases ?? [],
       voiceProfileId: row.voiceProfileId,
+      voiceProfileLinkOrigin: row.voiceProfileLinkOrigin,
+      voiceProfileName: row.voiceProfileId
+        ? (profileNames.get(row.voiceProfileId) ?? null)
+        : null,
       mentionCount: itemIds.size,
       firstSeenAt: row.createdAt.toISOString(),
       lastSeenAt: (lastSeen ?? row.createdAt).toISOString(),
@@ -289,6 +500,46 @@ export class EntitiesRegistryService {
 /** Normalization key: lowercased, whitespace-collapsed. Alias/case matching. */
 export function normalize(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * Pick the contact a person entity should auto-link to, or null when nothing
+ * matches unambiguously. `names` are the entity's normalize()d name forms
+ * (canonical + aliases). Exact full-name equality wins outright; otherwise a
+ * token-boundary partial match ("detlef" ↔ "detlef müller") links only when it
+ * is unique — or, given `speakerIds` (who actually speaks in the recording(s)
+ * involved), when exactly one candidate is among the speakers.
+ */
+export function resolveContactLink(
+  names: string[],
+  contacts: ContactCandidate[],
+  speakerIds: Set<string> | null,
+): string | null {
+  const nameSet = new Set(names.filter(Boolean));
+  if (nameSet.size === 0 || contacts.length === 0) return null;
+
+  // First-writer-wins so linking is stable when two profiles share a name.
+  const exact = contacts.find((c) => nameSet.has(c.normalized));
+  if (exact) return exact.id;
+
+  const partialIds = new Set<string>();
+  const partial: ContactCandidate[] = [];
+  for (const contact of contacts) {
+    const matches = [...nameSet].some(
+      (name) =>
+        name.startsWith(`${contact.normalized} `) || contact.normalized.startsWith(`${name} `),
+    );
+    if (matches && !partialIds.has(contact.id)) {
+      partialIds.add(contact.id);
+      partial.push(contact);
+    }
+  }
+  if (partial.length === 1) return partial[0].id;
+  if (partial.length > 1 && speakerIds) {
+    const speaking = partial.filter((c) => speakerIds.has(c.id));
+    if (speaking.length === 1) return speaking[0].id;
+  }
+  return null;
 }
 
 /**

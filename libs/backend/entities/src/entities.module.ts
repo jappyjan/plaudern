@@ -7,6 +7,7 @@ import {
   EntityRegistryEntity,
   EntityRelationEntity,
   ExtractedPayloadEntity,
+  SpeakerOccurrenceEntity,
   VoiceProfileEntity,
 } from '@plaudern/persistence';
 import { BullJobQueue, InlineJobQueue, redisConnectionFromConfig } from '@plaudern/queue';
@@ -36,6 +37,7 @@ import { RelationsExtractor } from './relations.extractor';
       EntityMentionEntity,
       EntityRelationEntity,
       ExtractedPayloadEntity,
+      SpeakerOccurrenceEntity,
       VoiceProfileEntity,
     ]),
   ],

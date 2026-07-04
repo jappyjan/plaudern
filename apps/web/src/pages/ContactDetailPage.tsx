@@ -11,7 +11,7 @@ import {
 } from '@heroui/react';
 import type { ConsentStatus, VoiceProfileDetailDto, VoiceProfileDto } from '@plaudern/contracts';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { getSpeaker, listSpeakers, mergeSpeakers, updateSpeaker } from '../lib/api';
+import { autoLinkEntities, getSpeaker, listSpeakers, mergeSpeakers, updateSpeaker } from '../lib/api';
 import { speakerColor, speakerDisplayName } from '../lib/speakerColors';
 import { formatDateTime, formatDuration } from '../lib/format';
 import { DocumentList, DocumentRow } from '../components/DocumentRow';
@@ -129,7 +129,15 @@ export function ContactDetailPage() {
               size="sm"
               color="primary"
               isDisabled={busy || !name.trim() || name.trim() === profile.name}
-              onPress={() => run(() => updateSpeaker(id, { name: name.trim() }))}
+              onPress={() =>
+                run(async () => {
+                  await updateSpeaker(id, { name: name.trim() });
+                  // A fresh name may match person entities extracted from other
+                  // recordings — sweep auto-linking so their pages link up too.
+                  // Best-effort: a failure here must not fail the rename.
+                  await autoLinkEntities().catch(() => undefined);
+                })
+              }
             >
               Save
             </Button>

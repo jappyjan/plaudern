@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import {
   ALL_ENTITIES,
@@ -6,6 +6,7 @@ import {
   EntityRegistryEntity,
   ExtractedPayloadEntity,
   InboxItemEntity,
+  SpeakerOccurrenceEntity,
   VoiceProfileEntity,
 } from '@plaudern/persistence';
 import type { ExtractedEntity } from '@plaudern/contracts';
@@ -13,6 +14,7 @@ import {
   EntitiesRegistryService,
   isUniqueViolation,
   normalize,
+  resolveContactLink,
 } from './entities-registry.service';
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
@@ -60,6 +62,7 @@ describe('EntitiesRegistryService', () => {
       dataSource.getRepository(EntityMentionEntity),
       dataSource.getRepository(ExtractedPayloadEntity),
       dataSource.getRepository(VoiceProfileEntity),
+      dataSource.getRepository(SpeakerOccurrenceEntity),
     );
   });
 
@@ -103,6 +106,29 @@ describe('EntitiesRegistryService', () => {
       status: 'confirmed',
     });
     return row.id;
+  }
+
+  /** Seed a succeeded diarization + one speaker occurrence per given profile. */
+  async function addSpeakers(inboxItemId: string, profileIds: string[]): Promise<void> {
+    const extraction = await dataSource.getRepository(ExtractedPayloadEntity).save({
+      inboxItemId,
+      kind: 'diarization',
+      version: 1,
+      provider: 'test',
+      status: 'succeeded',
+      createdAt: new Date('2026-07-01T09:00:00Z'),
+    });
+    const occurrences = dataSource.getRepository(SpeakerOccurrenceEntity);
+    for (const [index, voiceProfileId] of profileIds.entries()) {
+      await occurrences.save({
+        inboxItemId,
+        extractionId: extraction.id,
+        voiceProfileId,
+        label: `SPEAKER_0${index}`,
+        speakingSeconds: 10,
+        similarity: null,
+      });
+    }
   }
 
   it('normalizes + dedupes a batch and unions aliases', async () => {
@@ -231,5 +257,194 @@ describe('EntitiesRegistryService', () => {
     await expect(
       service.detail(USER, '11111111-1111-1111-1111-111111111111'),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('auto-links a first-name mention to the single partially-matching contact', async () => {
+    const profileId = await createProfile('Detlef Müller');
+    await createProfile('Someone Else');
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+
+    await service.ingest(USER, item, ext, [{ type: 'person', name: 'Detlef', mentions: [] }]);
+
+    const [detlef] = await service.list(USER);
+    expect(detlef.voiceProfileId).toBe(profileId);
+    expect(detlef.voiceProfileLinkOrigin).toBe('auto');
+    expect(detlef.voiceProfileName).toBe('Detlef Müller');
+  });
+
+  it('disambiguates a partial match by who speaks in the recording', async () => {
+    const mueller = await createProfile('Detlef Müller');
+    await createProfile('Detlef Schmidt');
+    const item = await createItem();
+    await addSpeakers(item, [mueller]);
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+
+    await service.ingest(USER, item, ext, [{ type: 'person', name: 'Detlef', mentions: [] }]);
+
+    const [detlef] = await service.list(USER);
+    expect(detlef.voiceProfileId).toBe(mueller);
+  });
+
+  it('does not link an ambiguous partial match without speaker context', async () => {
+    await createProfile('Detlef Müller');
+    await createProfile('Detlef Schmidt');
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+
+    await service.ingest(USER, item, ext, [{ type: 'person', name: 'Detlef', mentions: [] }]);
+
+    const [detlef] = await service.list(USER);
+    expect(detlef.voiceProfileId).toBeNull();
+    expect(detlef.voiceProfileLinkOrigin).toBeNull();
+  });
+
+  it('sweeps unlinked people via autoLinkContacts once a contact is named', async () => {
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+    await service.ingest(USER, item, ext, [{ type: 'person', name: 'Angela Merkel', mentions: [] }]);
+    expect((await service.list(USER))[0].voiceProfileId).toBeNull();
+
+    const profileId = await createProfile('Angela Merkel');
+    expect(await service.autoLinkContacts(USER)).toBe(1);
+    expect((await service.list(USER))[0].voiceProfileId).toBe(profileId);
+    // A second sweep finds nothing new.
+    expect(await service.autoLinkContacts(USER)).toBe(0);
+  });
+
+  it('links and unlinks manually; unlink suppresses auto-linking', async () => {
+    const profileId = await createProfile('Angela Merkel');
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+    await service.ingest(USER, item, ext, [{ type: 'person', name: 'Angela Merkel', mentions: [] }]);
+    const [entity] = await service.list(USER);
+    expect(entity.voiceProfileId).toBe(profileId);
+
+    const unlinked = await service.unlinkContact(USER, entity.id);
+    expect(unlinked.voiceProfileId).toBeNull();
+    expect(unlinked.voiceProfileLinkOrigin).toBe('suppressed');
+
+    // Neither a sweep nor a re-ingest may silently redo the user's unlink.
+    expect(await service.autoLinkContacts(USER)).toBe(0);
+    const ext2 = await createEntitiesExtraction(item, new Date('2026-07-01T11:00:00Z'));
+    await service.ingest(USER, item, ext2, [{ type: 'person', name: 'Angela Merkel', mentions: [] }]);
+    expect((await service.detail(USER, entity.id)).voiceProfileId).toBeNull();
+
+    // …but a manual link is always possible.
+    const relinked = await service.linkContact(USER, entity.id, profileId);
+    expect(relinked.voiceProfileId).toBe(profileId);
+    expect(relinked.voiceProfileLinkOrigin).toBe('manual');
+  });
+
+  it('rejects linking a non-person entity or a foreign profile', async () => {
+    const profileId = await createProfile('ACME');
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+    await service.ingest(USER, item, ext, [{ type: 'organization', name: 'ACME', mentions: [] }]);
+    const [org] = await service.list(USER);
+
+    await expect(service.linkContact(USER, org.id, profileId)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+
+    const foreign = await dataSource.getRepository(VoiceProfileEntity).save({
+      userId: '00000000-0000-0000-0000-0000000000bb',
+      name: 'Other Person',
+      status: 'confirmed',
+    });
+    const ext2 = await createEntitiesExtraction(item, new Date('2026-07-01T11:00:00Z'));
+    await service.ingest(USER, item, ext2, [
+      { type: 'organization', name: 'ACME', mentions: [] },
+      { type: 'person', name: 'Zoe', mentions: [] },
+    ]);
+    const zoe = (await service.list(USER)).find((e) => e.canonicalName === 'Zoe')!;
+    await expect(service.linkContact(USER, zoe.id, foreign.id)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('converts a person entity into a new confirmed contact', async () => {
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+    await service.ingest(USER, item, ext, [{ type: 'person', name: 'Detlef Müller', mentions: [] }]);
+    const [entity] = await service.list(USER);
+
+    const converted = await service.convertToContact(USER, entity.id);
+    expect(converted.voiceProfileId).not.toBeNull();
+    expect(converted.voiceProfileLinkOrigin).toBe('manual');
+    expect(converted.voiceProfileName).toBe('Detlef Müller');
+
+    const profile = await dataSource
+      .getRepository(VoiceProfileEntity)
+      .findOneByOrFail({ id: converted.voiceProfileId as string });
+    expect(profile).toMatchObject({ userId: USER, name: 'Detlef Müller', status: 'confirmed' });
+
+    // Converting twice (already linked) is rejected.
+    await expect(service.convertToContact(USER, entity.id)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('renames an entity (keeping the old name as alias) and rejects collisions', async () => {
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+    await service.ingest(USER, item, ext, [
+      { type: 'person', name: 'Detlef', mentions: [] },
+      { type: 'person', name: 'Bob', mentions: [] },
+    ]);
+    const detlef = (await service.list(USER)).find((e) => e.canonicalName === 'Detlef')!;
+
+    const renamed = await service.update(USER, detlef.id, { canonicalName: 'Detlef Müller' });
+    expect(renamed.canonicalName).toBe('Detlef Müller');
+    expect(renamed.aliases).toContain('Detlef');
+
+    await expect(
+      service.update(USER, detlef.id, { canonicalName: 'Bob' }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('drops the contact link when an entity is re-typed away from person', async () => {
+    await createProfile('Angela Merkel');
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+    await service.ingest(USER, item, ext, [{ type: 'person', name: 'Angela Merkel', mentions: [] }]);
+    const [entity] = await service.list(USER);
+    expect(entity.voiceProfileId).not.toBeNull();
+
+    const retyped = await service.update(USER, entity.id, { type: 'organization' });
+    expect(retyped.type).toBe('organization');
+    expect(retyped.voiceProfileId).toBeNull();
+    expect(retyped.voiceProfileLinkOrigin).toBeNull();
+  });
+});
+
+describe('resolveContactLink', () => {
+  const contacts = [
+    { id: 'mueller', normalized: 'detlef müller' },
+    { id: 'schmidt', normalized: 'detlef schmidt' },
+    { id: 'angela', normalized: 'angela' },
+  ];
+
+  it('prefers an exact name match', () => {
+    expect(resolveContactLink(['detlef müller'], contacts, null)).toBe('mueller');
+  });
+
+  it('matches via aliases too', () => {
+    expect(resolveContactLink(['detti', 'detlef müller'], contacts, null)).toBe('mueller');
+  });
+
+  it('links a unique token-prefix match in either direction', () => {
+    expect(resolveContactLink(['angela merkel'], contacts, null)).toBe('angela');
+    expect(resolveContactLink(['schmidt'], contacts, null)).toBeNull(); // suffix ≠ prefix
+  });
+
+  it('resolves ambiguous partials only with speaker context', () => {
+    expect(resolveContactLink(['detlef'], contacts, null)).toBeNull();
+    expect(resolveContactLink(['detlef'], contacts, new Set(['schmidt']))).toBe('schmidt');
+    expect(resolveContactLink(['detlef'], contacts, new Set(['schmidt', 'mueller']))).toBeNull();
+  });
+
+  it('never partial-matches mid-token', () => {
+    expect(resolveContactLink(['det'], contacts, null)).toBeNull();
   });
 });
