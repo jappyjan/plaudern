@@ -9,6 +9,7 @@ import { SummarizationModule } from '@plaudern/summarization';
 import { ExtractionModule } from '@plaudern/extraction';
 import { EmbeddingModule } from '@plaudern/embeddings';
 import { EntitiesModule } from '@plaudern/entities';
+import { TopicsModule } from '@plaudern/topics';
 import { IngestionModule } from '@plaudern/ingestion';
 import { PlaudSyncModule } from '@plaudern/plaud-sync';
 import { SpeakerIdModule } from '@plaudern/speaker-id';
@@ -31,6 +32,7 @@ import { HealthController } from './health.controller';
     SummarizationModule,
     EmbeddingModule,
     EntitiesModule,
+    TopicsModule,
     ExtractionModule,
     IngestionModule,
     PlaudSyncModule,
