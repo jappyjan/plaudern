@@ -414,6 +414,18 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3))
 
+  libs/backend/queue:
+    dependencies:
+      '@nestjs/common':
+        specifier: ^11.0.0
+        version: 11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/config':
+        specifier: ^4.0.0
+        version: 4.0.4(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(rxjs@7.8.2)
+      bullmq:
+        specifier: ^5.0.0
+        version: 5.79.2
+
   libs/backend/speaker-id:
     dependencies:
       '@nestjs/common':
@@ -437,12 +449,12 @@ importers:
       '@plaudern/persistence':
         specifier: workspace:*
         version: link:../persistence
+      '@plaudern/queue':
+        specifier: workspace:*
+        version: link:../queue
       '@plaudern/storage':
         specifier: workspace:*
         version: link:../storage
-      bullmq:
-        specifier: ^5.0.0
-        version: 5.79.2
       typeorm:
         specifier: ^1.0.0
         version: 1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3))
@@ -515,12 +527,12 @@ importers:
       '@plaudern/persistence':
         specifier: workspace:*
         version: link:../persistence
+      '@plaudern/queue':
+        specifier: workspace:*
+        version: link:../queue
       '@plaudern/storage':
         specifier: workspace:*
         version: link:../storage
-      bullmq:
-        specifier: ^5.0.0
-        version: 5.79.2
 
   libs/contracts:
     dependencies:

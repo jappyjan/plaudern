@@ -29,19 +29,17 @@ const GAP_SPLIT_SECONDS = 0.8;
 const MAX_SEGMENT_SECONDS = 14;
 
 /**
- * Transcribes via the hosted ElevenLabs Scribe API (scribe_v2), an alternative
- * to the self-hosted faster-whisper sidecar with markedly better accuracy and
- * punctuation, especially on non-English audio.
+ * Transcribes via the hosted ElevenLabs Scribe API (scribe_v2).
  *
  * We download the audio from the presigned INTERNAL storage URL (reachable from
  * the API process) and upload the bytes to ElevenLabs — we push, they never
  * pull, so the storage endpoint never has to be internet-reachable and no
  * presigned URL into our storage is handed to a third party.
  *
- * Diarization stays on the sidecar/pyannoteAI (speaker labels come from there
- * and merge at read time), so we ask Scribe only for text + word timestamps and
- * reduce its word list to whisper-style segments the diarization overlap merge
- * can attribute.
+ * Diarization stays on pyannoteAI (speaker labels come from there and merge at
+ * read time), so we ask Scribe only for text + word timestamps and reduce its
+ * word list to whisper-style segments the diarization overlap merge can
+ * attribute.
  */
 @Injectable()
 export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
@@ -60,7 +58,7 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
     this.tagAudioEvents =
       config.get<string>('ELEVENLABS_TAG_AUDIO_EVENTS', 'false') === 'true';
     // ElevenLabs is silent until the whole transcript is ready; this bounds the
-    // total wait (default 30 min, matching the sidecar provider).
+    // total wait (default 30 min).
     this.timeoutMs = Number(
       config.get<string>('ELEVENLABS_STT_TIMEOUT_MS', String(30 * 60_000)),
     );

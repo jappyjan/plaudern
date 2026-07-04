@@ -10,17 +10,10 @@ process.env.AUTH_DISABLED = 'true'; // single-user mode — auth has its own spe
 process.env.APP_ENCRYPTION_SECRET = 'test-secret';
 process.env.PLAUD_POLL_INTERVAL_MS = '0'; // no background poller in tests
 
-import { INestApplication, VersioningType } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
+import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { PlaudApiClient, type PlaudRecording } from '@plaudern/plaud-sync';
-import { TRANSCRIPTION_PROVIDER } from '@plaudern/transcription';
-import { DIARIZATION_PROVIDER } from '@plaudern/speaker-id';
-import {
-  FakeDiarizationProvider,
-  FakeTranscriptionProvider,
-} from '../testing/fake-providers';
-import { AppModule } from './app.module';
+import { createE2eApp } from '../testing/e2e-app';
 
 const RECORDINGS: PlaudRecording[] = [
   {
@@ -59,18 +52,11 @@ describe('Plaud settings + sync (e2e)', () => {
   };
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(PlaudApiClient)
-      .useValue(fakeClient)
-      .overrideProvider(TRANSCRIPTION_PROVIDER)
-      .useValue(new FakeTranscriptionProvider())
-      .overrideProvider(DIARIZATION_PROVIDER)
-      .useValue(new FakeDiarizationProvider())
-      .compile();
-    app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.enableVersioning({ type: VersioningType.URI });
-    await app.init();
+    app = await createE2eApp((builder) =>
+      builder
+        .overrideProvider(PlaudApiClient)
+        .useValue(fakeClient),
+    );
   });
 
   afterAll(async () => {

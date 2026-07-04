@@ -1,12 +1,14 @@
-# Full local stack for Plaudern (plan §6): Postgres (metadata), MinIO
-# (S3-compatible blobs), Redis (BullMQ), the API, and the web frontend.
+# Full local stack for Plaudern: Postgres (metadata), MinIO (S3-compatible
+# blobs), Redis (BullMQ), the API, and the web frontend.
 #
 #   docker compose up -d --build     # web at http://localhost:8080
 #
 # Run only the infra (and api/web via `nx serve api` / `nx serve web`) with:
-#   docker compose up -d postgres minio minio-init redis speaker-id
-# (speaker-id is the ML sidecar the api uses for transcription and diarization
-# by default — see apps/speaker-id-ml/README.md for the required HUGGING_FACE_TOKEN.)
+#   docker compose up -d postgres minio minio-init redis
+#
+# Transcription (ElevenLabs Scribe) and diarization (pyannoteAI) run on hosted
+# APIs: set ELEVENLABS_API_KEY and PYANNOTEAI_API_KEY. Without keys the stack
+# still works — those extraction jobs just fail with a clear error.
 services:
   web:
     build:
@@ -30,10 +32,6 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
-      # service_started, not healthy: the first boot downloads ~1.5 GB of
-      # models; failed jobs are retried by the queue meanwhile.
-      speaker-id:
-        condition: service_started
     environment:
       DATABASE_DRIVER: postgres
       DATABASE_URL: postgres://plaudern:plaudern@postgres:5432/plaudern
@@ -51,7 +49,6 @@ services:
       S3_FORCE_PATH_STYLE: 'true'
       QUEUE_DRIVER: bull
       REDIS_URL: redis://redis:6379
-      # Transcription runs on the self-hosted whisper sidecar (speaker-id service).
       # General-purpose key encrypting secrets stored in Postgres (e.g. the
       # Plaud password) — override in production.
       APP_ENCRYPTION_SECRET: ${APP_ENCRYPTION_SECRET:-change-me}
@@ -79,42 +76,19 @@ services:
       SUMMARIZATION_API_KEY: ${SUMMARIZATION_API_KEY:-}
       SUMMARIZATION_BASE_URL: ${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
       SUMMARIZATION_MODEL: ${SUMMARIZATION_MODEL:-deepseek-chat}
-      # --- Speaker diarization ---
-      # pyannote  = local speaker-id sidecar (default; embeddings + cosine match)
-      # pyannoteai = hosted pyannoteAI API (offloads the heavy model; set
-      #              PYANNOTEAI_API_KEY and LOAD_DIARIZATION=false on the sidecar)
+      # --- Transcription (hosted ElevenLabs Scribe API) ---
+      # Audio bytes are pushed to ElevenLabs directly; storage stays private.
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      # --- Speaker diarization (hosted pyannoteAI API) ---
+      # pyannoteai = diarize + match voices via api.pyannote.ai (default)
       # off        = disabled
-      SPEAKER_ID_PROVIDER: ${SPEAKER_ID_PROVIDER:-pyannote}
-      SPEAKER_ID_URL: http://speaker-id:8000
-      SPEAKER_ID_TOKEN: ${SPEAKER_ID_TOKEN:-change-me}
-      SPEAKER_MATCH_THRESHOLD: ${SPEAKER_MATCH_THRESHOLD:-0.65}
-      # Hosted pyannoteAI (only used when SPEAKER_ID_PROVIDER=pyannoteai). Audio
-      # is uploaded to pyannoteAI directly, so storage stays private.
+      # Audio is uploaded to pyannoteAI directly, so storage stays private.
+      SPEAKER_ID_PROVIDER: ${SPEAKER_ID_PROVIDER:-pyannoteai}
       PYANNOTEAI_API_KEY: ${PYANNOTEAI_API_KEY:-}
       PYANNOTEAI_MODEL: ${PYANNOTEAI_MODEL:-precision-2}
       PORT: 3000
     ports:
       - '3000:3000'
-
-  # ML sidecar: speaker diarization + voice embeddings (pyannote) and
-  # transcription (faster-whisper). The pyannote models are gated on Hugging
-  # Face: set HUGGING_FACE_TOKEN and accept the model terms first — see
-  # apps/speaker-id-ml/README.md. Downloads ~1.5 GB into hfcache on first start.
-  speaker-id:
-    build:
-      context: apps/speaker-id-ml
-    restart: unless-stopped
-    environment:
-      # Set LOAD_DIARIZATION=false when diarization runs on the pyannoteAI API,
-      # so the sidecar skips the heavy pyannote model (and HUGGING_FACE_TOKEN).
-      LOAD_DIARIZATION: ${LOAD_DIARIZATION:-true}
-      HUGGING_FACE_TOKEN: ${HUGGING_FACE_TOKEN:-}
-      SPEAKER_ID_TOKEN: ${SPEAKER_ID_TOKEN:-change-me}
-      WHISPER_MODEL: ${WHISPER_MODEL:-small}
-    volumes:
-      - hfcache:/cache/huggingface
-    ports:
-      - '8000:8000'
 
   postgres:
     image: postgres:17-alpine
@@ -178,4 +152,3 @@ volumes:
   pgdata:
   miniodata:
   redisdata:
-  hfcache:

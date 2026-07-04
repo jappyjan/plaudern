@@ -30,9 +30,19 @@ describe('Provider config fail-fast (e2e, Path A)', () => {
     await expect(bootAttempt()).resolves.toBeUndefined();
   });
 
+  it('rejects the removed local-sidecar SPEAKER_ID_PROVIDER=pyannote', async () => {
+    process.env.SPEAKER_ID_PROVIDER = 'pyannote';
+    await expect(bootAttempt()).rejects.toThrow('SPEAKER_ID_PROVIDER=pyannote was removed');
+  });
+
   it('rejects the removed SPEAKER_ID_PROVIDER=stub', async () => {
     process.env.SPEAKER_ID_PROVIDER = 'stub';
     await expect(bootAttempt()).rejects.toThrow('SPEAKER_ID_PROVIDER=stub was removed');
+  });
+
+  it('rejects an unknown SPEAKER_ID_PROVIDER', async () => {
+    process.env.SPEAKER_ID_PROVIDER = 'nonsense';
+    await expect(bootAttempt()).rejects.toThrow("unknown SPEAKER_ID_PROVIDER 'nonsense'");
   });
 
   it('accepts SPEAKER_ID_PROVIDER=off', async () => {

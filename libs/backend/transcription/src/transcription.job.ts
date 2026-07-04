@@ -1,3 +1,5 @@
+import type { JobQueue } from '@plaudern/queue';
+
 export interface TranscriptionJob {
   extractionId: string;
   inboxItemId: string;
@@ -9,7 +11,5 @@ export interface TranscriptionJob {
 
 export const TRANSCRIPTION_QUEUE = Symbol('TRANSCRIPTION_QUEUE');
 
-/** Abstraction over the job queue so tests run inline without Redis (plan §6). */
-export interface TranscriptionQueue {
-  enqueue(job: TranscriptionJob): Promise<void>;
-}
+/** Abstraction over the job queue so tests run inline without Redis. */
+export type TranscriptionQueue = JobQueue<TranscriptionJob>;

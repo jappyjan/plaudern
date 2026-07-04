@@ -23,6 +23,7 @@
       "@plaudern/storage": ["libs/backend/storage/src/index.ts"],
       "@plaudern/inbox": ["libs/backend/inbox/src/index.ts"],
       "@plaudern/ingestion": ["libs/backend/ingestion/src/index.ts"],
+      "@plaudern/queue": ["libs/backend/queue/src/index.ts"],
       "@plaudern/transcription": ["libs/backend/transcription/src/index.ts"],
       "@plaudern/summarization": ["libs/backend/summarization/src/index.ts"],
       "@plaudern/plaud-sync": ["libs/backend/plaud-sync/src/index.ts"],

@@ -13,13 +13,8 @@ import type { VoiceProfileStatus } from '@plaudern/contracts';
  * first time a voice is heard; confirmed/named/merged by the user in the contact
  * book. Mutable by design, so it lives outside the immutable inbox aggregate.
  *
- * Cross-recording identity is carried by exactly one of two mechanisms,
- * depending on which provider created the profile (SPEAKER_ID_PROVIDER):
- *   - `pyannote` (local sidecar): a `centroid` embedding matched by cosine.
- *   - `pyannoteai` (hosted API): an opaque `voiceprint` matched server-side via
- *     the /identify endpoint. Embeddings are not exposed by that API.
- * The unused column is null; the two provider paths never share profiles (their
- * matchers ignore profiles that lack their own mechanism).
+ * Cross-recording identity is carried by the `voiceprint`, matched server-side
+ * via pyannoteAI's /identify endpoint.
  */
 @Entity({ name: 'voice_profiles' })
 @Index(['userId'])
@@ -37,18 +32,9 @@ export class VoiceProfileEntity {
   status!: VoiceProfileStatus;
 
   /**
-   * L2-normalized centroid of all embeddings matched to this profile.
-   * Null for profiles created by the pyannoteAI (voiceprint) path.
-   */
-  @Column({ type: 'simple-json', nullable: true })
-  centroid!: number[] | null;
-
-  @Column({ type: 'int', default: 1 })
-  embeddingCount!: number;
-
-  /**
    * Opaque pyannoteAI voiceprint used for server-side /identify matching.
-   * Null for profiles created by the embedding (sidecar) path.
+   * Null when the speaker was too brief to enroll (profile exists but is not
+   * auto-matchable).
    */
   @Column({ type: 'text', nullable: true })
   voiceprint!: string | null;

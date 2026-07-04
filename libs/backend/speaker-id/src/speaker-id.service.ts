@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InboxService } from '@plaudern/inbox';
-import { SPEAKER_IDENTIFIER, type SpeakerIdentifier } from './speaker-identifier';
+import { PyannoteAiSpeakerIdentifier } from './identifiers/pyannoteai.identifier';
 import { DIARIZATION_QUEUE, type DiarizationQueue } from './diarization.job';
 
 export interface EnqueueDiarizationParams {
@@ -12,7 +12,8 @@ export interface EnqueueDiarizationParams {
 /**
  * Public entry point invoked by ingestion at commit time, mirroring
  * TranscriptionService: appends a `queued` diarization extraction row and
- * hands the job to the queue. No-op when speaker identification is disabled.
+ * hands the job to the queue. No-op when speaker identification is disabled
+ * (SPEAKER_ID_PROVIDER=off).
  */
 @Injectable()
 export class SpeakerIdService {
@@ -21,12 +22,24 @@ export class SpeakerIdService {
   constructor(
     config: ConfigService,
     private readonly inbox: InboxService,
-    @Inject(SPEAKER_IDENTIFIER)
-    private readonly identifier: SpeakerIdentifier,
+    private readonly identifier: PyannoteAiSpeakerIdentifier,
     @Inject(DIARIZATION_QUEUE)
     private readonly queue: DiarizationQueue,
   ) {
-    this.disabled = config.get<string>('SPEAKER_ID_PROVIDER', 'pyannote') === 'off';
+    // Fail fast on values from removed provider modes so a stale deployment
+    // config surfaces at boot, not as silently-different behavior.
+    const selected = config.get<string>('SPEAKER_ID_PROVIDER', 'pyannoteai');
+    if (selected === 'pyannote' || selected === 'stub') {
+      throw new Error(
+        `SPEAKER_ID_PROVIDER=${selected} was removed; use 'pyannoteai' (requires PYANNOTEAI_API_KEY) or 'off'`,
+      );
+    }
+    if (selected !== 'pyannoteai' && selected !== 'off') {
+      throw new Error(
+        `unknown SPEAKER_ID_PROVIDER '${selected}' (expected 'pyannoteai' or 'off')`,
+      );
+    }
+    this.disabled = selected === 'off';
   }
 
   async enqueueDiarization(

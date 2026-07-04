@@ -18,7 +18,7 @@ export interface MultipartFilePart {
  * POST a multipart/form-data request and parse the JSON response, over
  * node:https rather than global fetch.
  *
- * Same rationale as sidecar-http.ts: undici (Node's fetch) aborts a request
+ * Rationale for avoiding fetch: undici (Node's fetch) aborts a request
  * after its 300s `headersTimeout` when no response headers have arrived, but
  * ElevenLabs computes the whole transcription before responding and a long
  * recording can run past five minutes — which would surface as a bare "fetch

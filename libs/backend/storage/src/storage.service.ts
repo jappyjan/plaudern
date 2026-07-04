@@ -27,9 +27,9 @@ export abstract class StorageService {
   abstract createPresignedGetUrl(storageKey: string): Promise<string>;
 
   /**
-   * Presigned GET signed for the INTERNAL endpoint, for server-to-server
-   * consumers on the same network (e.g. the speaker-id sidecar). The public
-   * variant may point at a host only external clients can reach.
+   * Presigned GET signed for the INTERNAL endpoint, for consumers running in
+   * the API process/network (e.g. the transcription provider's download). The
+   * public variant may point at a host only external clients can reach.
    */
   abstract createInternalPresignedGetUrl(storageKey: string): Promise<string>;
 

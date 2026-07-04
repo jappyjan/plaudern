@@ -10,8 +10,8 @@
     "@plaudern/contracts": "workspace:*",
     "@plaudern/inbox": "workspace:*",
     "@plaudern/persistence": "workspace:*",
-    "@plaudern/storage": "workspace:*",
-    "bullmq": "^5.0.0"
+    "@plaudern/queue": "workspace:*",
+    "@plaudern/storage": "workspace:*"
   },
   "peerDependencies": {
     "@nestjs/common": "^11.0.0",

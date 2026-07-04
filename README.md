@@ -34,18 +34,18 @@ the browser. Web first — a mobile app comes later.
 apps/
   api/           NestJS backend — the Inbox + ingestion + transcription
   web/           Vite + React SPA (HeroUI + Tailwind) — upload & record UI
-  speaker-id-ml/ Python ML sidecar (FastAPI) — pyannote diarization + faster-whisper transcription
 libs/
   contracts/     Shared zod DTOs/types (@plaudern/contracts) — the backend↔frontend seam
   backend/
     persistence/ TypeORM entities + migrations
     storage/     S3/MinIO abstraction (+ in-memory fake for tests)
+    queue/       Generic BullMQ / inline job-queue abstraction
     inbox/        Inbox aggregate + read/delete API
     ingestion/    Source-adapter registry + presigned upload API
-    transcription/ Queue (BullMQ / inline) + sidecar whisper provider
+    transcription/ Transcription queue + ElevenLabs Scribe provider
     speaker-id/   Diarization queue + voice-profile matching + contact book API
     summarization/ AI title + Markdown summary (OpenAI-compatible LLM, DeepSeek by default)
-docker-compose.yml   Postgres + MinIO + Redis (+ api + web + speaker-id) for local dev
+docker-compose.yml   Postgres + MinIO + Redis + api + web for local dev
 ```
 
 ## Architecture
@@ -61,23 +61,20 @@ docker-compose.yml   Postgres + MinIO + Redis (+ api + web + speaker-id) for loc
 - **Modular sources**: an `AdapterRegistry` keyed by source type (`audio`,
   `text`, `file`, `plaud`). Adding an input = adding one adapter.
 - **Async transcription**: on commit, audio-bearing sources enqueue a job
-  (BullMQ + Redis in prod, inline in tests) that writes back the transcript via
-  the self-hosted faster-whisper in the `apps/speaker-id-ml` sidecar. Tests
+  (BullMQ + Redis in prod, inline in tests) that transcribes via the hosted
+  [ElevenLabs Scribe](https://elevenlabs.io) API (`ELEVENLABS_API_KEY`); audio
+  bytes are pushed to ElevenLabs directly, so storage stays private. Tests
   override the provider with jest fakes.
 - **Speaker identification**: alongside transcription, audio enqueues a
-  diarization job. Two interchangeable backends (`SPEAKER_ID_PROVIDER`):
-  `pyannote` runs the self-hosted pyannote sidecar in `apps/speaker-id-ml`
-  (matches voices by embedding similarity); `pyannoteai` offloads diarization to
-  the hosted [pyannoteAI](https://pyannote.ai) API (matches via voiceprints,
-  auto-enrolling new speakers) so a low-powered box isn't burdened by the heavy
-  model. Either way, detected voices are linked to persistent **voice profiles**
-  so the same person is recognized across recordings; unknown voices land in a
-  review queue in the web app's contact book (`/contacts`), where they can be
-  named, confirmed, or merged. The transcript view renders speaker-attributed
-  segments by aligning transcript segment timestamps with the diarization at
-  read time. The pyannote path's models are gated on Hugging Face — see
-  `apps/speaker-id-ml/README.md` for the one-time `HUGGING_FACE_TOKEN` setup
-  (not needed when using `pyannoteai`).
+  diarization job handled by the hosted [pyannoteAI](https://pyannote.ai) API
+  (`PYANNOTEAI_API_KEY`; set `SPEAKER_ID_PROVIDER=off` to disable). Speakers
+  are matched across recordings via voiceprints: known voices are identified
+  server-side (`/identify`), and new speakers with enough clean speech are
+  auto-enrolled from clips sliced in-process with ffmpeg. Detected voices link
+  to persistent **voice profiles**; unknown voices land in a review queue in
+  the web app's contact book (`/contacts`), where they can be named, confirmed,
+  or merged. The transcript view renders speaker-attributed segments by
+  aligning transcript segment timestamps with the diarization at read time.
 - **AI summarization**: once a recording is transcribed and diarized, the next
   pipeline step (`libs/backend/summarization`) hands the speaker-attributed
   transcript to an LLM that writes a short descriptive **title** and a
@@ -109,13 +106,13 @@ docker-compose.yml   Postgres + MinIO + Redis (+ api + web + speaker-id) for loc
 
 ## Run & verify
 
-**Whole stack in Docker** (web + API + ML sidecar + Postgres + MinIO + Redis).
-Migrations run automatically on boot. Set `HUGGING_FACE_TOKEN` first (see
-`apps/speaker-id-ml/README.md`) — the sidecar handles transcription and
-diarization by default and downloads ~1.5 GB of models on first start:
+**Whole stack in Docker** (web + API + Postgres + MinIO + Redis). Migrations
+run automatically on boot. Transcription and diarization run on hosted APIs —
+set `ELEVENLABS_API_KEY` and `PYANNOTEAI_API_KEY` (without keys the stack still
+runs; those extraction jobs just fail with a clear error):
 
 ```bash
-HUGGING_FACE_TOKEN=hf_... docker compose up -d --build
+ELEVENLABS_API_KEY=... PYANNOTEAI_API_KEY=... docker compose up -d --build
 open http://localhost:8080          # web app (nginx, proxies /api to the api)
 curl http://localhost:3000/api/health
 ```
@@ -124,8 +121,8 @@ curl http://localhost:3000/api/health
 
 ```bash
 pnpm install
-HUGGING_FACE_TOKEN=hf_... docker compose up -d postgres minio minio-init redis speaker-id   # infra + ML sidecar
-cp apps/api/.env.example apps/api/.env
+docker compose up -d postgres minio minio-init redis   # infra only
+cp apps/api/.env.example apps/api/.env      # fill in the API keys
 pnpm nx run api:migrate                     # apply DB schema
 pnpm nx serve api                           # http://localhost:3000/api
 pnpm nx serve web                           # http://localhost:5173 (proxies /api)
@@ -195,8 +192,8 @@ Two complementary levels:
   runners, so the entire stack is verified with zero setup) → production build.
   A parallel job typechecks and builds the web app.
 - **CD** (`.github/workflows/cd.yml`, push to `main` / `v*` tags): builds the
-  `api`, `web`, and `speaker-id-ml` images from their Dockerfiles and pushes
-  them to **GHCR** (`ghcr.io/<owner>/plaudern/{api,web,speaker-id-ml}`).
+  `api` and `web` images from their Dockerfiles and pushes them to **GHCR**
+  (`ghcr.io/<owner>/plaudern/{api,web}`).
 
 ## Deploy to Coolify
 
@@ -212,9 +209,9 @@ MinIO + Redis) using Coolify's magic environment variables:
   credentials are generated and persisted automatically on first deploy.
 
 Steps: create a **Docker Compose** resource in Coolify pointing at this repo,
-set the compose file to `docker-compose.coolify.yaml`, and set `HUGGING_FACE_TOKEN` in
-the UI (**required** — the ML sidecar handles transcription and diarization;
-see `apps/speaker-id-ml/README.md` for the one-time token setup). Passkeys
+set the compose file to `docker-compose.coolify.yaml`, and fill in
+`ELEVENLABS_API_KEY` (transcription) and `PYANNOTEAI_API_KEY` (diarization) in
+the UI. Passkeys
 bind to the web app's domain: `AUTH_RP_ID` defaults to `SERVICE_FQDN_WEB` (the
 domain Coolify assigned to the web service), so it auto-populates; override it
 only for custom setups, and remember that changing the domain later invalidates
@@ -240,11 +237,12 @@ curl -s localhost:3000/api/v1/inbox
 
 ## Configuration reference
 
-Backend env: `apps/api/.env.example` (DB, S3/MinIO, Redis, sidecar). Key
-switches: `DATABASE_DRIVER` (postgres|sqlite), `STORAGE_DRIVER` (s3|memory),
-`QUEUE_DRIVER` (bull|inline), `SPEAKER_ID_PROVIDER` (pyannote|pyannoteai|off;
-`pyannoteai` needs `PYANNOTEAI_API_KEY`), `SUMMARIZATION_API_KEY` (enables AI
-summaries; with `SUMMARIZATION_BASE_URL`/`SUMMARIZATION_MODEL` pointing at any
+Backend env: `apps/api/.env.example` (DB, S3/MinIO, Redis, hosted-API keys).
+Key switches: `DATABASE_DRIVER` (postgres|sqlite), `STORAGE_DRIVER`
+(s3|memory), `QUEUE_DRIVER` (bull|inline), `SPEAKER_ID_PROVIDER`
+(pyannoteai|off; `pyannoteai` needs `PYANNOTEAI_API_KEY`), `ELEVENLABS_API_KEY`
+(transcription), `SUMMARIZATION_API_KEY` (enables AI summaries; with
+`SUMMARIZATION_BASE_URL`/`SUMMARIZATION_MODEL` pointing at any
 OpenAI-compatible endpoint, DeepSeek by default).
 
 Authentication env: `AUTH_RP_ID` (WebAuthn relying-party id = the domain the

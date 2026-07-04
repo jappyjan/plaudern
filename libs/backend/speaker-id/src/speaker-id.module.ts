@@ -1,52 +1,26 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import type { ConnectionOptions } from 'bullmq';
 import { InboxModule } from '@plaudern/inbox';
 import { PersistenceModule } from '@plaudern/persistence';
+import { BullJobQueue, InlineJobQueue, redisConnectionFromConfig } from '@plaudern/queue';
 import { StorageModule } from '@plaudern/storage';
-import { DIARIZATION_PROVIDER } from './diarization.provider';
 import { DIARIZATION_QUEUE } from './diarization.job';
-import { PyannoteHttpProvider } from './providers/pyannote-http.provider';
 import { PyannoteAiClient } from './providers/pyannoteai-client';
-import { SPEAKER_IDENTIFIER, type SpeakerIdentifier } from './speaker-identifier';
-import { EmbeddingSpeakerIdentifier } from './identifiers/embedding.identifier';
 import { PyannoteAiSpeakerIdentifier } from './identifiers/pyannoteai.identifier';
+import { CLIP_EXTRACTOR, FfmpegClipExtractor } from './clip-extractor';
 import { VoiceprintMatcherService } from './voiceprint-matcher.service';
 import { DiarizationProcessor } from './diarization.processor';
-import { ProfileMatcherService } from './profile-matcher.service';
 import { SpeakerIdService } from './speaker-id.service';
 import { SpeakerTranscriptService } from './speaker-transcript.service';
 import { VoiceProfilesService } from './voice-profiles.service';
 import { SpeakersController, SpeakerTranscriptController } from './speakers.controller';
-import { InlineDiarizationQueue } from './queues/inline.queue';
-import { BullDiarizationQueue } from './queues/bull.queue';
-
-function redisConnection(config: ConfigService): ConnectionOptions {
-  const url = config.get<string>('REDIS_URL');
-  if (url) {
-    const parsed = new URL(url);
-    return {
-      host: parsed.hostname,
-      port: Number(parsed.port || '6379'),
-      password: parsed.password || undefined,
-      username: parsed.username || undefined,
-      db: parsed.pathname && parsed.pathname.length > 1 ? Number(parsed.pathname.slice(1)) : 0,
-    };
-  }
-  return {
-    host: config.get<string>('REDIS_HOST', 'localhost'),
-    port: Number(config.get<string>('REDIS_PORT', '6379')),
-  };
-}
 
 @Module({
   imports: [ConfigModule, InboxModule, PersistenceModule, StorageModule],
   controllers: [SpeakersController, SpeakerTranscriptController],
   providers: [
-    // Raw sidecar diarization provider, consumed by the embedding identifier.
-    { provide: DIARIZATION_PROVIDER, useClass: PyannoteHttpProvider },
-    // Singleton hosted-API client, shared by the pyannoteAI identifier (diarize
-    // /identify) and the voiceprint matcher (enrollment).
+    // Singleton hosted-API client, shared by the identifier (diarize/identify)
+    // and the voiceprint matcher (enrollment). Tests override it with a fake.
     {
       provide: PyannoteAiClient,
       inject: [ConfigService],
@@ -59,49 +33,22 @@ function redisConnection(config: ConfigService): ConnectionOptions {
           Number(config.get<string>('PYANNOTEAI_TIMEOUT_MS', String(30 * 60_000))),
         ),
     },
-    ProfileMatcherService,
+    { provide: CLIP_EXTRACTOR, useClass: FfmpegClipExtractor },
     VoiceprintMatcherService,
-    EmbeddingSpeakerIdentifier,
     PyannoteAiSpeakerIdentifier,
-    {
-      provide: SPEAKER_IDENTIFIER,
-      inject: [ConfigService, EmbeddingSpeakerIdentifier, PyannoteAiSpeakerIdentifier],
-      useFactory: (
-        config: ConfigService,
-        embedding: EmbeddingSpeakerIdentifier,
-        pyannoteai: PyannoteAiSpeakerIdentifier,
-      ): SpeakerIdentifier => {
-        const selected = config.get<string>('SPEAKER_ID_PROVIDER', 'pyannote');
-        switch (selected) {
-          case 'pyannote':
-          case 'off': // SpeakerIdService never enqueues; the instance is inert
-            return embedding;
-          case 'pyannoteai':
-            if (!config.get<string>('PYANNOTEAI_API_KEY')) {
-              throw new Error(
-                'SPEAKER_ID_PROVIDER=pyannoteai requires PYANNOTEAI_API_KEY (get one at pyannote.ai)',
-              );
-            }
-            return pyannoteai;
-          case 'stub':
-            throw new Error(
-              "SPEAKER_ID_PROVIDER=stub was removed; use 'pyannote', 'pyannoteai', or 'off'",
-            );
-          default:
-            throw new Error(
-              `unknown SPEAKER_ID_PROVIDER '${selected}' (expected 'pyannote', 'pyannoteai', or 'off')`,
-            );
-        }
-      },
-    },
     DiarizationProcessor,
     {
       provide: DIARIZATION_QUEUE,
       inject: [ConfigService, DiarizationProcessor],
       useFactory: (config: ConfigService, processor: DiarizationProcessor) =>
         config.get<string>('QUEUE_DRIVER', 'inline') === 'bull'
-          ? new BullDiarizationQueue(redisConnection(config), processor)
-          : new InlineDiarizationQueue(processor),
+          ? new BullJobQueue('diarization', 'diarize', redisConnectionFromConfig(config), processor, {
+              // pyannoteAI jobs are mostly polling waits, but one at a time is
+              // plenty; retries back off generously.
+              concurrency: 1,
+              backoffDelayMs: 10_000,
+            })
+          : new InlineJobQueue(processor),
     },
     SpeakerIdService,
     VoiceProfilesService,

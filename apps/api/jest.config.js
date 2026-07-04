@@ -11,17 +11,10 @@ module.exports = {
   testPathIgnorePatterns: ['\\.integration-spec\\.ts$'],
   moduleFileExtensions: ['ts', 'js', 'json'],
   moduleNameMapper: {
+    // Order matters: the specific contracts mapping must precede the generic
+    // backend-libs pattern.
     '^@plaudern/contracts$': `${wsRoot}/libs/contracts/src/index.ts`,
-    '^@plaudern/persistence$': `${wsRoot}/libs/backend/persistence/src/index.ts`,
-    '^@plaudern/storage$': `${wsRoot}/libs/backend/storage/src/index.ts`,
-    '^@plaudern/inbox$': `${wsRoot}/libs/backend/inbox/src/index.ts`,
-    '^@plaudern/ingestion$': `${wsRoot}/libs/backend/ingestion/src/index.ts`,
-    '^@plaudern/transcription$': `${wsRoot}/libs/backend/transcription/src/index.ts`,
-    '^@plaudern/plaud-sync$': `${wsRoot}/libs/backend/plaud-sync/src/index.ts`,
-    '^@plaudern/geocoding$': `${wsRoot}/libs/backend/geocoding/src/index.ts`,
-    '^@plaudern/speaker-id$': `${wsRoot}/libs/backend/speaker-id/src/index.ts`,
-    '^@plaudern/calendar$': `${wsRoot}/libs/backend/calendar/src/index.ts`,
-    '^@plaudern/auth$': `${wsRoot}/libs/backend/auth/src/index.ts`,
+    '^@plaudern/([^/]+)$': `${wsRoot}/libs/backend/$1/src/index.ts`,
   },
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.spec.json' }],
