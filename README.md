@@ -42,9 +42,9 @@ libs/
     queue/       Generic BullMQ / inline job-queue abstraction
     inbox/        Inbox aggregate + read/delete API
     ingestion/    Source-adapter registry + presigned upload API
-    transcription/ Transcription queue + ElevenLabs Scribe provider
+    transcription/ Transcription queue + ElevenLabs Scribe / local Whisper providers
     speaker-id/   Diarization queue + voice-profile matching + contact book API
-    summarization/ AI title + Markdown summary (OpenAI-compatible LLM, DeepSeek by default)
+    summarization/ AI title + Markdown summary (OpenAI-compatible LLM: DeepSeek by default, or local Ollama)
 docker-compose.yml   Postgres + MinIO + Redis + api + web for local dev
 ```
 
@@ -62,9 +62,15 @@ docker-compose.yml   Postgres + MinIO + Redis + api + web for local dev
   `text`, `file`, `plaud`). Adding an input = adding one adapter.
 - **Async transcription**: on commit, audio-bearing sources enqueue a job
   (BullMQ + Redis in prod, inline in tests) that transcribes via the hosted
-  [ElevenLabs Scribe](https://elevenlabs.io) API (`ELEVENLABS_API_KEY`); audio
-  bytes are pushed to ElevenLabs directly, so storage stays private. Tests
-  override the provider with jest fakes.
+  [ElevenLabs Scribe](https://elevenlabs.io) API (`ELEVENLABS_API_KEY`, the
+  default; audio bytes are pushed to ElevenLabs directly, so storage stays
+  private) or a **self-hosted Whisper-compatible server**
+  (`TRANSCRIPTION_PROVIDER=whisper` + `WHISPER_BASE_URL` — any server exposing
+  the OpenAI `/v1/audio/transcriptions` contract, e.g.
+  [faster-whisper-server/speaches](https://github.com/speaches-ai/speaches) or
+  whisper.cpp's server; no model weights ship with this app). The local tier
+  keeps audio fully off the network — required for sensitivity-routed content
+  that must never leave the box. Tests override the provider with jest fakes.
 - **Speaker identification**: alongside transcription, audio enqueues a
   diarization job handled by the hosted [pyannoteAI](https://pyannote.ai) API
   (`PYANNOTEAI_API_KEY`; set `SPEAKER_ID_PROVIDER=off` to disable). Speakers
@@ -90,8 +96,12 @@ docker-compose.yml   Postgres + MinIO + Redis + api + web for local dev
   **OpenAI-compatible** `/chat/completions` endpoint works — the default
   targets **DeepSeek** (`deepseek-chat`), the cheapest capable option; leave
   `SUMMARIZATION_API_KEY` empty to disable the step (the UI then just shows the
-  transcript). Detail pages show the summary and transcript in a **tabbed
-  view**, defaulting to the summary once it's ready.
+  transcript). A **local Ollama** server works the same way — Ollama needs no
+  API key, so set `SUMMARIZATION_ENABLED=true` instead and point
+  `SUMMARIZATION_BASE_URL`/`SUMMARIZATION_MODEL` at it (e.g.
+  `http://localhost:11434/v1` / `llama3.1`) for a fully local summarization
+  path. Detail pages show the summary and transcript in a **tabbed view**,
+  defaulting to the summary once it's ready.
 - **Capture metadata travels with the item**: `occurredAt` (when it was
   recorded) plus a free-form `metadata` field (GPS location, recording device,
   file tags) set at ingest time — the envelope is immutable, so metadata is
@@ -116,6 +126,15 @@ ELEVENLABS_API_KEY=... PYANNOTEAI_API_KEY=... docker compose up -d --build
 open http://localhost:8080          # web app (nginx, proxies /api to the api)
 curl http://localhost:3000/api/health
 ```
+
+**Fully local model tier** (no cloud AI at all — see `docker-compose.yml`'s
+commented `whisper`/`ollama` services): uncomment those two services, then set
+`TRANSCRIPTION_PROVIDER=whisper`, `SUMMARIZATION_ENABLED=true`,
+`SUMMARIZATION_BASE_URL=http://ollama:11434/v1`, and `SUMMARIZATION_MODEL` to
+a model you've pulled (`docker compose exec ollama ollama pull llama3.1`), then
+`docker compose up -d --build`. Speaker diarization still needs
+`PYANNOTEAI_API_KEY` today — see ATT-687 for local-only routing across all
+three stages.
 
 **Infra in Docker, api + web from source** (fast iteration):
 
@@ -240,10 +259,14 @@ curl -s localhost:3000/api/v1/inbox
 Backend env: `apps/api/.env.example` (DB, S3/MinIO, Redis, hosted-API keys).
 Key switches: `DATABASE_DRIVER` (postgres|sqlite), `STORAGE_DRIVER`
 (s3|memory), `QUEUE_DRIVER` (bull|inline), `SPEAKER_ID_PROVIDER`
-(pyannoteai|off; `pyannoteai` needs `PYANNOTEAI_API_KEY`), `ELEVENLABS_API_KEY`
-(transcription), `SUMMARIZATION_API_KEY` (enables AI summaries; with
+(pyannoteai|off; `pyannoteai` needs `PYANNOTEAI_API_KEY`),
+`TRANSCRIPTION_PROVIDER` (elevenlabs|whisper; `elevenlabs` needs
+`ELEVENLABS_API_KEY`, `whisper` needs `WHISPER_BASE_URL` pointing at a
+self-hosted Whisper-compatible server — the local-model tier), and
+`SUMMARIZATION_API_KEY` (enables AI summaries; with
 `SUMMARIZATION_BASE_URL`/`SUMMARIZATION_MODEL` pointing at any
-OpenAI-compatible endpoint, DeepSeek by default).
+OpenAI-compatible endpoint, DeepSeek by default — or `SUMMARIZATION_ENABLED=true`
+instead of a key for keyless local endpoints like Ollama).
 
 Authentication env: `AUTH_RP_ID` (WebAuthn relying-party id = the domain the
 web app is served from; default `localhost`), `AUTH_ORIGINS` (comma-separated

@@ -16,15 +16,19 @@ export interface MultipartFilePart {
 
 /**
  * POST a multipart/form-data request and parse the JSON response, over
- * node:https rather than global fetch.
+ * node:https rather than global fetch. Shared by every transcription provider
+ * (hosted ElevenLabs Scribe, self-hosted Whisper-compatible servers, …).
  *
  * Rationale for avoiding fetch: undici (Node's fetch) aborts a request
- * after its 300s `headersTimeout` when no response headers have arrived, but
- * ElevenLabs computes the whole transcription before responding and a long
- * recording can run past five minutes — which would surface as a bare "fetch
- * failed" while the model keeps working. node:http/https has no headers
- * timeout; `timeoutMs` is a socket-inactivity cap, and since ElevenLabs is
- * silent while transcribing that bounds the total wait.
+ * after its 300s `headersTimeout` when no response headers have arrived, but a
+ * transcription backend computes the whole transcript before responding and a
+ * long recording can run past five minutes — which would surface as a bare
+ * "fetch failed" while the model keeps working. node:http/https has no
+ * headers timeout; `timeoutMs` is a socket-inactivity cap, and since these
+ * backends are silent while transcribing that bounds the total wait.
+ *
+ * `providerLabel` is only used to make error messages identify which backend
+ * failed (e.g. "ElevenLabs error 500: …" vs "Whisper error 500: …").
  */
 export function postMultipartForJson<T>(
   url: string,
@@ -32,6 +36,7 @@ export function postMultipartForJson<T>(
   file: MultipartFilePart,
   headers: Record<string, string>,
   timeoutMs: number,
+  providerLabel = 'transcription request',
 ): Promise<T> {
   const boundary = `----plaudern-${randomUUID()}`;
   const body = buildMultipartBody(boundary, fields, file);
@@ -58,24 +63,45 @@ export function postMultipartForJson<T>(
           const text = Buffer.concat(chunks).toString('utf8');
           const status = res.statusCode ?? 0;
           if (status < 200 || status >= 300) {
-            reject(new Error(`ElevenLabs error ${status}: ${text.slice(0, 500)}`));
+            reject(new Error(`${providerLabel} error ${status}: ${text.slice(0, 500)}`));
             return;
           }
           try {
             resolve(JSON.parse(text) as T);
           } catch (err) {
-            reject(new Error(`ElevenLabs returned invalid JSON: ${(err as Error).message}`));
+            reject(
+              new Error(`${providerLabel} returned invalid JSON: ${(err as Error).message}`),
+            );
           }
         });
       },
     );
     req.setTimeout(timeoutMs, () =>
-      req.destroy(new Error(`ElevenLabs request timed out after ${timeoutMs}ms`)),
+      req.destroy(new Error(`${providerLabel} timed out after ${timeoutMs}ms`)),
     );
     req.on('error', reject);
     req.write(body);
     req.end();
   });
+}
+
+/**
+ * Download the audio bytes from a presigned internal storage URL. Shared by
+ * every transcription provider that pulls the recording before sending it to
+ * a backend (hosted ElevenLabs, self-hosted Whisper, …).
+ */
+export async function downloadBytes(url: string, timeoutMs: number): Promise<Buffer> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) {
+      throw new Error(`could not download audio: ${res.status}`);
+    }
+    return Buffer.from(await res.arrayBuffer());
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Assemble the RFC 7578 body: text fields first, then the single file part. */

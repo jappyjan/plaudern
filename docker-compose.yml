@@ -9,6 +9,12 @@
 # Transcription (ElevenLabs Scribe) and diarization (pyannoteAI) run on hosted
 # APIs: set ELEVENLABS_API_KEY and PYANNOTEAI_API_KEY. Without keys the stack
 # still works — those extraction jobs just fail with a clear error.
+#
+# Fully local model tier (no cloud AI at all — see ATT-662/ATT-687): set
+# TRANSCRIPTION_PROVIDER=whisper + WHISPER_BASE_URL, and
+# SUMMARIZATION_ENABLED=true + SUMMARIZATION_BASE_URL pointing at Ollama.
+# Uncomment the `whisper` and `ollama` services below to run both locally
+# alongside this stack.
 services:
   web:
     build:
@@ -70,15 +76,24 @@ services:
       # Calendar feeds: APP_ENCRYPTION_SECRET also encrypts the feed URLs.
       CALENDAR_POLL_INTERVAL_MS: ${CALENDAR_POLL_INTERVAL_MS:-900000}
       # --- AI summarization ---
-      # Empty API key = summarization disabled (UI just shows the transcript).
+      # Empty API key = summarization disabled (UI just shows the transcript),
+      # unless SUMMARIZATION_ENABLED=true (for keyless local endpoints like
+      # Ollama — see the commented `ollama` service below).
       # Defaults target DeepSeek; point BASE_URL/MODEL at any OpenAI-compatible
-      # endpoint (OpenAI, OpenRouter, a local gateway, …).
+      # endpoint (OpenAI, OpenRouter, a local Ollama/llama.cpp gateway, …).
+      SUMMARIZATION_ENABLED: ${SUMMARIZATION_ENABLED:-false}
       SUMMARIZATION_API_KEY: ${SUMMARIZATION_API_KEY:-}
       SUMMARIZATION_BASE_URL: ${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
       SUMMARIZATION_MODEL: ${SUMMARIZATION_MODEL:-deepseek-chat}
-      # --- Transcription (hosted ElevenLabs Scribe API) ---
-      # Audio bytes are pushed to ElevenLabs directly; storage stays private.
+      # --- Transcription ---
+      # elevenlabs = hosted ElevenLabs Scribe API (default, pushes audio bytes
+      #              to ElevenLabs directly; storage stays private)
+      # whisper    = self-hosted Whisper-compatible server (local-model tier,
+      #              see the commented `whisper` service below)
+      TRANSCRIPTION_PROVIDER: ${TRANSCRIPTION_PROVIDER:-elevenlabs}
       ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      WHISPER_BASE_URL: ${WHISPER_BASE_URL:-http://whisper:8000/v1}
+      WHISPER_MODEL: ${WHISPER_MODEL:-Systran/faster-whisper-small}
       # --- Speaker diarization (hosted pyannoteAI API) ---
       # pyannoteai = diarize + match voices via api.pyannote.ai (default)
       # off        = disabled
@@ -153,7 +168,42 @@ services:
       timeout: 5s
       retries: 10
 
+  # --- Local model tier (fully self-hostable, no cloud AI — ATT-662/ATT-687) ---
+  # Uncomment both services below, then set on the `api` service:
+  #   TRANSCRIPTION_PROVIDER=whisper
+  #   SUMMARIZATION_ENABLED=true
+  #   SUMMARIZATION_BASE_URL=http://ollama:11434/v1
+  #   SUMMARIZATION_MODEL=llama3.1   # or whichever model you `ollama pull`
+  # (WHISPER_BASE_URL already defaults to http://whisper:8000/v1 above.)
+
+  # whisper:
+  #   # OpenAI-compatible `/v1/audio/transcriptions` server; no model weights
+  #   # ship with this app or image — it downloads/caches the model itself on
+  #   # first request. See https://github.com/speaches-ai/speaches for GPU
+  #   # variants and more model options.
+  #   image: ghcr.io/speaches-ai/speaches:latest-cpu
+  #   restart: unless-stopped
+  #   environment:
+  #     WHISPER_MODEL: ${WHISPER_MODEL:-Systran/faster-whisper-small}
+  #   ports:
+  #     - '8000:8000'
+  #   volumes:
+  #     - whispermodels:/home/ubuntu/.cache/huggingface
+
+  # ollama:
+  #   # OpenAI-compatible LLM server for local summarization. Pull a model
+  #   # once the container is up: `docker compose exec ollama ollama pull
+  #   # llama3.1` (or any model that fits your hardware).
+  #   image: ollama/ollama:latest
+  #   restart: unless-stopped
+  #   ports:
+  #     - '11434:11434'
+  #   volumes:
+  #     - ollamamodels:/root/.ollama
+
 volumes:
   pgdata:
   miniodata:
   redisdata:
+  # whispermodels:
+  # ollamamodels:

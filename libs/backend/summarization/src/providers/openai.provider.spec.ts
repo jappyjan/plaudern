@@ -1,5 +1,24 @@
-import { buildUserPrompt, parseSummaryResponse, SYSTEM_PROMPT } from './openai.provider';
+import type { ConfigService } from '@nestjs/config';
+import {
+  buildUserPrompt,
+  OpenAiSummarizationProvider,
+  parseSummaryResponse,
+  SYSTEM_PROMPT,
+} from './openai.provider';
 import type { SummarizationInput } from '../summarization.provider';
+
+/** Minimal ConfigService stand-in — the provider only ever calls `.get(key, default)`. */
+function fakeConfig(values: Record<string, string>): ConfigService {
+  return {
+    get: (key: string, defaultValue?: unknown) =>
+      key in values ? values[key] : defaultValue,
+  } as unknown as ConfigService;
+}
+
+const minimalInput: SummarizationInput = {
+  transcript: 'hello',
+  speakers: [],
+};
 
 const baseInput: SummarizationInput = {
   transcript: 'SPEAKER_00: hello there\nSPEAKER_01: hi',
@@ -110,6 +129,84 @@ describe('parseSummaryResponse', () => {
       const out = parseSummaryResponse(JSON.stringify({ ...base, offTopic }));
       expect(out.offTopic).toBeNull();
     }
+  });
+});
+
+describe('OpenAiSummarizationProvider.enabled', () => {
+  it('is disabled with neither an API key nor SUMMARIZATION_ENABLED', () => {
+    expect(new OpenAiSummarizationProvider(fakeConfig({})).enabled).toBe(false);
+  });
+
+  it('is enabled when SUMMARIZATION_API_KEY is set (cloud default)', () => {
+    const provider = new OpenAiSummarizationProvider(
+      fakeConfig({ SUMMARIZATION_API_KEY: 'sk-test' }),
+    );
+    expect(provider.enabled).toBe(true);
+  });
+
+  it('is enabled via SUMMARIZATION_ENABLED=true even without a key (keyless local servers e.g. Ollama)', () => {
+    const provider = new OpenAiSummarizationProvider(
+      fakeConfig({ SUMMARIZATION_ENABLED: 'true' }),
+    );
+    expect(provider.enabled).toBe(true);
+  });
+
+  it('throws a descriptive error from summarize() when disabled', async () => {
+    const provider = new OpenAiSummarizationProvider(fakeConfig({}));
+    await expect(provider.summarize(minimalInput)).rejects.toThrow(/SUMMARIZATION_ENABLED/);
+  });
+});
+
+describe('OpenAiSummarizationProvider request behavior', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('omits the Authorization header when no API key is configured (e.g. Ollama)', async () => {
+    const fetchMock = jest.fn(async (_url: string, _init?: RequestInit) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        model: 'llama3.1',
+        choices: [{ message: { content: JSON.stringify({ title: 'T', layout: 'note', markdown: 'body' }) } }],
+      }),
+      text: async () => '',
+    }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const provider = new OpenAiSummarizationProvider(
+      fakeConfig({
+        SUMMARIZATION_ENABLED: 'true',
+        SUMMARIZATION_BASE_URL: 'http://localhost:11434/v1',
+        SUMMARIZATION_MODEL: 'llama3.1',
+      }),
+    );
+    const result = await provider.summarize(minimalInput);
+
+    expect(result.markdown).toBe('body');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://localhost:11434/v1/chat/completions');
+    expect((init?.headers as Record<string, string>).authorization).toBeUndefined();
+  });
+
+  it('sends the Authorization header when an API key is configured', async () => {
+    const fetchMock = jest.fn(async (_url: string, _init?: RequestInit) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        model: 'deepseek-chat',
+        choices: [{ message: { content: JSON.stringify({ title: 'T', layout: 'note', markdown: 'body' }) } }],
+      }),
+      text: async () => '',
+    }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const provider = new OpenAiSummarizationProvider(
+      fakeConfig({ SUMMARIZATION_API_KEY: 'sk-test' }),
+    );
+    await provider.summarize(minimalInput);
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect((init?.headers as Record<string, string>).authorization).toBe('Bearer sk-test');
   });
 });
 
