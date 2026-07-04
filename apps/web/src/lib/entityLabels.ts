@@ -62,3 +62,32 @@ export const RELATION_TYPE_LABEL: Record<RelationType, string> = {
   part_of: 'Part of',
   owns: 'Owns',
 };
+
+/** All relation types, in the order they should appear in filters. */
+export const RELATION_TYPES: RelationType[] = [
+  'works_at',
+  'located_in',
+  'involved_in',
+  'discussed_with',
+  'promised_to',
+  'related_to',
+  'part_of',
+  'owns',
+];
+
+/**
+ * Concrete hex fills per entity type for the SVG graph canvas — HeroUI's chip
+ * colours are semantic CSS tokens that an SVG `fill` can't resolve, so the
+ * graph needs literal colours. Chosen mid-saturation so they read on both the
+ * light and the dark canvas background.
+ */
+export const ENTITY_TYPE_HEX: Record<EntityType, string> = {
+  person: '#3b82f6',
+  organization: '#a855f7',
+  place: '#22c55e',
+  date: '#64748b',
+  amount: '#f59e0b',
+  product: '#8b5cf6',
+  medication: '#ef4444',
+  document_reference: '#0ea5e9',
+};

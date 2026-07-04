@@ -4,8 +4,13 @@ import {
   Entity,
   Index,
   PrimaryGeneratedColumn,
+  UpdateDateColumn,
 } from 'typeorm';
-import type { ExtractionKind, ExtractionRunStatus } from '@plaudern/contracts';
+import type {
+  ExtractionKind,
+  ExtractionRunStatus,
+  ExtractionRunTrigger,
+} from '@plaudern/contracts';
 
 /**
  * A backfill run: "re-run `kind@version` over past items" (VISION §8). The run
@@ -19,11 +24,19 @@ export class ExtractionRunEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ type: 'uuid' })
-  userId!: string;
+  /**
+   * Owner of a user-triggered run. NULL for `trigger: 'startup'` sweeps, which
+   * are system-wide (they scan every user's items on API boot).
+   */
+  @Column({ type: 'uuid', nullable: true })
+  userId!: string | null;
 
   @Column({ type: 'varchar' })
   kind!: ExtractionKind;
+
+  /** How this run was started: an explicit request, or the automatic boot sweep. */
+  @Column({ type: 'varchar', default: 'manual' })
+  trigger!: ExtractionRunTrigger;
 
   /** Extractor version this run targets (the registered version at start time). */
   @Column({ type: 'int' })
@@ -60,6 +73,15 @@ export class ExtractionRunEntity {
 
   @CreateDateColumn()
   createdAt!: Date;
+
+  /**
+   * Touched by TypeORM on every save/update — the per-batch counter update in
+   * the run loop doubles as a liveness heartbeat. A `running` startup run whose
+   * updatedAt is old is treated as stale (its process died mid-sweep) and is
+   * superseded on the next boot instead of wedging the kind forever.
+   */
+  @UpdateDateColumn()
+  updatedAt!: Date;
 
   @Column({ type: 'varchar', nullable: true })
   completedAt!: string | null;
