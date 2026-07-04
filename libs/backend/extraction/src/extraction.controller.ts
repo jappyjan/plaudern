@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import {
   extractionBackfillRequestSchema,
   type ExtractionGraphResponse,
@@ -39,8 +39,12 @@ export class ExtractionController {
   }
 
   @Get('backfills')
-  async listBackfills(@CurrentUser() user: AuthenticatedUser): Promise<ExtractionRunListResponse> {
-    return { runs: await this.runs.listRuns(user.id) };
+  async listBackfills(
+    @CurrentUser() user: AuthenticatedUser,
+    /** `?includeSystem=true` also lists the automatic startup sweeps (userId null). */
+    @Query('includeSystem') includeSystem?: string,
+  ): Promise<ExtractionRunListResponse> {
+    return { runs: await this.runs.listRuns(user.id, includeSystem === 'true') };
   }
 
   @Get('backfills/:id')

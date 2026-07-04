@@ -1,7 +1,11 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import type { ExtractionBackfillRequest, ExtractionRunDto } from '@plaudern/contracts';
+import { IsNull, Repository } from 'typeorm';
+import type {
+  ExtractionBackfillRequest,
+  ExtractionKind,
+  ExtractionRunDto,
+} from '@plaudern/contracts';
 import type { Extractor } from '@plaudern/inbox';
 import {
   ExtractionRunEntity,
@@ -13,6 +17,18 @@ import { evaluateReadiness, isActive, latestOfKind } from './readiness';
 
 /** Items are loaded (with relations) in slices of this size. */
 const BATCH_SIZE = 25;
+
+/**
+ * A `running` startup run whose heartbeat (updatedAt, touched by the run
+ * loop's per-batch counter update) is older than this is considered stale:
+ * its process died mid-sweep (SIGKILL / OOM / redeploy) — a live sweep
+ * refreshes the row at least once per batch. Stale runs are marked failed and
+ * superseded by the next boot's sweep; without this, one crashed sweep would
+ * block its kind on every future boot. Generous enough that a slow batch
+ * (e.g. inline-queue local dev, where enqueue processes synchronously) is not
+ * mistaken for a crash.
+ */
+export const STARTUP_RUN_STALE_MS = 15 * 60 * 1000;
 
 /**
  * Backfill runs: "re-run `kind@version` over past items" (VISION §8). A run
@@ -54,6 +70,7 @@ export class ExtractionRunsService {
       this.runs.create({
         userId,
         kind: req.kind,
+        trigger: 'manual',
         targetVersion: extractor.version,
         force: req.force,
         occurredFrom: req.occurredFrom ?? null,
@@ -70,15 +87,98 @@ export class ExtractionRunsService {
     return toRunDto(run);
   }
 
+  /**
+   * Start a system-wide `startup` backfill for one kind: the automatic
+   * "catch missing/failed steps up on every boot" sweep (see
+   * StartupBackfillService). Unlike {@link startBackfill} the run is NOT
+   * scoped to a user (userId = null) — it walks every user's items, enqueuing
+   * a fresh attempt wherever the step is missing or the latest attempt failed
+   * / predates the current extractor version.
+   *
+   * Idempotency: if a `startup` run for this kind is still `running` AND its
+   * heartbeat is fresh (another replica's live sweep), no new run is started —
+   * that run is returned instead. A `running` run whose heartbeat is older
+   * than {@link STARTUP_RUN_STALE_MS} is a leftover of a process that died
+   * mid-sweep; it is marked failed and a fresh run is started, so a crash or
+   * hard redeploy never wedges the kind. Returns null when the kind is unknown
+   * or its extractor is disabled on this server.
+   */
+  async startStartupBackfill(kind: ExtractionKind): Promise<ExtractionRunDto | null> {
+    const extractor = this.graph.get(kind);
+    if (!extractor || !extractor.enabled()) return null;
+
+    // Skip-if-running with a staleness lease: a live sweep (this or another
+    // replica) heartbeats updatedAt per batch; only such a run blocks a new
+    // sweep. Anything older is a crash leftover and gets superseded.
+    const openRuns = await this.runs.find({
+      where: { kind, trigger: 'startup', status: 'running' },
+      order: { createdAt: 'DESC' },
+    });
+    const now = Date.now();
+    const live = openRuns.find(
+      (run) => now - new Date(run.updatedAt).getTime() < STARTUP_RUN_STALE_MS,
+    );
+    if (live) {
+      this.logger.log(
+        `startup backfill '${kind}': a previous run (${live.id}) is still running — skipping`,
+      );
+      return toRunDto(live);
+    }
+    for (const stale of openRuns) {
+      // Guard on status so we never clobber a run that finished in between.
+      await this.runs.update(
+        { id: stale.id, status: 'running' },
+        {
+          status: 'failed',
+          error: 'stale: no heartbeat — the process died mid-sweep; superseded by a reboot sweep',
+          completedAt: new Date().toISOString(),
+        },
+      );
+      this.logger.warn(
+        `startup backfill '${kind}': marked stale run ${stale.id} as failed (superseded by reboot)`,
+      );
+    }
+
+    const run = await this.runs.save(
+      this.runs.create({
+        userId: null,
+        kind,
+        trigger: 'startup',
+        targetVersion: extractor.version,
+        force: false,
+        occurredFrom: null,
+        occurredTo: null,
+        status: 'running',
+      }),
+    );
+
+    void this.execute(run.id).catch((err) => {
+      this.logger.error(`startup backfill run ${run.id} crashed: ${(err as Error).message}`);
+    });
+
+    return toRunDto(run);
+  }
+
   async getRun(userId: string, id: string): Promise<ExtractionRunDto> {
-    const run = await this.runs.findOne({ where: { id, userId } });
+    // A user sees their own runs plus the system-wide startup sweeps.
+    const run = await this.runs.findOne({
+      where: [
+        { id, userId },
+        { id, userId: IsNull() },
+      ],
+    });
     if (!run) throw new NotFoundException('extraction run not found');
     return toRunDto(run);
   }
 
-  async listRuns(userId: string): Promise<ExtractionRunDto[]> {
+  /**
+   * The user's own runs; system-wide startup sweeps (userId null) only when
+   * `includeSystem` is set — otherwise 7 kinds × a few reboots would crowd the
+   * take-50 window and push the user's own manual runs out of the listing.
+   */
+  async listRuns(userId: string, includeSystem = false): Promise<ExtractionRunDto[]> {
     const rows = await this.runs.find({
-      where: { userId },
+      where: includeSystem ? [{ userId }, { userId: IsNull() }] : { userId },
       order: { createdAt: 'DESC' },
       take: 50,
     });
@@ -174,7 +274,9 @@ export class ExtractionRunsService {
       .createQueryBuilder('item')
       .leftJoinAndSelect('item.source', 'source')
       .leftJoinAndSelect('item.extractions', 'extractions')
-      .where('item.userId = :userId', { userId: run.userId })
+      // Manual runs are user-scoped; the system-wide startup sweep (userId
+      // null) walks every user's items.
+      .where(run.userId ? 'item.userId = :userId' : '1 = 1', { userId: run.userId })
       .andWhere((sub) => {
         const hidden = sub
           .subQuery()
@@ -218,6 +320,7 @@ function toRunDto(run: ExtractionRunEntity): ExtractionRunDto {
   return {
     id: run.id,
     kind: run.kind,
+    trigger: run.trigger,
     targetVersion: run.targetVersion,
     force: run.force,
     occurredFrom: run.occurredFrom,
