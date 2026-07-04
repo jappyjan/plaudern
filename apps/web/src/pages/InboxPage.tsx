@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Spinner } from '@heroui/react';
 import type { InboxItemDto } from '@plaudern/contracts';
-import { useNavigate } from 'react-router-dom';
 import { getItem, listInbox, mergeItems } from '../lib/api';
 import { useInboxEvents } from '../hooks/useInboxEvents';
 import { InboxItemCard } from '../components/InboxItemCard';
@@ -20,7 +19,6 @@ function isMergeable(item: InboxItemDto): boolean {
 }
 
 export function InboxPage() {
-  const navigate = useNavigate();
   const [items, setItems] = useState<InboxItemDto[] | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -95,10 +93,12 @@ export function InboxPage() {
     setMerging(true);
     setMergeError(null);
     try {
-      const merged = await mergeItems([...selected]);
+      await mergeItems([...selected]);
       exitSelectMode();
+      // Stay on the inbox: the new merged item appears here with a "merging"
+      // progress chip while the background audio merge runs, and the selected
+      // sources are hidden. SSE keeps it live until the merge completes.
       await refresh();
-      navigate(`/items/${merged.id}`);
     } catch (cause) {
       setMergeError(cause instanceof Error ? cause.message : String(cause));
     } finally {
