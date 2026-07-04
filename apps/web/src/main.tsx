@@ -17,7 +17,12 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
-      <HeroUIProvider>
+      {/* disableAnimation (global): on iOS standalone PWAs framer-motion's
+          AnimatePresence drops opens on quick taps, leaving modals/accordions
+          apparently dead (heroui-inc/heroui#3222). A per-component fix was
+          tried before and kept getting lost as new modals were added, so it
+          is disabled app-wide on purpose. */}
+      <HeroUIProvider disableAnimation>
         <AuthProvider>
           <App />
         </AuthProvider>
