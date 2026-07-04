@@ -45,6 +45,23 @@ describe('parseTasksResponse', () => {
   it('throws only when the reply is not JSON at all', () => {
     expect(() => parseTasksResponse('totally not json')).toThrow(/not valid JSON/);
   });
+
+  it('caps a runaway reply at 50 tasks', () => {
+    const many = Array.from({ length: 120 }, (_, i) => ({ title: `Task ${i}` }));
+    const tasks = parseTasksResponse(JSON.stringify({ tasks: many }));
+    expect(tasks).toHaveLength(50);
+  });
+
+  it('truncates overlong titles and quotes instead of dropping the task', () => {
+    const tasks = parseTasksResponse(
+      JSON.stringify({
+        tasks: [{ title: 'x'.repeat(500), quote: 'q'.repeat(5000) }],
+      }),
+    );
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].title).toHaveLength(300);
+    expect(tasks[0].quote).toHaveLength(1000);
+  });
 });
 
 describe('buildUserPrompt', () => {

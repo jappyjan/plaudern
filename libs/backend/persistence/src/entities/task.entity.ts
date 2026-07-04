@@ -41,6 +41,12 @@ const nullableVectorTransformer = {
 @Entity({ name: 'tasks' })
 @Index(['userId'])
 @Index(['userId', 'status'])
+// At most one OPEN task per (user, normalized title) — the concurrency guard
+// behind the exact-title dedupe (a losing concurrent writer re-reads the
+// winner). Partial so a completed/dismissed task frees the title for a fresh
+// task. Postgres and sqlite both support partial indexes, so the sqlite test
+// DB (synchronize: true) enforces the same constraint the migration creates.
+@Index(['userId', 'normalizedTitle'], { unique: true, where: `status = 'open'` })
 export class TaskEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

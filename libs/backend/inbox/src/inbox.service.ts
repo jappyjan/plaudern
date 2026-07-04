@@ -292,7 +292,26 @@ export class InboxService {
       await em.getRepository(EntityRelationEntity).delete({ inboxItemId: item.id });
       await em.getRepository(EntityMentionEntity).delete({ inboxItemId: item.id });
       await em.getRepository(ItemTopicEntity).delete({ inboxItemId: item.id });
+      // Tasks: remember which tasks this item cited, drop the citations, then
+      // hard-delete OPEN tasks left with no citations at all — an open task no
+      // recording supports any more is a ghost. Completed/dismissed tasks are
+      // kept: the user explicitly actioned those, that history survives the
+      // recording.
+      const citedTasks = await em
+        .getRepository(TaskCitationEntity)
+        .find({ where: { inboxItemId: item.id }, select: { taskId: true } });
+      const citedTaskIds = [...new Set(citedTasks.map((c) => c.taskId))];
       await em.getRepository(TaskCitationEntity).delete({ inboxItemId: item.id });
+      if (citedTaskIds.length > 0) {
+        const remaining = await em
+          .getRepository(TaskCitationEntity)
+          .find({ where: { taskId: In(citedTaskIds) }, select: { taskId: true } });
+        const stillCited = new Set(remaining.map((c) => c.taskId));
+        const orphaned = citedTaskIds.filter((id) => !stillCited.has(id));
+        if (orphaned.length > 0) {
+          await em.getRepository(TaskEntity).delete({ id: In(orphaned), status: 'open' });
+        }
+      }
       await em.getRepository(ExtractedPayloadEntity).delete({ inboxItemId: item.id });
       await em.getRepository(SourcePayloadEntity).delete({ inboxItemId: item.id });
       await em.getRepository(InboxItemEntity).delete({ id: item.id });

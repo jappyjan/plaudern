@@ -134,6 +134,11 @@ export function buildUserPrompt(input: TaskExtractionInput): string {
  * surrounding prose, drop malformed entries rather than throwing, and always
  * return a (possibly empty) array.
  */
+/** Bounds on untrusted LLM output — matched to the extractedTaskSchema limits. */
+export const MAX_PARSED_TASKS = 50;
+const MAX_TITLE_CHARS = 300;
+const MAX_QUOTE_CHARS = 1000;
+
 export function parseTasksResponse(content: string): ExtractedTask[] {
   const json = extractJsonObject(content);
   const rawList = Array.isArray((json as { tasks?: unknown }).tasks)
@@ -141,24 +146,35 @@ export function parseTasksResponse(content: string): ExtractedTask[] {
     : [];
   const tasks: ExtractedTask[] = [];
   for (const raw of rawList) {
+    // Cap the list: a runaway model must not flood the pipeline (the registry
+    // enforces the same bound defensively for non-default providers).
+    if (tasks.length >= MAX_PARSED_TASKS) break;
     if (!raw || typeof raw !== 'object') continue;
     const candidate = raw as Record<string, unknown>;
-    // Coerce loose shapes (nullable strings) before validating.
+    // Coerce loose shapes (nullable strings) and truncate overlong fields
+    // before validating, so a verbose model yields a bounded task rather than
+    // a dropped one.
     const parsed = extractedTaskSchema.safeParse({
-      title: typeof candidate.title === 'string' ? candidate.title.trim() : candidate.title,
+      title:
+        typeof candidate.title === 'string'
+          ? candidate.title.trim().slice(0, MAX_TITLE_CHARS)
+          : candidate.title,
       dueDate: normalizeDate(candidate.dueDate),
-      quote: typeof candidate.quote === 'string' ? candidate.quote.trim() : null,
+      quote:
+        typeof candidate.quote === 'string'
+          ? candidate.quote.trim().slice(0, MAX_QUOTE_CHARS)
+          : null,
     });
     if (parsed.success && parsed.data.title.length > 0) tasks.push(parsed.data);
   }
   return tasks;
 }
 
-/** Keep only plausible ISO date strings; everything else becomes null. */
+/** Keep only plausible ISO date strings (bounded); everything else becomes null. */
 function normalizeDate(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
-  return /^\d{4}-\d{2}-\d{2}/.test(trimmed) ? trimmed : null;
+  return /^\d{4}-\d{2}-\d{2}/.test(trimmed) ? trimmed.slice(0, 40) : null;
 }
 
 /**

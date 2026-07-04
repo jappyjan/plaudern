@@ -242,6 +242,157 @@ describe('TasksProcessor + semantic dedupe', () => {
     expect(dentist?.embedding).toBeNull();
   });
 
+  it('recovers from a concurrent-insert unique violation by citing the winner', async () => {
+    // Simulate losing the race: another worker inserts the same open task
+    // between our exact-match read and our insert. We force the read to miss
+    // (findOne -> null once) while the winner row actually exists, so the
+    // insert trips the partial unique index (userId, normalizedTitle, open)
+    // and the recovery path must re-read and cite the winner.
+    const winner = await tasksRepo().save(
+      tasksRepo().create({
+        userId: USER,
+        title: 'Book the dentist',
+        normalizedTitle: 'book the dentist',
+        status: 'open',
+        dueDate: null,
+        embedding: null,
+        embeddingModel: null,
+        embeddingDimensions: null,
+      }),
+    );
+    const repo = tasksRepo();
+    const findOneSpy = jest.spyOn(repo, 'findOne').mockResolvedValueOnce(null);
+
+    const job = await seedJob('I need to book the dentist.');
+    await buildProcessor(
+      fakeProvider(() => ({
+        tasks: [{ title: 'Book the dentist', dueDate: null, quote: 'I need to book the dentist.' }],
+        model: 'm',
+      })),
+      false,
+    ).processor.process({ extractionId: job.extractionId, inboxItemId: job.inboxItemId });
+    findOneSpy.mockRestore();
+
+    // No duplicate row; the citation landed on the pre-existing winner.
+    expect(await tasksRepo().count()).toBe(1);
+    const citations = await citationsRepo().find();
+    expect(citations).toHaveLength(1);
+    expect(citations[0].taskId).toBe(winner.id);
+  });
+
+  it('enforces one open task per (user, normalized title) at the schema level', async () => {
+    await tasksRepo().save(
+      tasksRepo().create({
+        userId: USER,
+        title: 'Book the dentist',
+        normalizedTitle: 'book the dentist',
+        status: 'open',
+        dueDate: null,
+        embedding: null,
+        embeddingModel: null,
+        embeddingDimensions: null,
+      }),
+    );
+    // A duplicate OPEN row is rejected by the partial unique index...
+    await expect(
+      tasksRepo().insert({
+        userId: USER,
+        title: 'book the dentist',
+        normalizedTitle: 'book the dentist',
+        status: 'open',
+        dueDate: null,
+        embedding: null,
+        embeddingModel: null,
+        embeddingDimensions: null,
+      }),
+    ).rejects.toThrow(/UNIQUE|unique/);
+    // ...but a completed row with the same title is fine (partial index).
+    await expect(
+      tasksRepo().insert({
+        userId: USER,
+        title: 'book the dentist',
+        normalizedTitle: 'book the dentist',
+        status: 'completed',
+        dueDate: null,
+        embedding: null,
+        embeddingModel: null,
+        embeddingDimensions: null,
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it('hides superseded open tasks (zero live citations) from list() but keeps them as rows', async () => {
+    // First run cites dentist + passport.
+    const job = await seedJob('Book the dentist and renew my passport.');
+    await buildProcessor(
+      fakeProvider(() => ({
+        tasks: [
+          { title: 'Book the dentist', dueDate: null, quote: null },
+          { title: 'Renew passport', dueDate: null, quote: null },
+        ],
+        model: 'm',
+      })),
+      false,
+    ).processor.process({ extractionId: job.extractionId, inboxItemId: job.inboxItemId });
+
+    // A re-run of the same item finds only the dentist — the passport task's
+    // citations are superseded (latest succeeded extraction wins).
+    const secondExtractionId = await createExtraction(
+      job.inboxItemId,
+      'tasks',
+      'queued',
+      new Date('2026-07-01T11:00:00Z'),
+    );
+    const { processor, registry } = buildProcessor(
+      fakeProvider(() => ({
+        tasks: [{ title: 'Book the dentist', dueDate: null, quote: null }],
+        model: 'm',
+      })),
+      false,
+    );
+    await processor.process({ extractionId: secondExtractionId, inboxItemId: job.inboxItemId });
+
+    const open = await registry.list(USER, 'open');
+    expect(open.map((t) => t.title)).toEqual(['Book the dentist']);
+    // The ghost row survives as a future dedupe target — only the list hides it.
+    expect(await tasksRepo().count()).toBe(2);
+  });
+
+  it('rejects reopening a task when a fresh open task with the same title exists', async () => {
+    const make = (status: 'open' | 'dismissed') =>
+      tasksRepo().save(
+        tasksRepo().create({
+          userId: USER,
+          title: 'Book the dentist',
+          normalizedTitle: 'book the dentist',
+          status,
+          dueDate: null,
+          embedding: null,
+          embeddingModel: null,
+          embeddingDimensions: null,
+        }),
+      );
+    const dismissed = await make('dismissed');
+    await make('open');
+    const { registry } = buildProcessor(fakeProvider(() => ({ tasks: [] })), false);
+    await expect(registry.updateStatus(USER, dismissed.id, 'open')).rejects.toThrow(
+      /already exists/,
+    );
+  });
+
+  it('caps a runaway extraction at 50 ingested tasks', async () => {
+    const job = await seedJob('So many things to do.');
+    const many = Array.from({ length: 60 }, (_, i) => ({
+      title: `Unique task number ${i}`,
+      dueDate: null,
+      quote: null,
+    }));
+    await buildProcessor(fakeProvider(() => ({ tasks: many, model: 'm' })), false)
+      .processor.process({ extractionId: job.extractionId, inboxItemId: job.inboxItemId });
+    expect(await tasksRepo().count()).toBe(50);
+    expect(await citationsRepo().count()).toBe(50);
+  });
+
   it('exposes the item read model, deep-links the quote, and updates status', async () => {
     const inboxItemId = await createItem();
     await dataSource.getRepository(ExtractedPayloadEntity).save({

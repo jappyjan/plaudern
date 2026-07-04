@@ -64,6 +64,15 @@ export class CreateTasks1720000000024 implements MigrationInterface {
     await queryRunner.query(
       `CREATE INDEX "IDX_tasks_user_status" ON "tasks" ("userId", "status")`,
     );
+    // Concurrency guard for the dedupe (the bull queue runs 2 workers, and
+    // multiple API instances may process items in parallel): at most ONE OPEN
+    // task per (user, normalized title). A losing writer gets a unique
+    // violation and re-reads the winner instead of creating a duplicate.
+    // Partial (open only) so completing/dismissing a task frees the title for
+    // a future fresh task.
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX "IDX_tasks_user_open_title" ON "tasks" ("userId", "normalizedTitle") WHERE status = 'open'`,
+    );
     // Approximate nearest-neighbour index for cosine distance (`<=>`) — the
     // semantic-dedupe query. Null embeddings are skipped by the index.
     await queryRunner.query(

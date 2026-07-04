@@ -27,12 +27,12 @@ export type TaskStatus = z.infer<typeof taskStatusSchema>;
  * `quote` is the exact sentence it was inferred from, used to build a citation.
  */
 export const extractedTaskSchema = z.object({
-  /** Short imperative phrasing of the intention. */
-  title: z.string().min(1),
+  /** Short imperative phrasing of the intention. Bounded — LLM output is untrusted. */
+  title: z.string().min(1).max(300),
   /** ISO-8601 date the task is due, when the recording implies one; else null. */
-  dueDate: z.string().nullish(),
+  dueDate: z.string().max(40).nullish(),
   /** The source sentence the task was inferred from (for the citation). */
-  quote: z.string().nullish(),
+  quote: z.string().max(1000).nullish(),
 });
 export type ExtractedTask = z.infer<typeof extractedTaskSchema>;
 

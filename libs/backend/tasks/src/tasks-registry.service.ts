@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -27,6 +33,12 @@ export const TASK_DEDUPE_EMBEDDING_PROVIDER = Symbol('TASK_DEDUPE_EMBEDDING_PROV
 
 /** Default cosine-similarity cutoff above which two task titles are "the same". */
 const DEFAULT_DEDUPE_THRESHOLD = 0.85;
+
+/**
+ * Upper bound on candidate tasks ingested per extraction — a defensive cap on
+ * unbounded LLM output (a hallucinating model must not flood the task list).
+ */
+export const MAX_TASKS_PER_EXTRACTION = 50;
 
 /** A resolved candidate task ready to be deduped into the list. */
 export interface TaskCandidate {
@@ -85,10 +97,16 @@ export class TasksRegistryService {
     extractionId: string,
     candidates: TaskCandidate[],
   ): Promise<number> {
-    const cleaned = candidates
+    let cleaned = candidates
       .map((c) => ({ ...c, title: c.title.trim() }))
       .filter((c) => c.title.length > 0);
     if (cleaned.length === 0) return 0;
+    if (cleaned.length > MAX_TASKS_PER_EXTRACTION) {
+      this.logger.warn(
+        `extraction ${extractionId} produced ${cleaned.length} candidate tasks; truncating to ${MAX_TASKS_PER_EXTRACTION}`,
+      );
+      cleaned = cleaned.slice(0, MAX_TASKS_PER_EXTRACTION);
+    }
 
     // Embed all titles up front (one request). If embeddings are unconfigured or
     // the request fails, every vector stays null and we dedupe on text alone.
@@ -131,19 +149,31 @@ export class TasksRegistryService {
     }
 
     // 3. No match — a genuinely new task.
-    const created = await this.tasks.save(
-      this.tasks.create({
-        userId,
-        title: candidate.title,
-        normalizedTitle,
-        status: 'open',
-        dueDate: candidate.dueDate,
-        embedding: vector,
-        embeddingModel: vector ? model : null,
-        embeddingDimensions: vector ? vector.length : null,
-      }),
-    );
-    return created.id;
+    try {
+      const created = await this.tasks.save(
+        this.tasks.create({
+          userId,
+          title: candidate.title,
+          normalizedTitle,
+          status: 'open',
+          dueDate: candidate.dueDate,
+          embedding: vector,
+          embeddingModel: vector ? model : null,
+          embeddingDimensions: vector ? vector.length : null,
+        }),
+      );
+      return created.id;
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
+      // Lost a race on the partial unique index (userId, normalizedTitle where
+      // status='open') — another worker created the same open task between our
+      // read and this insert. Re-read and cite the winner instead.
+      const winner = await this.tasks.findOne({
+        where: { userId, status: 'open', normalizedTitle },
+      });
+      if (!winner) throw new Error('failed to upsert task after unique violation');
+      return winner.id;
+    }
   }
 
   /** The user's OPEN task most similar to `vector`, or null. */
@@ -217,7 +247,14 @@ export class TasksRegistryService {
 
   // ---- Read models & mutations ----
 
-  /** The user's tasks, optionally filtered by status, newest activity first. */
+  /**
+   * The user's tasks, optionally filtered by status, newest activity first.
+   * OPEN tasks with zero live citations are hidden: they are ghosts a re-run
+   * with fewer tasks (or an item delete) left behind, and the recordings no
+   * longer support them. The rows are kept (not deleted) so a later mention
+   * can still dedupe onto them; completed/dismissed tasks stay visible either
+   * way — the user explicitly actioned those.
+   */
   async list(userId: string, status?: TaskStatus): Promise<TaskDto[]> {
     const rows = await this.tasks.find({
       where: status ? { userId, status } : { userId },
@@ -226,6 +263,7 @@ export class TasksRegistryService {
     const current = await this.currentCitations(rows.map((r) => r.id));
     return rows
       .map((row) => this.toDto(row, current.get(row.id) ?? []))
+      .filter((dto) => dto.status !== 'open' || dto.citationCount > 0)
       .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
   }
 
@@ -234,7 +272,15 @@ export class TasksRegistryService {
     const row = await this.tasks.findOne({ where: { id, userId } });
     if (!row) throw new NotFoundException('task not found');
     row.status = status;
-    const saved = await this.tasks.save(row);
+    let saved: TaskEntity;
+    try {
+      saved = await this.tasks.save(row);
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
+      // Reopening collided with the one-open-task-per-title guard: a fresh open
+      // task with the same title was created after this one was closed.
+      throw new ConflictException('an open task with the same title already exists');
+    }
     const current = (await this.currentCitations([id])).get(id) ?? [];
     return this.toDto(saved, current);
   }
@@ -346,6 +392,24 @@ export function normalizeTitle(title: string): string {
     .replace(/\s+/g, ' ')
     .replace(/[.!?;:,]+$/g, '')
     .trim();
+}
+
+/**
+ * Whether a save failed on a unique index, across the drivers we run on:
+ * Postgres surfaces SQLSTATE 23505 (unique_violation), better-sqlite3 a
+ * SQLITE_CONSTRAINT* code / "UNIQUE constraint failed" message. Anything else
+ * (connection loss, bad SQL, …) is a real error and must propagate. Mirrors
+ * the entity-registry helper.
+ */
+export function isUniqueViolation(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const driverError = (err as { driverError?: unknown }).driverError ?? err;
+  if (!driverError || typeof driverError !== 'object') return false;
+  const code = (driverError as { code?: unknown }).code;
+  if (code === '23505') return true;
+  if (typeof code === 'string' && code.startsWith('SQLITE_CONSTRAINT')) return true;
+  const message = (driverError as { message?: unknown }).message;
+  return typeof message === 'string' && message.includes('UNIQUE constraint failed');
 }
 
 function cosineSimilarity(a: number[], b: number[]): number {
