@@ -25,7 +25,13 @@ export class EntitiesController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues[0]?.message ?? 'invalid query');
     }
-    return { entities: await this.registry.list(user.id, parsed.data.type) };
+    return {
+      entities: await this.registry.list(
+        user.id,
+        parsed.data.type,
+        parsed.data.includeUnreferenced,
+      ),
+    };
   }
 
   @Get(':id')

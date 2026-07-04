@@ -9,7 +9,11 @@ import {
   VoiceProfileEntity,
 } from '@plaudern/persistence';
 import type { ExtractedEntity } from '@plaudern/contracts';
-import { EntitiesRegistryService, normalize } from './entities-registry.service';
+import {
+  EntitiesRegistryService,
+  isUniqueViolation,
+  normalize,
+} from './entities-registry.service';
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
 
@@ -17,6 +21,25 @@ describe('normalize', () => {
   it('lowercases and collapses whitespace', () => {
     expect(normalize('  Angela   Merkel ')).toBe('angela merkel');
     expect(normalize('ACME')).toBe('acme');
+  });
+});
+
+describe('isUniqueViolation', () => {
+  it('recognizes a Postgres unique_violation (SQLSTATE 23505)', () => {
+    expect(isUniqueViolation({ driverError: { code: '23505' } })).toBe(true);
+  });
+
+  it('recognizes better-sqlite3 constraint errors', () => {
+    expect(isUniqueViolation({ code: 'SQLITE_CONSTRAINT_UNIQUE' })).toBe(true);
+    expect(
+      isUniqueViolation({ message: 'UNIQUE constraint failed: entities.userId' }),
+    ).toBe(true);
+  });
+
+  it('rejects unrelated errors so they propagate', () => {
+    expect(isUniqueViolation(new Error('connection lost'))).toBe(false);
+    expect(isUniqueViolation({ driverError: { code: '42P01' } })).toBe(false);
+    expect(isUniqueViolation(undefined)).toBe(false);
   });
 });
 
@@ -143,7 +166,10 @@ describe('EntitiesRegistryService', () => {
     await service.ingest(USER, item, older, [{ type: 'person', name: 'Old Name', mentions: [] }]);
     await service.ingest(USER, item, newer, [{ type: 'person', name: 'New Name', mentions: [] }]);
 
-    const list = await service.list(USER);
+    // The default list hides the superseded ghost row entirely.
+    expect((await service.list(USER)).map((e) => e.canonicalName)).toEqual(['New Name']);
+
+    const list = await service.list(USER, undefined, true);
     const byName = new Map(list.map((e) => [e.canonicalName, e]));
     // Both registry rows persist (mutable registry), but only the latest
     // extraction's mentions count.
@@ -172,6 +198,21 @@ describe('EntitiesRegistryService', () => {
     const detail = await service.detail(USER, entity.id);
     expect(detail.mentions).toHaveLength(1);
     expect(detail.mentions[0]).toMatchObject({ inboxItemId: item, surfaceForm: 'Berlin' });
+  });
+
+  it('records the observed surface form on the mention, not the canonical name', async () => {
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+    await service.ingest(USER, item, ext, [
+      { type: 'person', name: 'Angela Merkel', mentions: ['Frau Merkel', 'Angela'] },
+      { type: 'organization', name: 'CDU', mentions: [] }, // falls back to the name
+    ]);
+
+    const list = await service.list(USER);
+    const person = await service.detail(USER, list.find((e) => e.type === 'person')!.id);
+    expect(person.mentions[0].surfaceForm).toBe('Frau Merkel');
+    const org = await service.detail(USER, list.find((e) => e.type === 'organization')!.id);
+    expect(org.mentions[0].surfaceForm).toBe('CDU');
   });
 
   it('is idempotent when the same extraction ingests twice', async () => {
