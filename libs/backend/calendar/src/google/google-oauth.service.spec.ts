@@ -23,20 +23,20 @@ describe('GoogleOAuthService', () => {
 
   it('round-trips: auth-url state -> callback -> pending -> confirm', async () => {
     const { svc, feeds } = makeService();
-    const url = svc.buildAuthUrl();
+    const url = svc.buildAuthUrl('user-1');
     const state = new URL(url).searchParams.get('state') as string;
     const redirect = await svc.handleCallback('the-code', state);
     const pendingId = new URL(redirect, 'https://x').searchParams.get('googlePending') as string;
-    const pending = svc.getPending(pendingId);
+    const pending = svc.getPending('user-1', pendingId);
     expect(pending.email).toBe('me@corp.com');
-    await svc.confirmFeeds(pendingId, ['primary']);
-    expect(feeds.createGoogleFeeds).toHaveBeenCalledWith({
+    await svc.confirmFeeds('user-1', pendingId, ['primary']);
+    expect(feeds.createGoogleFeeds).toHaveBeenCalledWith('user-1', {
       email: 'me@corp.com',
       refreshToken: 'r',
       calendars: [{ id: 'primary', summary: 'Me', primary: true }],
     });
     // pending consumed
-    expect(() => svc.getPending(pendingId)).toThrow(NotFoundException);
+    expect(() => svc.getPending('user-1', pendingId)).toThrow(NotFoundException);
   });
 
   it('isConfigured is false when clientId missing', () => {
