@@ -70,6 +70,14 @@ services:
       - PLAUD_POLL_INTERVAL_MS=${PLAUD_POLL_INTERVAL_MS:-300000}
       # Calendar feeds: the same secret encrypts subscribed feed URLs.
       - CALENDAR_POLL_INTERVAL_MS=${CALENDAR_POLL_INTERVAL_MS:-900000}
+      # Transcription. Default here is the hosted ElevenLabs Scribe API for
+      # markedly better accuracy/punctuation and multilingual auto-detection —
+      # fill in ELEVENLABS_API_KEY (get one at elevenlabs.io). Audio bytes are
+      # uploaded to ElevenLabs directly (storage stays private). Alternative:
+      # sidecar = self-hosted faster-whisper (also set the sidecar's
+      # LOAD_TRANSCRIPTION=true below). Fixed at boot, not switchable live.
+      - TRANSCRIPTION_PROVIDER=${TRANSCRIPTION_PROVIDER:-elevenlabs}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
       # Speaker diarization. Default here is the hosted pyannoteAI API so the box
       # isn't burdened by the heavy local pyannote model — fill in
       # PYANNOTEAI_API_KEY (get one at pyannote.ai). Alternatives: pyannote = run
@@ -94,8 +102,8 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
-      # service_started, not healthy: the first boot downloads ~1.5 GB of
-      # models; failed jobs are retried by the queue meanwhile.
+      # service_started, not healthy: when a local model is enabled the first
+      # boot downloads ~1.5 GB; failed jobs are retried by the queue meanwhile.
       speaker-id:
         condition: service_started
     healthcheck:
@@ -104,18 +112,23 @@ services:
       timeout: 5s
       retries: 10
 
-  # ML sidecar: transcription (faster-whisper) + voiceprint clip extraction, and
-  # optionally local diarization (pyannote). Internal-only. With the default
-  # pyannoteai provider, LOAD_DIARIZATION defaults to false here: the sidecar
-  # skips the ~1.5 GB gated pyannote model and HUGGING_FACE_TOKEN is not needed.
-  # To run the full local sidecar instead, set SPEAKER_ID_PROVIDER=pyannote,
-  # LOAD_DIARIZATION=true and provide HUGGING_FACE_TOKEN (accept the model terms
-  # first — see apps/speaker-id-ml/README.md).
+  # ML sidecar: voiceprint clip extraction (ffmpeg), and optionally local
+  # transcription (faster-whisper) and diarization (pyannote). Internal-only.
+  # With the default hosted providers (ElevenLabs + pyannoteAI), both
+  # LOAD_TRANSCRIPTION and LOAD_DIARIZATION default to false: the sidecar loads
+  # no ML models (no ~1.5 GB downloads, no HUGGING_FACE_TOKEN needed) and just
+  # slices voiceprint clips. To run a model locally, set the matching provider
+  # back to the self-hosted path and flip its load flag on:
+  #   transcription: TRANSCRIPTION_PROVIDER=sidecar + LOAD_TRANSCRIPTION=true
+  #   diarization:   SPEAKER_ID_PROVIDER=pyannote  + LOAD_DIARIZATION=true
+  #                  + HUGGING_FACE_TOKEN (accept the model terms first — see
+  #                  apps/speaker-id-ml/README.md).
   speaker-id:
     build:
       context: apps/speaker-id-ml
     restart: unless-stopped
     environment:
+      - LOAD_TRANSCRIPTION=${LOAD_TRANSCRIPTION:-false}
       - LOAD_DIARIZATION=${LOAD_DIARIZATION:-false}
       - HUGGING_FACE_TOKEN=${HUGGING_FACE_TOKEN:-}
       - SPEAKER_ID_TOKEN=${SERVICE_PASSWORD_SPEAKERID}

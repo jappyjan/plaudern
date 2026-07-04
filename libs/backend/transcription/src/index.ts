@@ -5,5 +5,6 @@ export * from './transcription.service';
 export * from './transcription.controller';
 export * from './transcription.module';
 export * from './providers/sidecar.provider';
+export * from './providers/elevenlabs.provider';
 export * from './queues/inline.queue';
 export * from './queues/bull.queue';

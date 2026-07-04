@@ -5,6 +5,7 @@ import { InboxModule } from '@plaudern/inbox';
 import { TRANSCRIPTION_PROVIDER } from './transcription.provider';
 import { TRANSCRIPTION_QUEUE } from './transcription.job';
 import { SidecarTranscriptionProvider } from './providers/sidecar.provider';
+import { ElevenLabsTranscriptionProvider } from './providers/elevenlabs.provider';
 import { TranscriptionProcessor } from './transcription.processor';
 import { TranscriptionService } from './transcription.service';
 import { TranscriptionController } from './transcription.controller';
@@ -33,8 +34,22 @@ function redisConnection(config: ConfigService): ConnectionOptions {
   imports: [ConfigModule, InboxModule],
   providers: [
     SidecarTranscriptionProvider,
-    // Transcription runs exclusively on the self-hosted sidecar (apps/speaker-id-ml).
-    { provide: TRANSCRIPTION_PROVIDER, useExisting: SidecarTranscriptionProvider },
+    ElevenLabsTranscriptionProvider,
+    // TRANSCRIPTION_PROVIDER selects the backend: the self-hosted faster-whisper
+    // sidecar (default) or the hosted ElevenLabs Scribe API. Diarization is
+    // independent of this choice.
+    {
+      provide: TRANSCRIPTION_PROVIDER,
+      inject: [ConfigService, SidecarTranscriptionProvider, ElevenLabsTranscriptionProvider],
+      useFactory: (
+        config: ConfigService,
+        sidecar: SidecarTranscriptionProvider,
+        elevenlabs: ElevenLabsTranscriptionProvider,
+      ) =>
+        config.get<string>('TRANSCRIPTION_PROVIDER', 'sidecar') === 'elevenlabs'
+          ? elevenlabs
+          : sidecar,
+    },
     TranscriptionProcessor,
     {
       provide: TRANSCRIPTION_QUEUE,
