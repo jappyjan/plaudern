@@ -93,7 +93,9 @@ import {
   entityNeighborhoodResponseSchema,
   entityConnectResponseSchema,
   autoLinkEntitiesResponseSchema,
+  entityContactSuggestionsResponseSchema,
   type AutoLinkEntitiesResponse,
+  type EntityContactSuggestionsResponse,
   type EntityListResponse,
   type EntityDetailWithRelationsDto,
   type EntityNeighborhoodResponse,
@@ -474,6 +476,19 @@ export async function updateEntity(
 ): Promise<EntityDetailWithRelationsDto> {
   return entityDetailWithRelationsSchema.parse(
     await requestJson(`/entities/${id}`, { method: 'PATCH', body: JSON.stringify(req) }),
+  );
+}
+
+/**
+ * Ranked contact candidates for a person entity, straight from the identity
+ * resolver: confidence plus human-readable evidence (name affinity, whose
+ * voice is in the recordings, shared knowledge-graph connections).
+ */
+export async function getEntityContactSuggestions(
+  id: string,
+): Promise<EntityContactSuggestionsResponse> {
+  return entityContactSuggestionsResponseSchema.parse(
+    await requestJson(`/entities/${id}/contact-suggestions`),
   );
 }
 

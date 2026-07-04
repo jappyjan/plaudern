@@ -151,3 +151,25 @@ export const autoLinkEntitiesResponseSchema = z.object({
   linked: z.number().int().nonnegative(),
 });
 export type AutoLinkEntitiesResponse = z.infer<typeof autoLinkEntitiesResponseSchema>;
+
+/**
+ * One ranked contact candidate for a person entity, produced by the identity
+ * resolver from real evidence (name affinity, whose voice is in the recordings
+ * mentioning the person, shared knowledge-graph connections). `reasons` are
+ * human-readable so the UI can show *why* a contact is suggested.
+ */
+export const entityContactSuggestionSchema = z.object({
+  voiceProfileId: z.string().uuid(),
+  name: z.string().nullable(),
+  confidence: z.number().min(0).max(1),
+  reasons: z.array(z.string()),
+});
+export type EntityContactSuggestionDto = z.infer<typeof entityContactSuggestionSchema>;
+
+/** GET /v1/entities/:id/contact-suggestions — best candidates first. */
+export const entityContactSuggestionsResponseSchema = z.object({
+  suggestions: z.array(entityContactSuggestionSchema),
+});
+export type EntityContactSuggestionsResponse = z.infer<
+  typeof entityContactSuggestionsResponseSchema
+>;

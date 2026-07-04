@@ -6,6 +6,7 @@ import {
   type EntityExtractionProvider,
 } from './entities.provider';
 import { EntitiesRegistryService } from './entities-registry.service';
+import { EntityContactResolverService } from './entity-contact-resolver.service';
 import { buildEntityExtractionInput } from './entity-context';
 import type { EntityExtractionJob } from './entities.job';
 
@@ -23,6 +24,7 @@ export class EntitiesProcessor {
   constructor(
     private readonly inbox: InboxService,
     private readonly registry: EntitiesRegistryService,
+    private readonly resolver: EntityContactResolverService,
     @Inject(ENTITY_EXTRACTION_PROVIDER)
     private readonly provider: EntityExtractionProvider,
   ) {}
@@ -55,6 +57,16 @@ export class EntitiesProcessor {
         content: JSON.stringify(payload),
       });
       this.logger.log(`extracted ${entityCount} entities from inbox item ${job.inboxItemId}`);
+
+      // First contact-resolution pass with the evidence available now (names +
+      // whose voice is in the recording); the relations processor re-runs it
+      // once this item's graph edges exist. Enrichment only — never fails the
+      // extraction.
+      await this.resolver
+        .autoLinkForItem(item.userId, item.id)
+        .catch((err) =>
+          this.logger.warn(`contact resolution after extraction failed: ${(err as Error).message}`),
+        );
     } catch (err) {
       const message = (err as Error).message;
       this.logger.error(`entity extraction failed for ${job.inboxItemId}: ${message}`);

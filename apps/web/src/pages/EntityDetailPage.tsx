@@ -1,13 +1,21 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, CardBody, CardHeader, Chip, Spinner } from '@heroui/react';
 import type {
+  EntityContactSuggestionDto,
   EntityDetailWithRelationsDto,
   EntityRelationEdgeDto,
   GraphEntityDto,
   RelationType,
 } from '@plaudern/contracts';
 import { Link, useParams } from 'react-router-dom';
-import { convertEntityToContact, getEntity, getEntityNeighborhood, unlinkEntityContact } from '../lib/api';
+import {
+  convertEntityToContact,
+  getEntity,
+  getEntityContactSuggestions,
+  getEntityNeighborhood,
+  linkEntityContact,
+  unlinkEntityContact,
+} from '../lib/api';
 import {
   ENTITY_TYPE_COLOR,
   ENTITY_TYPE_LABEL,
@@ -36,6 +44,7 @@ export function EntityDetailPage() {
   const [linkOpen, setLinkOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [suggestion, setSuggestion] = useState<EntityContactSuggestionDto | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,6 +80,26 @@ export function EntityDetailPage() {
       cancelled = true;
     };
   }, [id]);
+
+  // The resolver's best candidate, offered inline for unlinked people. Purely
+  // an enrichment: failures leave the page fully functional.
+  const isUnlinkedPerson = entity?.type === 'person' && !entity.voiceProfileId;
+  useEffect(() => {
+    let cancelled = false;
+    setSuggestion(null);
+    if (!id || !isUnlinkedPerson) return;
+    void (async () => {
+      try {
+        const res = await getEntityContactSuggestions(id);
+        if (!cancelled) setSuggestion(res.suggestions[0] ?? null);
+      } catch {
+        /* non-fatal */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, isUnlinkedPerson]);
 
   if (error) {
     return (
@@ -171,30 +200,62 @@ export function EntityDetailPage() {
                 </Button>
               </div>
             ) : (
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="flat"
-                  isDisabled={busy}
-                  startContent={<LinkIcon className="h-4 w-4" />}
-                  onPress={() => setLinkOpen(true)}
-                >
-                  Link to contact
-                </Button>
-                <Button
-                  size="sm"
-                  variant="flat"
-                  isDisabled={busy}
-                  startContent={<PeopleIcon className="h-4 w-4" />}
-                  onPress={() => void runAction(() => convertEntityToContact(entity.id))}
-                >
-                  Add to contacts
-                </Button>
-                {entity.voiceProfileLinkOrigin === 'suppressed' && (
-                  <Chip size="sm" variant="flat" title="You unlinked this entity; it won't re-link automatically">
-                    auto-link off
-                  </Chip>
+              <div className="flex flex-col gap-2">
+                {suggestion && (
+                  <div className="flex flex-col gap-1 rounded-medium bg-default-50 p-3">
+                    <p className="text-sm">
+                      Is this{' '}
+                      <span className="font-medium">
+                        {suggestion.name ?? 'an unnamed contact'}
+                      </span>
+                      ?{' '}
+                      <span className="text-default-500">
+                        {Math.round(suggestion.confidence * 100)}% match
+                      </span>
+                    </p>
+                    {suggestion.reasons.length > 0 && (
+                      <p className="text-xs text-default-500">{suggestion.reasons.join(' · ')}</p>
+                    )}
+                    <Button
+                      size="sm"
+                      color="primary"
+                      variant="flat"
+                      className="self-start"
+                      isDisabled={busy}
+                      startContent={<LinkIcon className="h-4 w-4" />}
+                      onPress={() =>
+                        void runAction(() => linkEntityContact(entity.id, suggestion.voiceProfileId))
+                      }
+                    >
+                      Link to {suggestion.name ?? 'this contact'}
+                    </Button>
+                  </div>
                 )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    isDisabled={busy}
+                    startContent={<LinkIcon className="h-4 w-4" />}
+                    onPress={() => setLinkOpen(true)}
+                  >
+                    Link to contact
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    isDisabled={busy}
+                    startContent={<PeopleIcon className="h-4 w-4" />}
+                    onPress={() => void runAction(() => convertEntityToContact(entity.id))}
+                  >
+                    Add to contacts
+                  </Button>
+                  {entity.voiceProfileLinkOrigin === 'suppressed' && (
+                    <Chip size="sm" variant="flat" title="You unlinked this entity; it won't re-link automatically">
+                      auto-link off
+                    </Chip>
+                  )}
+                </div>
               </div>
             ))}
 

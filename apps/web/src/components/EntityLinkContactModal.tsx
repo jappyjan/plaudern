@@ -10,8 +10,12 @@ import {
   ModalHeader,
   Spinner,
 } from '@heroui/react';
-import type { EntityDetailWithRelationsDto, VoiceProfileDto } from '@plaudern/contracts';
-import { linkEntityContact, listSpeakers } from '../lib/api';
+import type {
+  EntityContactSuggestionDto,
+  EntityDetailWithRelationsDto,
+  VoiceProfileDto,
+} from '@plaudern/contracts';
+import { getEntityContactSuggestions, linkEntityContact, listSpeakers } from '../lib/api';
 import { speakerColor } from '../lib/speakerColors';
 
 interface EntityLinkContactModalProps {
@@ -21,15 +25,16 @@ interface EntityLinkContactModalProps {
   onLinked: (entity: EntityDetailWithRelationsDto) => void;
 }
 
-/** Lowercased, whitespace-collapsed — mirrors the server's normalize(). */
-function normalize(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, ' ');
+interface ContactRow {
+  contact: VoiceProfileDto;
+  suggestion: EntityContactSuggestionDto | null;
 }
 
 /**
  * Manually link a person entity to a contact from the voice-profile contact
- * book. Contacts whose name matches the entity (or one of its aliases) sort
- * first as suggestions; a search box covers the rest.
+ * book. The identity resolver's ranked suggestions (name affinity, whose
+ * voice is in the recordings, shared knowledge-graph connections) sort first
+ * with their confidence and evidence; a search box covers the rest.
  */
 export function EntityLinkContactModal({
   isOpen,
@@ -38,6 +43,9 @@ export function EntityLinkContactModal({
   onLinked,
 }: EntityLinkContactModalProps) {
   const [contacts, setContacts] = useState<VoiceProfileDto[] | null>(null);
+  const [suggestions, setSuggestions] = useState<Map<string, EntityContactSuggestionDto>>(
+    new Map(),
+  );
   const [query, setQuery] = useState('');
   const [linking, setLinking] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +54,7 @@ export function EntityLinkContactModal({
     if (!isOpen) return;
     let cancelled = false;
     setContacts(null);
+    setSuggestions(new Map());
     setQuery('');
     setError(null);
     void (async () => {
@@ -56,35 +65,34 @@ export function EntityLinkContactModal({
         if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
       }
     })();
+    // Suggestions are enrichment: if the call fails the plain list still works.
+    void (async () => {
+      try {
+        const res = await getEntityContactSuggestions(entity.id);
+        if (!cancelled) {
+          setSuggestions(new Map(res.suggestions.map((s) => [s.voiceProfileId, s])));
+        }
+      } catch {
+        /* non-fatal */
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, [isOpen]);
+  }, [isOpen, entity.id]);
 
-  // Same spirit as the server's auto-matcher: exact or token-prefix name
-  // overlap with the entity's name forms marks a contact as suggested.
-  const entityNames = useMemo(
-    () => [entity.canonicalName, ...entity.aliases].map(normalize),
-    [entity],
-  );
-  const rows = useMemo(() => {
+  const rows = useMemo<ContactRow[]>(() => {
     if (!contacts) return [];
     const needle = query.trim().toLowerCase();
-    const suggested = (contact: VoiceProfileDto) => {
-      if (!contact.name) return false;
-      const name = normalize(contact.name);
-      return entityNames.some(
-        (n) => n === name || n.startsWith(`${name} `) || name.startsWith(`${n} `),
-      );
-    };
     return contacts
       .filter((c) => !needle || (c.name ?? '').toLowerCase().includes(needle))
-      .map((c) => ({ contact: c, suggested: suggested(c) }))
+      .map((contact) => ({ contact, suggestion: suggestions.get(contact.id) ?? null }))
       .sort((a, b) => {
-        if (a.suggested !== b.suggested) return a.suggested ? -1 : 1;
+        const confidence = (b.suggestion?.confidence ?? -1) - (a.suggestion?.confidence ?? -1);
+        if (confidence !== 0) return confidence;
         return (a.contact.name ?? '~').localeCompare(b.contact.name ?? '~');
       });
-  }, [contacts, query, entityNames]);
+  }, [contacts, query, suggestions]);
 
   const close = () => {
     if (linking) return;
@@ -131,13 +139,13 @@ export function EntityLinkContactModal({
             </p>
           ) : (
             <div className="flex max-h-80 flex-col gap-1 overflow-y-auto">
-              {rows.map(({ contact, suggested }) => (
+              {rows.map(({ contact, suggestion }) => (
                 <button
                   key={contact.id}
                   type="button"
                   disabled={linking !== null}
                   onClick={() => void link(contact)}
-                  className="flex items-center gap-3 rounded-medium p-2 text-left hover:bg-default-100 disabled:opacity-60"
+                  className="flex items-start gap-3 rounded-medium p-2 text-left hover:bg-default-100 disabled:opacity-60"
                 >
                   <span
                     className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${speakerColor(contact.id)}`}
@@ -149,12 +157,20 @@ export function EntityLinkContactModal({
                       {contact.name ?? 'Unnamed contact'}
                     </span>
                     <span className="block text-xs text-default-500">
-                      {contact.recordingCount} recording{contact.recordingCount === 1 ? '' : 's'}
+                      {suggestion
+                        ? suggestion.reasons.join(' · ')
+                        : `${contact.recordingCount} recording${contact.recordingCount === 1 ? '' : 's'}`}
                     </span>
                   </span>
-                  {suggested && (
-                    <Chip size="sm" variant="flat" color="primary" className="shrink-0">
-                      suggested
+                  {suggestion && (
+                    <Chip
+                      size="sm"
+                      variant="flat"
+                      color="primary"
+                      className="shrink-0"
+                      title="Identity-resolver confidence"
+                    >
+                      {Math.round(suggestion.confidence * 100)}%
                     </Chip>
                   )}
                   {linking === contact.id && <Spinner size="sm" className="shrink-0" />}

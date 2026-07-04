@@ -17,23 +17,17 @@ import {
   EntityMentionEntity,
   EntityRegistryEntity,
   ExtractedPayloadEntity,
-  SpeakerOccurrenceEntity,
   VoiceProfileEntity,
 } from '@plaudern/persistence';
-
-/** A named contact-book profile, prepared for name matching. */
-export interface ContactCandidate {
-  id: string;
-  /** normalize()d profile name. */
-  normalized: string;
-}
+import { exactContactMatch, normalize } from './contact-matching';
 
 /**
  * Owns the per-user entity registry (JJ-32): normalizing/deduping extracted
- * entities into `entities` rows, recording `entity_mentions` edges, and linking
- * `person` entities to the voice-profile contact book — automatically (exact
- * name, or partial name disambiguated by who actually speaks in the recording)
- * and manually (link/unlink/convert, JJ-63). Also serves the read models
+ * entities into `entities` rows, recording `entity_mentions` edges, and the
+ * manual contact-link operations (link/unlink/convert/edit, JJ-63). At ingest
+ * only an exact (diacritic-folded) name match links a `person` to the contact
+ * book — everything fuzzier is the EntityContactResolverService's job, which
+ * weighs recordings and the knowledge graph. Also serves the read models
  * (list, detail) — restricting mention aggregates to each item's LATEST
  * succeeded `entities` extraction so append-only reprocessing supersedes old
  * links, exactly like the diarization contact book.
@@ -49,8 +43,6 @@ export class EntitiesRegistryService {
     private readonly extractions: Repository<ExtractedPayloadEntity>,
     @InjectRepository(VoiceProfileEntity)
     private readonly profiles: Repository<VoiceProfileEntity>,
-    @InjectRepository(SpeakerOccurrenceEntity)
-    private readonly occurrences: Repository<SpeakerOccurrenceEntity>,
   ) {}
 
   /**
@@ -90,11 +82,9 @@ export class EntitiesRegistryService {
     }
     if (byKey.size === 0) return 0;
 
-    const contacts = await this.contactCandidates(userId);
-    // The recording's own speakers are the disambiguation context: a partial
-    // name match ("Detlef" → "Detlef Müller") is only trusted outright when
-    // unique, otherwise the candidate actually speaking in this item wins.
-    const speakerIds = await this.speakersForItems([inboxItemId]);
+    // Only exact (folded) name equality links at ingest; the contact resolver
+    // runs right after extraction with the full evidence (voices, graph).
+    const contacts = await this.profiles.find({ where: { userId } });
     let linked = 0;
     for (const { entity, surfaceForms, surfaceForm } of byKey.values()) {
       const registryEntity = await this.upsertEntity(
@@ -103,7 +93,6 @@ export class EntitiesRegistryService {
         entity.name,
         [...surfaceForms],
         contacts,
-        speakerIds,
       );
       await this.upsertMention(
         userId,
@@ -252,43 +241,6 @@ export class EntitiesRegistryService {
   }
 
   /**
-   * Sweep every unlinked (and not suppressed) person entity and auto-link the
-   * ones that now match a named contact — e.g. after a speaker finally gets a
-   * name in the contact book. Ambiguous partial matches fall back to the
-   * recordings the entity is mentioned in: a candidate who actually speaks
-   * there wins. Returns how many entities gained a link.
-   */
-  async autoLinkContacts(userId: string): Promise<number> {
-    const rows = await this.entities.find({ where: { userId, type: 'person' as EntityType } });
-    const unlinked = rows.filter(
-      (r) => !r.voiceProfileId && r.voiceProfileLinkOrigin !== 'suppressed',
-    );
-    if (unlinked.length === 0) return 0;
-    const contacts = await this.contactCandidates(userId);
-    if (contacts.length === 0) return 0;
-
-    const current = await this.currentMentions(unlinked.map((r) => r.id));
-    let linked = 0;
-    for (const row of unlinked) {
-      const names = [row.normalizedName, ...(row.aliases ?? []).map(normalize)];
-      let profileId = resolveContactLink(names, contacts, null);
-      if (!profileId) {
-        const itemIds = [...new Set((current.get(row.id) ?? []).map((m) => m.inboxItemId))];
-        if (itemIds.length > 0) {
-          const speakerIds = await this.speakersForItems(itemIds);
-          profileId = resolveContactLink(names, contacts, speakerIds);
-        }
-      }
-      if (!profileId) continue;
-      row.voiceProfileId = profileId;
-      row.voiceProfileLinkOrigin = 'auto';
-      await this.entities.save(row);
-      linked += 1;
-    }
-    return linked;
-  }
-
-  /**
    * The registry entities mentioned by the item's latest succeeded `entities`
    * extraction — the legal relation endpoints for the `relations` extractor.
    */
@@ -309,16 +261,15 @@ export class EntitiesRegistryService {
 
   /**
    * Find or create the registry row for (userId, type, normalizedName),
-   * accreting any new surface forms as aliases and (re)linking a `person` to a
-   * matching named voice profile.
+   * accreting any new surface forms as aliases and linking a `person` to an
+   * exactly-matching named voice profile.
    */
   private async upsertEntity(
     userId: string,
     type: EntityType,
     name: string,
     surfaceForms: string[],
-    contacts: ContactCandidate[],
-    speakerIds: Set<string>,
+    contacts: VoiceProfileEntity[],
   ): Promise<EntityRegistryEntity> {
     const normalizedName = normalize(name);
     let row = await this.entities.findOne({ where: { userId, type, normalizedName } });
@@ -345,8 +296,7 @@ export class EntitiesRegistryService {
       !row.voiceProfileId &&
       row.voiceProfileLinkOrigin !== 'suppressed'
     ) {
-      const names = [row.normalizedName, ...row.aliases.map(normalize)];
-      const profileId = resolveContactLink(names, contacts, speakerIds);
+      const profileId = exactContactMatch([row.canonicalName, ...row.aliases], contacts);
       if (profileId) {
         row.voiceProfileId = profileId;
         row.voiceProfileLinkOrigin = 'auto';
@@ -391,39 +341,6 @@ export class EntitiesRegistryService {
     const row = await this.entities.findOne({ where: { id, userId } });
     if (!row) throw new NotFoundException('entity not found');
     return row;
-  }
-
-  /** Named voice profiles prepared for person auto-linking. */
-  private async contactCandidates(userId: string): Promise<ContactCandidate[]> {
-    const rows = await this.profiles.find({ where: { userId } });
-    return rows
-      .filter((row) => row.name)
-      .map((row) => ({ id: row.id, normalized: normalize(row.name as string) }));
-  }
-
-  /**
-   * Voice profiles that speak in the given items, restricted to each item's
-   * latest succeeded diarization — the "who is actually in the room" context
-   * used to disambiguate partial name matches.
-   */
-  private async speakersForItems(itemIds: string[]): Promise<Set<string>> {
-    const result = new Set<string>();
-    if (itemIds.length === 0) return result;
-    const rows = await this.occurrences.find({ where: { inboxItemId: In(itemIds) } });
-    if (rows.length === 0) return result;
-    const extractionRows = await this.extractions.find({
-      where: { inboxItemId: In(itemIds), kind: 'diarization', status: 'succeeded' },
-    });
-    const latestByItem = new Map<string, ExtractedPayloadEntity>();
-    for (const row of extractionRows) {
-      const current = latestByItem.get(row.inboxItemId);
-      if (!current || row.createdAt > current.createdAt) latestByItem.set(row.inboxItemId, row);
-    }
-    const latestExtractionIds = new Set([...latestByItem.values()].map((r) => r.id));
-    for (const row of rows) {
-      if (latestExtractionIds.has(row.extractionId)) result.add(row.voiceProfileId);
-    }
-    return result;
   }
 
   /** Display names of the profiles linked by the given rows, keyed by id. */
@@ -495,51 +412,6 @@ export class EntitiesRegistryService {
       createdAt: row.createdAt.toISOString(),
     };
   }
-}
-
-/** Normalization key: lowercased, whitespace-collapsed. Alias/case matching. */
-export function normalize(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-/**
- * Pick the contact a person entity should auto-link to, or null when nothing
- * matches unambiguously. `names` are the entity's normalize()d name forms
- * (canonical + aliases). Exact full-name equality wins outright; otherwise a
- * token-boundary partial match ("detlef" ↔ "detlef müller") links only when it
- * is unique — or, given `speakerIds` (who actually speaks in the recording(s)
- * involved), when exactly one candidate is among the speakers.
- */
-export function resolveContactLink(
-  names: string[],
-  contacts: ContactCandidate[],
-  speakerIds: Set<string> | null,
-): string | null {
-  const nameSet = new Set(names.filter(Boolean));
-  if (nameSet.size === 0 || contacts.length === 0) return null;
-
-  // First-writer-wins so linking is stable when two profiles share a name.
-  const exact = contacts.find((c) => nameSet.has(c.normalized));
-  if (exact) return exact.id;
-
-  const partialIds = new Set<string>();
-  const partial: ContactCandidate[] = [];
-  for (const contact of contacts) {
-    const matches = [...nameSet].some(
-      (name) =>
-        name.startsWith(`${contact.normalized} `) || contact.normalized.startsWith(`${name} `),
-    );
-    if (matches && !partialIds.has(contact.id)) {
-      partialIds.add(contact.id);
-      partial.push(contact);
-    }
-  }
-  if (partial.length === 1) return partial[0].id;
-  if (partial.length > 1 && speakerIds) {
-    const speaking = partial.filter((c) => speakerIds.has(c.id));
-    if (speaking.length === 1) return speaking[0].id;
-  }
-  return null;
 }
 
 /**

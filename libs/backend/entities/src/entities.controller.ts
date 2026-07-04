@@ -18,12 +18,14 @@ import {
   updateEntityRequestSchema,
   type AutoLinkEntitiesResponse,
   type EntityConnectResponse,
+  type EntityContactSuggestionsResponse,
   type EntityDetailWithRelationsDto,
   type EntityListResponse,
   type EntityNeighborhoodResponse,
 } from '@plaudern/contracts';
 import { CurrentUser, type AuthenticatedUser } from '@plaudern/auth';
 import { EntitiesRegistryService } from './entities-registry.service';
+import { EntityContactResolverService } from './entity-contact-resolver.service';
 import { EntityGraphService } from './entity-graph.service';
 
 /**
@@ -39,6 +41,7 @@ export class EntitiesController {
   constructor(
     private readonly registry: EntitiesRegistryService,
     private readonly graph: EntityGraphService,
+    private readonly resolver: EntityContactResolverService,
   ) {}
 
   @Get()
@@ -79,12 +82,14 @@ export class EntitiesController {
   }
 
   /**
-   * Re-run contact auto-linking over every unlinked person entity — used after
-   * naming a speaker in the contact book so mentions of them link up too.
+   * Re-run intelligent contact resolution over every unlinked person entity —
+   * used after naming a speaker in the contact book so mentions of them link
+   * up too. Evidence-based (names, voices, knowledge graph), LLM-assisted
+   * when a resolution provider is configured.
    */
   @Post('auto-link')
   async autoLink(@CurrentUser() user: AuthenticatedUser): Promise<AutoLinkEntitiesResponse> {
-    return { linked: await this.registry.autoLinkContacts(user.id) };
+    return { linked: await this.resolver.autoLinkAll(user.id) };
   }
 
   @Get(':id')
@@ -93,6 +98,15 @@ export class EntitiesController {
     @Param('id') id: string,
   ): Promise<EntityDetailWithRelationsDto> {
     return this.detailWithRelations(user.id, id);
+  }
+
+  /** Ranked, evidence-explained contact candidates for a person entity. */
+  @Get(':id/contact-suggestions')
+  async contactSuggestions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ): Promise<EntityContactSuggestionsResponse> {
+    return { suggestions: await this.resolver.suggest(user.id, id) };
   }
 
   /** Correct an entity: rename it and/or change its type (JJ-63). */

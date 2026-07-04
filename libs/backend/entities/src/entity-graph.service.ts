@@ -14,7 +14,8 @@ import {
   EntityRelationEntity,
   ExtractedPayloadEntity,
 } from '@plaudern/persistence';
-import { isUniqueViolation, normalize } from './entities-registry.service';
+import { normalize } from './contact-matching';
+import { isUniqueViolation } from './entities-registry.service';
 
 /**
  * Relation types whose direction carries no meaning; their endpoints are
