@@ -7,11 +7,6 @@ import {
   CardBody,
   CardHeader,
   Chip,
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
   Spinner,
   Tab,
   Tabs,
@@ -25,6 +20,9 @@ import {
   getSourceUrl,
   listItemEvents,
   reprocessItem,
+  retryDiarization,
+  retrySummary,
+  retryTranscription,
 } from '../lib/api';
 import { useInboxEvents } from '../hooks/useInboxEvents';
 import { usePlaceName } from '../hooks/usePlaceName';
@@ -49,15 +47,62 @@ import type { GeoLocation } from '../lib/geolocation';
 // that break the event stream, so it can be slow.
 const POLL_INTERVAL_MS = 10_000;
 
+type ReprocessStep = 'transcription' | 'diarization' | 'summary' | 'all';
+
+/**
+ * The individually re-runnable pipeline steps, shown in the Reprocess panel.
+ * `all` replays transcription + diarization (the summary then follows via the
+ * server-side trigger); the single-step actions target one stage only. Every
+ * run appends a new extraction — the immutable history is never overwritten.
+ */
+const REPROCESS_STEPS: {
+  key: ReprocessStep;
+  label: string;
+  description: string;
+  action: string;
+  run: (id: string) => Promise<InboxItemDto | void>;
+}[] = [
+  {
+    key: 'transcription',
+    label: 'Transcription',
+    description: 'Re-transcribe the audio.',
+    action: 'Re-transcribe',
+    run: (id) => retryTranscription(id),
+  },
+  {
+    key: 'diarization',
+    label: 'Speaker identification',
+    description: 'Re-run diarization and voice matching.',
+    action: 'Re-identify',
+    run: (id) => retryDiarization(id),
+  },
+  {
+    key: 'summary',
+    label: 'Summary',
+    description: 'Regenerate the AI title and summary.',
+    action: 'Regenerate',
+    run: async (id) => {
+      await retrySummary(id);
+    },
+  },
+  {
+    key: 'all',
+    label: 'Whole pipeline',
+    description: 'Re-run transcription and speaker identification (the summary follows).',
+    action: 'Reprocess all',
+    run: (id) => reprocessItem(id),
+  },
+];
+
 export function ItemDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [item, setItem] = useState<InboxItemDto | null>(null);
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [retrying, setRetrying] = useState(false);
-  const [retryError, setRetryError] = useState<string | null>(null);
-  const [confirmRerunOpen, setConfirmRerunOpen] = useState(false);
+  // Which reprocess step is currently running (null = none) and its last error.
+  const [busyStep, setBusyStep] = useState<ReprocessStep | null>(null);
+  const [stepError, setStepError] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -75,19 +120,25 @@ export function ItemDetailPage() {
       .catch(() => undefined);
   }, [id]);
 
-  const reprocess = useCallback(async () => {
-    if (!id) return;
-    setRetrying(true);
-    setRetryError(null);
-    try {
-      setItem(await reprocessItem(id));
-      setConfirmRerunOpen(false);
-    } catch (cause) {
-      setRetryError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setRetrying(false);
-    }
-  }, [id]);
+  // Run one reprocess step. Actions that return the refreshed item update it in
+  // place; the summary retry (which returns a summary) triggers a refetch. SSE
+  // then keeps the item live as the appended extractions progress.
+  const runStep = useCallback(
+    async (step: ReprocessStep, action: () => Promise<InboxItemDto | void>) => {
+      setBusyStep(step);
+      setStepError(null);
+      try {
+        const updated = await action();
+        if (updated) setItem(updated);
+        else refetch();
+      } catch (cause) {
+        setStepError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        setBusyStep(null);
+      }
+    },
+    [refetch],
+  );
 
   const refreshEvents = useCallback(async () => {
     if (!id) return;
@@ -274,12 +325,15 @@ export function ItemDetailPage() {
                       color="primary"
                       variant="flat"
                       className="self-start"
-                      isLoading={retrying}
-                      onPress={reprocess}
+                      isLoading={busyStep === 'transcription'}
+                      isDisabled={busyStep !== null}
+                      onPress={() => id && runStep('transcription', () => retryTranscription(id))}
                     >
-                      Reprocess
+                      Retry transcription
                     </Button>
-                    {retryError && <p className="text-xs text-danger">{retryError}</p>}
+                    {stepError && busyStep === null && (
+                      <p className="text-xs text-danger">{stepError}</p>
+                    )}
                   </div>
                 )}
               </div>
@@ -406,60 +460,47 @@ export function ItemDetailPage() {
         </CardBody>
       </Card>
 
-      {transcription?.status === 'succeeded' && (
-        <>
-          <Accordion isCompact>
-            <AccordionItem
-              key="advanced"
-              aria-label="Advanced"
-              title={<span className="text-sm font-semibold">Advanced</span>}
-            >
-              <div className="flex flex-col gap-2 rounded-medium border border-danger-200 bg-danger-50 p-3">
-                <p className="text-sm text-danger">
-                  Reprocessing re-runs transcription and speaker diarization, replacing the
-                  current transcript and speakers.
-                </p>
-                <Button
-                  size="sm"
-                  color="danger"
-                  variant="flat"
-                  className="self-start"
-                  onPress={() => {
-                    setRetryError(null);
-                    setConfirmRerunOpen(true);
-                  }}
+      {transcription?.status === 'succeeded' && id && (
+        <Accordion isCompact>
+          <AccordionItem
+            key="advanced"
+            aria-label="Reprocess"
+            title={<span className="text-sm font-semibold">Reprocess</span>}
+          >
+            <div className="flex flex-col gap-3">
+              <p className="text-xs text-default-500">
+                Re-run a single step or the whole pipeline. Each run appends a new result and
+                replaces what's shown; earlier attempts stay in the history. Later steps re-run
+                automatically after an earlier one finishes.
+              </p>
+              {REPROCESS_STEPS.map((step) => (
+                <div
+                  key={step.key}
+                  className="flex items-center justify-between gap-3 rounded-medium bg-default-50 p-3"
                 >
-                  Reprocess recording
-                </Button>
-              </div>
-            </AccordionItem>
-          </Accordion>
-
-          <Modal isOpen={confirmRerunOpen} onClose={() => !retrying && setConfirmRerunOpen(false)}>
-            <ModalContent>
-              <ModalHeader>Reprocess recording?</ModalHeader>
-              <ModalBody>
-                <p className="text-sm">
-                  This re-runs transcription and speaker diarization. The current transcript and
-                  speakers will be replaced by the new result. This cannot be undone.
-                </p>
-                {retryError && <p className="text-xs text-danger">{retryError}</p>}
-              </ModalBody>
-              <ModalFooter>
-                <Button
-                  variant="light"
-                  isDisabled={retrying}
-                  onPress={() => setConfirmRerunOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button color="danger" isLoading={retrying} onPress={reprocess}>
-                  Overwrite and reprocess
-                </Button>
-              </ModalFooter>
-            </ModalContent>
-          </Modal>
-        </>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">{step.label}</p>
+                    <p className="text-xs text-default-500">{step.description}</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    color={step.key === 'all' ? 'danger' : 'primary'}
+                    className="shrink-0"
+                    isLoading={busyStep === step.key}
+                    isDisabled={busyStep !== null}
+                    onPress={() => runStep(step.key, () => step.run(id))}
+                  >
+                    {step.action}
+                  </Button>
+                </div>
+              ))}
+              {stepError && busyStep === null && (
+                <p className="text-xs text-danger">{stepError}</p>
+              )}
+            </div>
+          </AccordionItem>
+        </Accordion>
       )}
 
       <ConfirmDeleteModal

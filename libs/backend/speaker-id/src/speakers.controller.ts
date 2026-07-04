@@ -2,11 +2,14 @@ import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import {
   mergeVoiceProfilesRequestSchema,
   updateVoiceProfileRequestSchema,
+  type InboxItemDto,
   type SpeakerTranscriptDto,
   type VoiceProfileDetailDto,
   type VoiceProfileListResponse,
 } from '@plaudern/contracts';
 import { CurrentUser, type AuthenticatedUser } from '@plaudern/auth';
+import { InboxService, toInboxItemDto } from '@plaudern/inbox';
+import { SpeakerIdService } from './speaker-id.service';
 import { SpeakerTranscriptService } from './speaker-transcript.service';
 import { VoiceProfilesService } from './voice-profiles.service';
 
@@ -56,7 +59,11 @@ export class SpeakersController {
  */
 @Controller({ path: 'inbox', version: '1' })
 export class SpeakerTranscriptController {
-  constructor(private readonly transcripts: SpeakerTranscriptService) {}
+  constructor(
+    private readonly transcripts: SpeakerTranscriptService,
+    private readonly speakerId: SpeakerIdService,
+    private readonly inbox: InboxService,
+  ) {}
 
   @Get(':id/speaker-transcript')
   async get(
@@ -64,5 +71,15 @@ export class SpeakerTranscriptController {
     @Param('id') id: string,
   ): Promise<SpeakerTranscriptDto> {
     return this.transcripts.getSpeakerTranscript(user.id, id);
+  }
+
+  /** Re-run speaker diarization only; the transcript merge and summary follow. */
+  @Post(':id/diarization/retry')
+  async retryDiarization(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ): Promise<InboxItemDto> {
+    await this.speakerId.retryDiarization(user.id, id);
+    return toInboxItemDto(await this.inbox.getItem(user.id, id));
   }
 }

@@ -137,6 +137,20 @@ export async function reprocessItem(id: string): Promise<InboxItemDto> {
   );
 }
 
+/** Re-run transcription only; the summary follows automatically. */
+export async function retryTranscription(id: string): Promise<InboxItemDto> {
+  return inboxItemSchema.parse(
+    await requestJson(`/inbox/${id}/transcription/retry`, { method: 'POST' }),
+  );
+}
+
+/** Re-run speaker identification (diarization) only; the summary follows. */
+export async function retryDiarization(id: string): Promise<InboxItemDto> {
+  return inboxItemSchema.parse(
+    await requestJson(`/inbox/${id}/diarization/retry`, { method: 'POST' }),
+  );
+}
+
 /** Reverse-geocode coordinates to a place (label/city null when unavailable). */
 export async function getPlaceName(lat: number, lon: number): Promise<GeocodeResponse> {
   const query = new URLSearchParams({ lat: String(lat), lon: String(lon) });

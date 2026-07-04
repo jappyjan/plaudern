@@ -150,4 +150,49 @@ describe('Reprocess whole pipeline (e2e, Path A)', () => {
       .post('/api/v1/ingest/00000000-0000-0000-0000-00000000dead/reprocess')
       .expect(404);
   });
+
+  it('re-runs transcription only via the per-step endpoint (append-only)', async () => {
+    const itemId = await ingestAudio('e2e-retry-transcription');
+
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/inbox/${itemId}/transcription/retry`)
+      .expect(201);
+
+    expect(byKind(res.body.extractions, 'transcription')).toHaveLength(2);
+    // Diarization is untouched by a transcription-only retry.
+    expect(byKind(res.body.extractions, 'diarization')).toHaveLength(1);
+    expect(byKind(res.body.extractions, 'transcription')[0].status).toBe('succeeded');
+  });
+
+  it('re-runs speaker identification only via the per-step endpoint (append-only)', async () => {
+    const itemId = await ingestAudio('e2e-retry-diarization');
+
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/inbox/${itemId}/diarization/retry`)
+      .expect(201);
+
+    expect(byKind(res.body.extractions, 'diarization')).toHaveLength(2);
+    // Transcription is untouched by a diarization-only retry.
+    expect(byKind(res.body.extractions, 'transcription')).toHaveLength(1);
+    expect(byKind(res.body.extractions, 'diarization')[0].status).toBe('succeeded');
+  });
+
+  it('rejects a diarization retry while one is already in progress', async () => {
+    const itemId = await ingestAudio('e2e-retry-diarization-conflict');
+    const item = await request(app.getHttpServer())
+      .get(`/api/v1/inbox/${itemId}`)
+      .expect(200);
+    const diar = byKind(item.body.extractions, 'diarization')[0];
+    await inbox.setExtractionStatus(diar.id, 'processing');
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/inbox/${itemId}/diarization/retry`)
+      .expect(409);
+  });
+
+  it('404s a per-step retry for an unknown item', async () => {
+    await request(app.getHttpServer())
+      .post('/api/v1/inbox/00000000-0000-0000-0000-00000000dead/diarization/retry')
+      .expect(404);
+  });
 });
