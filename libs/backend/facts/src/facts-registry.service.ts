@@ -27,6 +27,12 @@ const MAX_ATTRIBUTE_CHARS = 80;
 const MAX_PERSON_CHARS = 200;
 const MAX_QUOTE_CHARS = 1_000;
 
+/** Per-fact source-item citations, as returned by `citationRefs`/`listWithCitations`. */
+export type FactCitationRefMap = Map<
+  string,
+  { inboxItemId: string; quote: string | null; startSeconds: number | null }[]
+>;
+
 /** A resolved candidate personal fact ready to be deduped into the store. */
 export interface FactCandidate {
   /** The subject's name as spoken; empty when unknown (then the fact is dropped). */
@@ -304,19 +310,35 @@ export class FactsRegistryService {
    * mention can still dedupe onto them.
    */
   async list(userId: string, query: FactListQuery): Promise<PersonalFactDto[]> {
+    return (await this.listWithCitations(userId, query)).facts;
+  }
+
+  /**
+   * Same read model as `list()`, but also returns the per-fact citation map
+   * computed along the way (JJ-75): the person dossier (JJ-24) needs both the
+   * fact DTOs AND their source-item citations, and used to get the citations
+   * via a separate `citationRefs()` call that recomputed the exact same
+   * supersede-aware aggregation `list()` had just done. Callers that only need
+   * the DTOs should keep using `list()`.
+   */
+  async listWithCitations(
+    userId: string,
+    query: FactListQuery,
+  ): Promise<{ facts: PersonalFactDto[]; citationRefs: FactCitationRefMap }> {
     const rows = await this.facts.find({
       where: {
         userId,
         ...(query.personEntityId ? { personEntityId: query.personEntityId } : {}),
       },
     });
-    if (rows.length === 0) return [];
+    if (rows.length === 0) return { facts: [], citationRefs: new Map() };
     const current = await this.currentCitations(rows.map((r) => r.id));
-    return rows
+    const facts = rows
       .filter((r) => query.includeSuperseded || r.supersededByFactId === null)
       .map((row) => this.toDto(row, current.get(row.id) ?? []))
       .filter((dto) => dto.citationCount > 0)
       .sort(byPersonThenRecent);
+    return { facts, citationRefs: this.toCitationRefMap(current) };
   }
 
   /**
@@ -362,18 +384,21 @@ export class FactsRegistryService {
   /**
    * Current source-item citations per fact — restricted to each item's latest
    * succeeded `facts` extraction, exactly like the list read model — reduced to
-   * the fields a citation deep link needs (item id, quote, segment start). The
-   * person dossier (JJ-24) uses this to cite each fact back to its recordings
-   * without re-implementing the supersede-aware citation aggregation.
+   * the fields a citation deep link needs (item id, quote, segment start). A
+   * caller that already has a `list`/`listWithCitations` result for the same
+   * fact ids should use that map instead of calling this (it recomputes the
+   * same bounded queries); this is for callers that only need the citations.
    */
-  async citationRefs(
-    factIds: string[],
-  ): Promise<Map<string, { inboxItemId: string; quote: string | null; startSeconds: number | null }[]>> {
+  async citationRefs(factIds: string[]): Promise<FactCitationRefMap> {
     const byFact = await this.currentCitations(factIds);
-    const result = new Map<
-      string,
-      { inboxItemId: string; quote: string | null; startSeconds: number | null }[]
-    >();
+    return this.toCitationRefMap(byFact);
+  }
+
+  /** Reduce raw citation rows to the shape a citation deep link needs. */
+  private toCitationRefMap(
+    byFact: Map<string, PersonalFactCitationEntity[]>,
+  ): FactCitationRefMap {
+    const result: FactCitationRefMap = new Map();
     for (const [factId, rows] of byFact) {
       // Newest recording first, deduped to one citation per source item.
       const byItem = new Map<string, PersonalFactCitationEntity>();

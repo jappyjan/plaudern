@@ -326,6 +326,29 @@ describe('DossierService', () => {
     });
   });
 
+  it('reconciles counts.mentions with what recentItems can actually render (JJ-75)', async () => {
+    const mia = await person('Mia');
+    const item1 = await seedItem('2026-01-01T00:00:00.000Z');
+    const item2 = await seedItem('2026-02-01T00:00:00.000Z');
+    const item3 = await seedItem('2026-03-01T00:00:00.000Z');
+
+    const ent1 = await addExtraction(item1, 'entities', new Date('2026-01-01T02:30:00Z'));
+    const ent2 = await addExtraction(item2, 'entities', new Date('2026-02-01T02:30:00Z'));
+    const ent3 = await addExtraction(item3, 'entities', new Date('2026-03-01T02:30:00Z'));
+    await mention(item1, ent1, mia, 'Mia');
+    await mention(item2, ent2, mia, 'Mia');
+    await mention(item3, ent3, mia, 'Mia');
+
+    // Simulate a source item that vanished after the mention was recorded (the
+    // mention row itself is left behind) — recentItems must drop it silently,
+    // and counts.mentions must not keep counting it either.
+    await items.delete({ id: item2 });
+
+    const dossier = await service.build(USER, mia);
+    expect(dossier.recentItems.map((r) => r.inboxItemId).sort()).toEqual([item1, item3].sort());
+    expect(dossier.counts.mentions).toBe(2);
+  });
+
   it('tolerates a commitment whose counterpartyEntityId dangles after a merge', async () => {
     const mia = await person('Mia');
     const item = await seedItem('2026-03-01T00:00:00.000Z');
