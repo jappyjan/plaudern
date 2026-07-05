@@ -86,6 +86,15 @@ import {
   topicDocumentResponseSchema,
   topicDocumentVersionListResponseSchema,
   topicDocumentVersionDetailSchema,
+  journalDocumentResponseSchema,
+  journalPeriodListResponseSchema,
+  journalVersionListResponseSchema,
+  journalVersionDetailSchema,
+  type JournalDocumentResponse,
+  type JournalPeriodListResponse,
+  type JournalPeriodType,
+  type JournalVersionDetailDto,
+  type JournalVersionListResponse,
   type CreateTopicRequest,
   type ItemTopicsResponse,
   type TopicDto,
@@ -157,6 +166,13 @@ import {
   type ReminderListResponse,
   type ReminderStatus,
   type ItemRemindersResponse,
+  documentListResponseSchema,
+  itemDocMetaResponseSchema,
+  itemOcrResponseSchema,
+  type DocumentListResponse,
+  type DocumentType,
+  type ItemDocMetaResponse,
+  type ItemOcrResponse,
   type UpdateEntityRequest,
   searchResponseSchema,
   similarResponseSchema,
@@ -911,6 +927,56 @@ export async function regenerateTopicDocument(topicId: string): Promise<TopicDoc
   );
 }
 
+// ---- Auto-journal (JJ-17) ----
+
+/** Every composed entry of a granularity (day/week/month/year), newest first. */
+export async function listJournalPeriods(
+  periodType: JournalPeriodType,
+): Promise<JournalPeriodListResponse> {
+  return journalPeriodListResponseSchema.parse(await requestJson(`/journal/${periodType}`));
+}
+
+/** One period's current entry (body + latest-attempt status). */
+export async function getJournal(
+  periodType: JournalPeriodType,
+  periodKey: string,
+): Promise<JournalDocumentResponse> {
+  return journalDocumentResponseSchema.parse(
+    await requestJson(`/journal/${periodType}/${periodKey}`),
+  );
+}
+
+/** A period's succeeded version history (metadata only). */
+export async function listJournalVersions(
+  periodType: JournalPeriodType,
+  periodKey: string,
+): Promise<JournalVersionListResponse> {
+  return journalVersionListResponseSchema.parse(
+    await requestJson(`/journal/${periodType}/${periodKey}/versions`),
+  );
+}
+
+/** One historical version rendered in full. */
+export async function getJournalVersion(
+  periodType: JournalPeriodType,
+  periodKey: string,
+  version: number,
+): Promise<JournalVersionDetailDto> {
+  return journalVersionDetailSchema.parse(
+    await requestJson(`/journal/${periodType}/${periodKey}/versions/${version}`),
+  );
+}
+
+/** Manually (re)compose the period; returns the refreshed read model. */
+export async function regenerateJournal(
+  periodType: JournalPeriodType,
+  periodKey: string,
+): Promise<JournalDocumentResponse> {
+  return journalDocumentResponseSchema.parse(
+    await requestJson(`/journal/${periodType}/${periodKey}/regenerate`, { method: 'POST' }),
+  );
+}
+
 /** An item's extracted commitments plus the extraction pipeline status. */
 export async function getItemCommitments(itemId: string): Promise<ItemCommitmentsResponse> {
   return itemCommitmentsResponseSchema.parse(await requestJson(`/inbox/${itemId}/commitments`));
@@ -1043,6 +1109,44 @@ export async function getItemReminders(itemId: string): Promise<ItemRemindersRes
 export async function retryItemReminders(itemId: string): Promise<ItemRemindersResponse> {
   return itemRemindersResponseSchema.parse(
     await requestJson(`/inbox/${itemId}/reminders/retry`, { method: 'POST' }),
+  );
+}
+
+// ---- Document vault: photo/scan OCR + docmeta (JJ-30 / JJ-16) ----
+
+/**
+ * The user's document vault: every scanned/uploaded document, newest first,
+ * optionally scoped to a single document type. The vault page groups them by
+ * type client-side and surfaces expiry / Kündigungsfrist dates.
+ */
+export async function listVaultDocuments(
+  documentType?: DocumentType,
+): Promise<DocumentListResponse> {
+  const suffix = documentType ? `?documentType=${encodeURIComponent(documentType)}` : '';
+  return documentListResponseSchema.parse(await requestJson(`/documents${suffix}`));
+}
+
+/** An item's structured document metadata plus the extraction pipeline status. */
+export async function getItemDocMeta(itemId: string): Promise<ItemDocMetaResponse> {
+  return itemDocMetaResponseSchema.parse(await requestJson(`/inbox/${itemId}/docmeta`));
+}
+
+/** Re-run document-metadata extraction for an item; returns the refreshed read model. */
+export async function retryItemDocMeta(itemId: string): Promise<ItemDocMetaResponse> {
+  return itemDocMetaResponseSchema.parse(
+    await requestJson(`/inbox/${itemId}/docmeta/retry`, { method: 'POST' }),
+  );
+}
+
+/** An item's recognized OCR text plus the extraction pipeline status. */
+export async function getItemOcr(itemId: string): Promise<ItemOcrResponse> {
+  return itemOcrResponseSchema.parse(await requestJson(`/inbox/${itemId}/ocr`));
+}
+
+/** Re-run OCR for an item; returns the refreshed read model. */
+export async function retryItemOcr(itemId: string): Promise<ItemOcrResponse> {
+  return itemOcrResponseSchema.parse(
+    await requestJson(`/inbox/${itemId}/ocr/retry`, { method: 'POST' }),
   );
 }
 

@@ -13,8 +13,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *
  * Additive only: safe on existing installs.
  */
-export class CreateEntityMergeSuggestions1720000000039 implements MigrationInterface {
-  name = 'CreateEntityMergeSuggestions1720000000039';
+export class CreateEntityMergeSuggestions1720000000043 implements MigrationInterface {
+  name = 'CreateEntityMergeSuggestions1720000000043';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

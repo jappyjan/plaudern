@@ -11,6 +11,7 @@ import { ContactsPage } from './pages/ContactsPage';
 import { ContactDetailPage } from './pages/ContactDetailPage';
 import { TopicsPage } from './pages/TopicsPage';
 import { TopicDetailPage } from './pages/TopicDetailPage';
+import { JournalPage, JournalEntryPage } from './pages/JournalPage';
 import { EntitiesPage } from './pages/EntitiesPage';
 import { EntityDetailPage } from './pages/EntityDetailPage';
 import { DossierPage } from './pages/DossierPage';
@@ -19,7 +20,9 @@ import { SearchPage } from './pages/SearchPage';
 import { ChatPage } from './pages/ChatPage';
 import { SharePage } from './pages/SharePage';
 import { OpenLoopsPage } from './pages/OpenLoopsPage';
+import { VaultPage } from './pages/VaultPage';
 import {
+  BookIcon,
   CalendarIcon,
   EntitiesIcon,
   GearIcon,
@@ -28,6 +31,7 @@ import {
   PeopleIcon,
   SunIcon,
   TagIcon,
+  VaultIcon,
 } from './components/icons';
 import { BottomNav } from './components/BottomNav';
 
@@ -119,6 +123,26 @@ export function App() {
               </Button>
               <Button
                 as={Link}
+                to="/journal"
+                isIconOnly
+                variant="light"
+                size="sm"
+                aria-label="Journal"
+              >
+                <BookIcon className="h-5 w-5" />
+              </Button>
+              <Button
+                as={Link}
+                to="/vault"
+                isIconOnly
+                variant="light"
+                size="sm"
+                aria-label="Document vault"
+              >
+                <VaultIcon className="h-5 w-5" />
+              </Button>
+              <Button
+                as={Link}
                 to="/contacts"
                 isIconOnly
                 variant="light"
@@ -171,6 +195,9 @@ export function App() {
               <Route path="/contacts/:id" element={<ContactDetailPage />} />
               <Route path="/topics" element={<TopicsPage />} />
               <Route path="/topics/:id" element={<TopicDetailPage />} />
+              <Route path="/journal" element={<JournalPage />} />
+              <Route path="/journal/:periodType/:periodKey" element={<JournalEntryPage />} />
+              <Route path="/vault" element={<VaultPage />} />
               <Route path="/entities" element={<EntitiesPage />} />
               <Route path="/entities/graph" element={<GraphViewPage />} />
               <Route path="/entities/:id" element={<EntityDetailPage />} />

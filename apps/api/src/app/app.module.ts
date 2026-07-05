@@ -10,12 +10,15 @@ import { ExtractionModule } from '@plaudern/extraction';
 import { EmbeddingModule } from '@plaudern/embeddings';
 import { EntitiesModule } from '@plaudern/entities';
 import { TopicsModule } from '@plaudern/topics';
+import { JournalModule } from '@plaudern/journal';
 import { CommitmentsModule } from '@plaudern/commitments';
 import { QuestionsModule } from '@plaudern/questions';
 import { TasksModule } from '@plaudern/tasks';
 import { FactsModule } from '@plaudern/facts';
 import { DecisionsModule } from '@plaudern/decisions';
 import { RemindersModule } from '@plaudern/reminders';
+import { OcrModule } from '@plaudern/ocr';
+import { DocMetaModule } from '@plaudern/docmeta';
 import { OpenLoopsModule } from '@plaudern/open-loops';
 import { IngestionModule } from '@plaudern/ingestion';
 import { PlaudSyncModule } from '@plaudern/plaud-sync';
@@ -43,12 +46,15 @@ import { HealthController } from './health.controller';
     EmbeddingModule,
     EntitiesModule,
     TopicsModule,
+    JournalModule,
     CommitmentsModule,
     QuestionsModule,
     TasksModule,
     FactsModule,
     DecisionsModule,
     RemindersModule,
+    OcrModule,
+    DocMetaModule,
     OpenLoopsModule,
     ExtractionModule,
     IngestionModule,

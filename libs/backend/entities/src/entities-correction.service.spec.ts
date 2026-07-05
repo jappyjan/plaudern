@@ -112,7 +112,9 @@ describe('EntitiesCorrectionService', () => {
     // Victim is gone; survivor absorbed its aliases.
     expect(await entityByName('Detlef')).toBeNull();
     const merged = (await entityByName('Detlef Müller'))!;
-    expect(merged.aliases.sort()).toEqual(['Detlef', 'Detlef Müller'].sort());
+    // The victim's canonical becomes an alias; the survivor's own canonical is
+    // redundant with the header and is not duplicated into the alias list.
+    expect(merged.aliases.sort()).toEqual(['Detlef'].sort());
 
     // The victim's mention now points at the survivor (no duplicate).
     const detail = await registry.detail(USER, survivorId);

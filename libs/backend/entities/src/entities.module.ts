@@ -148,6 +148,14 @@ import { RelationsExtractor } from './relations.extractor';
     RelationsExtractor,
   ],
   controllers: [EntitiesController, InboxEntitiesController, DossierController],
-  exports: [EntitiesService, EntitiesExtractor, RelationsService, RelationsExtractor],
+  // EntitiesRegistryService is exported so the docmeta lib (JJ-30) can reuse the
+  // evidence-based resolver to create/enrich a contact from a business card.
+  exports: [
+    EntitiesService,
+    EntitiesExtractor,
+    RelationsService,
+    RelationsExtractor,
+    EntitiesRegistryService,
+  ],
 })
 export class EntitiesModule {}
