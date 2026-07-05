@@ -65,6 +65,13 @@ export const journalDocumentResponseSchema = z.object({
   version: z.number().int().positive().nullable(),
   markdown: z.string().nullable(),
   citations: z.array(journalCitationSchema),
+  /**
+   * Structural citation-coverage signal (JJ-20): `low` means enough of the
+   * entry's claims lack a citation that the reader should treat it as "I think —
+   * check the sources" rather than settled memory. Derived at read time from the
+   * body's clause-level coverage; null when there is no succeeded entry yet.
+   */
+  confidence: z.enum(['high', 'low']).nullable(),
   sourceItemCount: z.number().int().nonnegative().nullable(),
   model: z.string().nullable(),
   /** Error of the most recent attempt when it failed; null otherwise. */
@@ -121,6 +128,8 @@ export const journalVersionDetailSchema = z.object({
   version: z.number().int().positive(),
   markdown: z.string(),
   citations: z.array(journalCitationSchema),
+  /** Clause-level citation-coverage signal for this version (JJ-20). */
+  confidence: z.enum(['high', 'low']),
   sourceItemCount: z.number().int().nonnegative(),
   model: z.string().nullable(),
   createdAt: z.string().datetime(),

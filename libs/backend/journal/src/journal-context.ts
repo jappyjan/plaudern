@@ -4,6 +4,7 @@ import {
   type JournalCitationKind,
 } from '@plaudern/contracts';
 import type { ExtractedPayloadEntity, InboxItemEntity } from '@plaudern/persistence';
+import { MARKER_RE, MARKER_RUN_RE } from '@plaudern/citations';
 
 /** Upper bound on source signals fed to one generation (keeps the prompt bounded). */
 export const DEFAULT_MAX_SOURCES = 60;
@@ -130,9 +131,11 @@ function summaryText(content: string): string {
  * Like the living documents (and unlike chat's `enforceCitations`) we do NOT
  * renumber survivors: the journal keeps each source's ORIGINAL marker so the
  * body stays aligned with the numbered source list and its citation chips.
+ *
+ * The regexes are the shared `@plaudern/citations` matchers — one positioning
+ * contract, defined once — but the sanitize/`usedMarkers` logic stays local
+ * because it must keep original numbers rather than renumber.
  */
-const MARKER_RUN_RE = /(?<![A-Za-z0-9_\])])(?:\[\d{1,3}\])+/g;
-const MARKER_RE = /\[(\d{1,3})\]/g;
 
 /** The set of in-range source markers actually cited by the body. */
 export function usedMarkers(markdown: string, sourceCount: number): Set<number> {
