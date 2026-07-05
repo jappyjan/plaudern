@@ -16,6 +16,7 @@ import type {
   TopicDocumentVersionListResponse,
 } from '@plaudern/contracts';
 import { ItemTopicEntity, TopicDocumentEntity, TopicEntity } from '@plaudern/persistence';
+import { analyzeCitationCoverage } from '@plaudern/citations';
 import {
   TOPIC_DOCUMENT_PROVIDER,
   type TopicDocumentProvider,
@@ -248,6 +249,7 @@ export class TopicDocumentService implements OnModuleDestroy {
       version: current?.version ?? null,
       markdown: current?.markdown ?? null,
       citations: current?.citations ?? [],
+      confidence: current?.markdown ? coverageConfidence(current.markdown) : null,
       sourceItemCount: current?.sourceItemCount ?? null,
       model: current?.model ?? null,
       error: latest?.status === 'failed' ? latest.error : null,
@@ -293,6 +295,7 @@ export class TopicDocumentService implements OnModuleDestroy {
       version: row.version,
       markdown: row.markdown,
       citations: (row.citations ?? []) as TopicDocumentCitation[],
+      confidence: coverageConfidence(row.markdown),
       sourceItemCount: row.sourceItemCount,
       model: row.model,
       createdAt: iso(row.createdAt),
@@ -368,6 +371,18 @@ export class TopicDocumentService implements OnModuleDestroy {
     const max = Number(row?.max ?? 0);
     return Number.isFinite(max) ? max : 0;
   }
+}
+
+/**
+ * Read-time citation-coverage confidence (JJ-20). A living document is a cited
+ * write-up; if too few of its clauses carry a citation the reader should see
+ * "I think — check the sources" rather than trust it as settled memory. Uses
+ * the shared clause-level analyzer with the softer coverage-ratio threshold
+ * (not chat's strict any-uncited rule). Purely derived — no persisted field, no
+ * migration.
+ */
+function coverageConfidence(markdown: string): 'high' | 'low' {
+  return analyzeCitationCoverage(markdown).confidence;
 }
 
 function iso(value: Date | string): string {

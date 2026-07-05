@@ -7,6 +7,7 @@
   "types": "./src/index.ts",
   "dependencies": {
     "@plaudern/auth": "workspace:*",
+    "@plaudern/citations": "workspace:*",
     "@plaudern/contracts": "workspace:*",
     "@plaudern/embeddings": "workspace:*",
     "@plaudern/inbox": "workspace:*",

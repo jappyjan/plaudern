@@ -125,11 +125,30 @@ describe('EntitiesRegistryService', () => {
     const list = await service.list(USER);
     const person = list.find((e) => e.type === 'person')!;
     expect(person.canonicalName).toBe('Angela Merkel');
-    expect(person.aliases.sort()).toEqual(
-      ['Angela', 'Angela Merkel', 'Frau Merkel', 'angela merkel'].sort(),
-    );
+    // The canonical name (and its case variants) is redundant with the header,
+    // so it is dropped from the displayed alias list — only distinct surface
+    // forms remain.
+    expect(person.aliases.sort()).toEqual(['Angela', 'Frau Merkel'].sort());
     expect(person.mentionCount).toBe(1);
     expect(list.map((e) => e.type).sort()).toEqual(['organization', 'person']);
+  });
+
+  it('drops pronouns and generic role nouns from surface forms, keeping real names', async () => {
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+
+    await service.ingest(USER, item, ext, [
+      {
+        type: 'person',
+        name: 'Jan Jaap',
+        mentions: ['Patient', 'Sie', 'Ihnen', 'Ihre', 'Ihrer', 'Ihrem', 'Jan', 'Jan Jaap'],
+      },
+    ]);
+
+    const person = (await service.list(USER)).find((e) => e.type === 'person')!;
+    // Grammar (pronouns/possessives) and the generic "Patient" are gone; only
+    // real names survive, and the canonical name is not duplicated.
+    expect(person.aliases.sort()).toEqual(['Jan'].sort());
   });
 
   it('links a person entity to a voice profile with a matching name', async () => {

@@ -9,32 +9,20 @@
  *    model cannot invent evidence),
  * 2. the surviving markers are renumbered 1..k in order of first appearance
  *    (so the UI shows a dense citation list),
- * 3. substantive sentences without any citation are counted — the caller
+ * 3. substantive CLAUSES without any citation are counted — the caller
  *    downgrades such answers to low confidence ("I think — check the source"),
  * 4. an answer left with NO valid citation at all is rejected outright — the
  *    caller replaces it with an explicit "I can't back this up" response
  *    instead of presenting an uncited claim as memory.
+ *
+ * The identifier-guarded marker regexes and the clause-level coverage check are
+ * SHARED across every prose-generating kind — they live in `@plaudern/citations`
+ * so chat, journal, and topic documents enforce one positioning contract. Only
+ * the chat-specific renumbering lives here; unlike the journal/topic-doc
+ * sanitizers, chat renumbers survivors densely.
  */
 
-/**
- * A citation site is a RUN of one or more `[n]` groups (`[1]`, `[1][2]`)
- * whose first bracket is NOT immediately preceded by an identifier character
- * or a closing bracket/paren. That keeps code/array indices out of citation
- * handling entirely: `data[3]` and `foo[15]` are left untouched (never
- * chipped, never stripped), while "… said so. [3]", a start-of-string "[1] …"
- * and chained "… daily [1][2]." remain citations. Matching whole runs (not
- * single groups) is what keeps `[1][2]` chains valid — the second group is
- * preceded by `]`, which only disqualifies it when the RUN starts inside an
- * identifier (`arr[1][2]`).
- */
-const MARKER_RUN_RE = /(?<![A-Za-z0-9_\])])(?:\[\d{1,3}\])+/g;
-/** A single `[n]` group INSIDE an already-validated run. */
-const MARKER_RE = /\[(\d{1,3})\]/g;
-/** Position-aware single-marker test for the uncited-sentence check. */
-const MARKER_AT_CITATION_POS_RE = /(?<![A-Za-z0-9_\])])\[\d{1,3}\]/;
-
-/** A sentence shorter than this is treated as connective tissue, not a claim. */
-const MIN_CLAIM_LENGTH = 30;
+import { MARKER_RE, MARKER_RUN_RE, analyzeCitationCoverage } from '@plaudern/citations';
 
 export interface EnforcedAnswer {
   /** Answer text with invalid markers stripped and valid ones renumbered 1..k. */
@@ -44,7 +32,7 @@ export interface EnforcedAnswer {
    * corresponds to renumbered marker i+1.
    */
   usedMarkers: number[];
-  /** Substantive sentences that carry no citation (→ low confidence). */
+  /** Substantive clauses that carry no citation (→ low confidence). */
   uncitedClaimCount: number;
 }
 
@@ -81,28 +69,12 @@ export function enforceCitations(answer: string, validMarkers: Set<number>): Enf
 }
 
 /**
- * Count substantive sentences that carry no `[n]` marker. Questions and short
- * connective fragments ("Yes.", "In short:") are not counted as claims, and
- * hedged non-answers ("I could not find …") are exactly what we WANT the model
- * to say without a citation, so they are exempt too.
+ * Count substantive CLAUSES that carry no `[n]` marker. Delegates to the shared
+ * clause-level coverage analyzer (JJ-68) with chat's STRICT contract: any single
+ * uncited clause is enough to hedge the answer. Clause-level splitting is what
+ * catches the "Anna is pregnant. He quit his job. She moved to Berlin. Yes [1]."
+ * case the old sentence-length heuristic served at HIGH confidence.
  */
 export function countUncitedClaims(content: string): number {
-  const sentences = content.match(/[^.!?\n]+[.!?]?/g) ?? [];
-  let count = 0;
-  for (const raw of sentences) {
-    const sentence = raw.trim();
-    if (sentence.length < MIN_CLAIM_LENGTH) continue;
-    if (sentence.endsWith('?')) continue;
-    if (MARKER_AT_CITATION_POS_RE.test(sentence)) continue;
-    if (isHedgedNonClaim(sentence)) continue;
-    count += 1;
-  }
-  return count;
-}
-
-/** "I couldn't find …" / "Deine Aufnahmen erwähnen … nicht" style non-claims. */
-function isHedgedNonClaim(sentence: string): boolean {
-  return /\b(could ?n[o']t find|no (mention|information|record)|not (mentioned|recorded|captured)|don'?t have|nicht (gefunden|erwähnt|aufgezeichnet)|keine (Erwähnung|Informationen?|Aufzeichnung))\b/i.test(
-    sentence,
-  );
+  return analyzeCitationCoverage(content, { strictUncited: true }).uncitedClaims;
 }

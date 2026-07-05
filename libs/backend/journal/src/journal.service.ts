@@ -13,6 +13,7 @@ import {
   InboxItemEntity,
   JournalDocumentEntity,
 } from '@plaudern/persistence';
+import { analyzeCitationCoverage } from '@plaudern/citations';
 import { JOURNAL_PROVIDER, type JournalProvider } from './journal.provider';
 import { JOURNAL_QUEUE, type JournalQueue } from './journal.job';
 import { previewOf } from './journal-context';
@@ -176,6 +177,7 @@ export class JournalService {
       version: current?.version ?? null,
       markdown: current?.markdown ?? null,
       citations: current?.citations ?? [],
+      confidence: current?.markdown ? coverageConfidence(current.markdown) : null,
       sourceItemCount: current?.sourceItemCount ?? null,
       model: current?.model ?? null,
       error: latest?.status === 'failed' ? latest.error : null,
@@ -252,6 +254,7 @@ export class JournalService {
       version: row.version,
       markdown: row.markdown,
       citations: row.citations ?? [],
+      confidence: coverageConfidence(row.markdown),
       sourceItemCount: row.sourceItemCount,
       model: row.model,
       createdAt: iso(row.createdAt),
@@ -410,6 +413,18 @@ function bump(map: Map<string, number>, userId: string, dayKey: string, at: stri
   if (!dayKey) return;
   const key = `${userId}|${dayKey}`;
   map.set(key, Math.max(map.get(key) ?? 0, time(at)));
+}
+
+/**
+ * Read-time citation-coverage confidence (JJ-20). A journal entry is a cited
+ * narrative; if too few of its clauses carry a citation the reader should see
+ * "I think — check the sources" rather than trust it as settled memory. Uses
+ * the shared clause-level analyzer with the softer coverage-ratio threshold
+ * (not chat's strict any-uncited rule) so normally-cited prose isn't flagged.
+ * Purely derived — no persisted field, no migration.
+ */
+function coverageConfidence(markdown: string): 'high' | 'low' {
+  return analyzeCitationCoverage(markdown).confidence;
 }
 
 function iso(value: Date | string): string {
