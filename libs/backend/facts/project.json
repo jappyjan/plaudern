@@ -1,0 +1,21 @@
+{
+  "name": "facts",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/backend/facts/src",
+  "projectType": "library",
+  "tags": ["scope:backend", "type:feature"],
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc -p libs/backend/facts/tsconfig.json --noEmit"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "jest --config libs/backend/facts/jest.config.js"
+      }
+    }
+  }
+}

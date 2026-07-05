@@ -33,3 +33,5 @@ export * from './item-topic.entity';
 export * from './commitment.entity';
 export * from './task.entity';
 export * from './task-citation.entity';
+export * from './personal-fact.entity';
+export * from './personal-fact-citation.entity';

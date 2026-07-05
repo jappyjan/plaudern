@@ -25,6 +25,8 @@ import {
   NotificationDeliveryEntity,
   NotificationSettingsEntity,
   PasskeyCredentialEntity,
+  PersonalFactCitationEntity,
+  PersonalFactEntity,
   PlaudSettingsEntity,
   PushSubscriptionEntity,
   RecordingEventLinkEntity,
@@ -68,6 +70,7 @@ import { AddFullTextSearch1720000000026 } from './migrations/1720000000026-AddFu
 import { CreateEntityCorrections1720000000027 } from './migrations/1720000000027-CreateEntityCorrections';
 import { ExtractionRunTrigger1720000000028 } from './migrations/1720000000028-ExtractionRunTrigger';
 import { CreateTasks1720000000029 } from './migrations/1720000000029-CreateTasks';
+import { CreatePersonalFacts1720000000031 } from './migrations/1720000000031-CreatePersonalFacts';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -82,6 +85,8 @@ export const ALL_ENTITIES = [
   CommitmentEntity,
   TaskEntity,
   TaskCitationEntity,
+  PersonalFactEntity,
+  PersonalFactCitationEntity,
   EntityRelationEntity,
   EntityAliasEntity,
   EntitySuppressionEntity,
@@ -140,6 +145,7 @@ export const ALL_MIGRATIONS = [
   CreateEntityCorrections1720000000027,
   ExtractionRunTrigger1720000000028,
   CreateTasks1720000000029,
+  CreatePersonalFacts1720000000031,
 ];
 
 /**

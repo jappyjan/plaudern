@@ -12,6 +12,7 @@ import { EntitiesModule } from '@plaudern/entities';
 import { TopicsModule } from '@plaudern/topics';
 import { CommitmentsModule } from '@plaudern/commitments';
 import { TasksModule } from '@plaudern/tasks';
+import { FactsModule } from '@plaudern/facts';
 import { IngestionModule } from '@plaudern/ingestion';
 import { PlaudSyncModule } from '@plaudern/plaud-sync';
 import { SpeakerIdModule } from '@plaudern/speaker-id';
@@ -39,6 +40,7 @@ import { HealthController } from './health.controller';
     TopicsModule,
     CommitmentsModule,
     TasksModule,
+    FactsModule,
     ExtractionModule,
     IngestionModule,
     PlaudSyncModule,

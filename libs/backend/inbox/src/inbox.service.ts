@@ -17,6 +17,8 @@ import {
   InboxItemEntity,
   InboxTombstoneEntity,
   ItemTopicEntity,
+  PersonalFactCitationEntity,
+  PersonalFactEntity,
   RecordingEventLinkEntity,
   RecordingMergeEntity,
   SourcePayloadEntity,
@@ -314,6 +316,32 @@ export class InboxService {
           await em.getRepository(TaskEntity).delete({ id: In(orphaned), status: 'open' });
         }
       }
+      // Personal facts (JJ-31): drop this item's fact citations, then hard-delete
+      // facts left with no citations at all — a fact no recording supports any
+      // more is a ghost. First un-point any survivor that this batch of ghosts
+      // superseded, so the append-only supersede graph never dangles (the newer
+      // evidence backing the supersession is gone with the recording).
+      const citedFacts = await em
+        .getRepository(PersonalFactCitationEntity)
+        .find({ where: { inboxItemId: item.id }, select: { factId: true } });
+      const citedFactIds = [...new Set(citedFacts.map((c) => c.factId))];
+      await em.getRepository(PersonalFactCitationEntity).delete({ inboxItemId: item.id });
+      if (citedFactIds.length > 0) {
+        const remaining = await em
+          .getRepository(PersonalFactCitationEntity)
+          .find({ where: { factId: In(citedFactIds) }, select: { factId: true } });
+        const stillCited = new Set(remaining.map((c) => c.factId));
+        const orphanedFacts = citedFactIds.filter((id) => !stillCited.has(id));
+        if (orphanedFacts.length > 0) {
+          await em
+            .getRepository(PersonalFactEntity)
+            .update(
+              { supersededByFactId: In(orphanedFacts) },
+              { supersededByFactId: null, supersededAt: null },
+            );
+          await em.getRepository(PersonalFactEntity).delete({ id: In(orphanedFacts) });
+        }
+      }
       await em.getRepository(ExtractedPayloadEntity).delete({ inboxItemId: item.id });
       await em.getRepository(SourcePayloadEntity).delete({ inboxItemId: item.id });
       await em.getRepository(InboxItemEntity).delete({ id: item.id });
@@ -373,12 +401,14 @@ export class InboxService {
         await em.getRepository(ItemTopicEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(CommitmentEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(TaskCitationEntity).delete({ inboxItemId: In(itemIds) });
+        await em.getRepository(PersonalFactCitationEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(ExtractedPayloadEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(SourcePayloadEntity).delete({ inboxItemId: In(itemIds) });
       }
       await em.getRepository(VoiceProfileEntity).delete({ userId });
       await em.getRepository(EntityRegistryEntity).delete({ userId });
       await em.getRepository(TaskEntity).delete({ userId });
+      await em.getRepository(PersonalFactEntity).delete({ userId });
       await em.getRepository(InboxItemEntity).delete({ userId });
       await em.getRepository(InboxTombstoneEntity).delete({ userId });
     });
