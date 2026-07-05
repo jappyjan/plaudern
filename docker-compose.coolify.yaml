@@ -154,12 +154,16 @@ services:
       - REMINDERS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
       - REMINDERS_MODEL=${REMINDERS_MODEL:-deepseek-chat}
       # Photo/scan OCR (JJ-30) — reads the full text of a scanned image or PDF.
-      # This is a NEW kind that needs a VISION-capable model, so it ships DISABLED
-      # and is NOT wired to the (text-only) summarization key: set OCR_API_KEY to a
-      # vision-capable provider key and point OCR_BASE_URL/OCR_MODEL at a vision
-      # model (e.g. an OpenAI gpt-4o-class model), or OCR_ENABLED=true for a
-      # keyless local vision gateway. Without it, OCR + docmeta stay disabled.
-      - OCR_API_KEY=${OCR_API_KEY:-}
+      # This kind needs a VISION-capable model. The (text-only) summarization tier
+      # (DeepSeek) CANNOT do vision, so OCR cannot reuse SUMMARIZATION_API_KEY. It
+      # CAN, however, reuse the OpenAI EMBEDDINGS_API_KEY: the OCR defaults already
+      # target OpenAI (gpt-4o-mini is vision-capable), so with your embeddings key
+      # set, OCR auto-enables against the same OpenAI account — no extra key needed.
+      # Override OCR_API_KEY to point vision at a different provider, or if you use
+      # a keyless local embeddings gateway (Ollama) set OCR_API_KEY to a real vision
+      # key, or OCR_ENABLED=true for a keyless local vision gateway. If neither the
+      # embeddings key nor an OCR key is set, OCR + docmeta stay disabled.
+      - OCR_API_KEY=${OCR_API_KEY:-${EMBEDDINGS_API_KEY:-}}
       - OCR_BASE_URL=${OCR_BASE_URL:-https://api.openai.com/v1}
       - OCR_MODEL=${OCR_MODEL:-gpt-4o-mini}
       - OCR_ENABLED=${OCR_ENABLED:-false}
