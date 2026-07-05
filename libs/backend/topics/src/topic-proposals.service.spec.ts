@@ -11,6 +11,7 @@ import {
 } from '@plaudern/persistence';
 import type { InboxService } from '@plaudern/inbox';
 import type { EmbeddingSearchService } from '@plaudern/embeddings';
+import type { AiConfigService } from '@plaudern/ai-config';
 import type { TopicsService } from './topics.service';
 import type { TopicProposalLabelProvider } from './topic-proposals.provider';
 import { clusterFingerprint } from './topic-proposals.clustering';
@@ -52,7 +53,7 @@ describe('TopicProposalsService', () => {
   // reclassification enqueue.
   function fakeTopics(enabled = true): TopicsService {
     return {
-      get enabled() {
+      async isEnabled(): Promise<boolean> {
         return enabled;
       },
       async enqueueTopics(inboxItemId: string): Promise<string> {
@@ -64,7 +65,7 @@ describe('TopicProposalsService', () => {
 
   function fakeEmbeddings(enabled = true): EmbeddingSearchService {
     return {
-      get enabled() {
+      async isEnabled(): Promise<boolean> {
         return enabled;
       },
       async itemCentroids(_userId: string, ids: string[]) {
@@ -75,10 +76,18 @@ describe('TopicProposalsService', () => {
     } as unknown as EmbeddingSearchService;
   }
 
-  function fakeLabeler(enabled = true): TopicProposalLabelProvider {
+  /** AiConfigService fake whose `topics` capability (shared by labeling) is on/off. */
+  function fakeAiConfig(enabled = true): AiConfigService {
+    return {
+      resolve: async () => (enabled ? ({} as never) : null),
+      isEnabled: async () => enabled,
+      invalidate: () => {},
+    } as unknown as AiConfigService;
+  }
+
+  function fakeLabeler(): TopicProposalLabelProvider {
     return {
       id: 'test:labeler',
-      enabled,
       async label() {
         labelCalls += 1;
         return { label: 'Hausbau', description: 'Building a house', model: 'test' };
@@ -88,7 +97,6 @@ describe('TopicProposalsService', () => {
 
   function buildService(opts: {
     embeddingsEnabled?: boolean;
-    labelerEnabled?: boolean;
     topicsEnabled?: boolean;
     config?: Record<string, unknown>;
   } = {}): TopicProposalsService {
@@ -97,7 +105,8 @@ describe('TopicProposalsService', () => {
       fakeInbox(),
       fakeTopics(opts.topicsEnabled ?? true),
       fakeEmbeddings(opts.embeddingsEnabled ?? true),
-      fakeLabeler(opts.labelerEnabled ?? true),
+      fakeAiConfig(opts.topicsEnabled ?? true),
+      fakeLabeler(),
       dataSource.getRepository(TopicProposalEntity),
       dataSource.getRepository(InboxItemEntity),
       dataSource.getRepository(ItemTopicEntity),
@@ -345,8 +354,8 @@ describe('TopicProposalsService', () => {
     expect(labelCalls).toBe(0);
   });
 
-  it('reports disabled when the labeling LLM is absent', async () => {
-    const service = buildService({ labelerEnabled: false });
+  it('reports disabled when the topics capability (labeling LLM) is absent', async () => {
+    const service = buildService({ topicsEnabled: false });
     const res = await service.listProposals(USER);
     expect(res.enabled).toBe(false);
   });

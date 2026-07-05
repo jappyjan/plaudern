@@ -9,8 +9,8 @@ import {
   TopicDocumentEntity,
   TopicEntity,
 } from '@plaudern/persistence';
+import type { AiConfigService } from '@plaudern/ai-config';
 import { pruneTopicDocumentHistory, TopicDocumentService } from './topic-document.service';
-import type { TopicDocumentProvider } from './topic-document.provider';
 import type { TopicDocumentJob, TopicDocumentQueue } from './topic-document.job';
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
@@ -23,19 +23,20 @@ function fakeConfig(overrides: Record<string, string> = {}): ConfigService {
   } as unknown as ConfigService;
 }
 
-function fakeProvider(enabled = true): TopicDocumentProvider {
+/** A minimal AiConfigService whose `topic_docs` capability is on/off. */
+function fakeAiConfig(enabled: boolean): AiConfigService {
   return {
-    id: 'test:docs',
-    enabled,
-    generate: async () => ({ markdown: '## Overview\nStub.', model: 'test-model' }),
-  };
+    resolve: async () => (enabled ? ({} as never) : null),
+    isEnabled: async () => enabled,
+    invalidate: () => {},
+  } as unknown as AiConfigService;
 }
 
 describe('TopicDocumentService', () => {
   let dataSource: DataSource;
   let enqueued: TopicDocumentJob[];
 
-  function build(provider: TopicDocumentProvider = fakeProvider()): TopicDocumentService {
+  function build(enabled = true): TopicDocumentService {
     const queue: TopicDocumentQueue = {
       enqueue: async (job) => {
         enqueued.push(job);
@@ -43,7 +44,7 @@ describe('TopicDocumentService', () => {
     };
     return new TopicDocumentService(
       fakeConfig({ TOPIC_DOCS_DEBOUNCE_MS: '0' }),
-      provider,
+      fakeAiConfig(enabled),
       queue,
       dataSource.getRepository(TopicEntity),
       dataSource.getRepository(TopicDocumentEntity),
@@ -109,9 +110,9 @@ describe('TopicDocumentService', () => {
     return dataSource.getRepository(TopicDocumentEntity);
   }
 
-  it('is disabled when the provider is not configured, and enqueues nothing', async () => {
-    const service = build(fakeProvider(false));
-    expect(service.enabled).toBe(false);
+  it('is disabled when the capability is not configured, and enqueues nothing', async () => {
+    const service = build(false);
+    expect(await service.isEnabled(USER)).toBe(false);
     const id = await service.enqueueRegeneration(USER, await createTopic());
     expect(id).toBeNull();
     expect(enqueued).toHaveLength(0);
@@ -218,7 +219,7 @@ describe('TopicDocumentService', () => {
 
   describe('regenerate (manual)', () => {
     it('rejects when the feature is disabled', async () => {
-      const service = build(fakeProvider(false));
+      const service = build(false);
       await expect(service.regenerate(USER, await createTopic())).rejects.toBeInstanceOf(
         BadRequestException,
       );

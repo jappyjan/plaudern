@@ -1,4 +1,8 @@
-import type { ConfigService } from '@nestjs/config';
+import {
+  AiConfigService,
+  OpenAiChatClient,
+  type ResolvedAiConfig,
+} from '@plaudern/ai-config';
 import {
   buildUserPrompt,
   OpenAiTopicClassificationProvider,
@@ -7,11 +11,31 @@ import {
 } from './openai.provider';
 import type { TopicClassificationInput } from '../topics.provider';
 
-/** Minimal ConfigService stand-in — the provider only ever calls `.get(key, default)`. */
-function fakeConfig(values: Record<string, string>): ConfigService {
+const USER = 'user-1';
+
+/** A ready-to-use resolved config for the `topics` capability. */
+function resolved(overrides: Partial<ResolvedAiConfig> = {}): ResolvedAiConfig {
   return {
-    get: (key: string, defaultValue?: unknown) => (key in values ? values[key] : defaultValue),
-  } as unknown as ConfigService;
+    capability: 'topics',
+    protocol: 'openai-compatible',
+    baseUrl: 'https://api.deepseek.com/v1',
+    apiKey: 'sk-test',
+    model: 'deepseek-chat',
+    timeoutMs: 30000,
+    params: {},
+    providerId: 'p1',
+    providerName: 'test',
+    ...overrides,
+  };
+}
+
+/** A minimal AiConfigService that resolves (or not) to the given config. */
+function fakeAiConfig(config: ResolvedAiConfig | null): AiConfigService {
+  return {
+    resolve: async () => config,
+    isEnabled: async () => config !== null,
+    invalidate: () => {},
+  } as unknown as AiConfigService;
 }
 
 const TOPIC_A = '11111111-1111-1111-1111-111111111111';
@@ -132,26 +156,13 @@ describe('parseClassificationResponse', () => {
   });
 });
 
-describe('OpenAiTopicClassificationProvider.enabled', () => {
-  it('is disabled with neither an API key nor TOPICS_ENABLED', () => {
-    expect(new OpenAiTopicClassificationProvider(fakeConfig({})).enabled).toBe(false);
-  });
-
-  it('is enabled when TOPICS_API_KEY is set (cloud default)', () => {
-    expect(
-      new OpenAiTopicClassificationProvider(fakeConfig({ TOPICS_API_KEY: 'sk-test' })).enabled,
-    ).toBe(true);
-  });
-
-  it('is enabled via TOPICS_ENABLED=true even without a key (keyless local servers)', () => {
-    expect(
-      new OpenAiTopicClassificationProvider(fakeConfig({ TOPICS_ENABLED: 'true' })).enabled,
-    ).toBe(true);
-  });
-
-  it('throws a descriptive error from classify() when disabled', async () => {
-    const provider = new OpenAiTopicClassificationProvider(fakeConfig({}));
-    await expect(provider.classify(baseInput)).rejects.toThrow(/TOPICS_ENABLED/);
+describe('OpenAiTopicClassificationProvider gating', () => {
+  it('throws a descriptive error from classify() when the capability is unconfigured', async () => {
+    const provider = new OpenAiTopicClassificationProvider(
+      fakeAiConfig(null),
+      new OpenAiChatClient(),
+    );
+    await expect(provider.classify(USER, baseInput)).rejects.toThrow(/topics capability/);
   });
 });
 
@@ -171,13 +182,12 @@ describe('OpenAiTopicClassificationProvider request behavior', () => {
     global.fetch = fetchMock as unknown as typeof fetch;
 
     const provider = new OpenAiTopicClassificationProvider(
-      fakeConfig({
-        TOPICS_ENABLED: 'true',
-        TOPICS_BASE_URL: 'http://localhost:11434/v1',
-        TOPICS_MODEL: 'llama3.1',
-      }),
+      fakeAiConfig(
+        resolved({ baseUrl: 'http://localhost:11434/v1', apiKey: null, model: 'llama3.1' }),
+      ),
+      new OpenAiChatClient(),
     );
-    const result = await provider.classify(baseInput);
+    const result = await provider.classify(USER, baseInput);
 
     expect(result.assignments).toEqual([{ topicId: TOPIC_A, confidence: 1 }]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -198,8 +208,11 @@ describe('OpenAiTopicClassificationProvider request behavior', () => {
     }));
     global.fetch = fetchMock as unknown as typeof fetch;
 
-    const provider = new OpenAiTopicClassificationProvider(fakeConfig({ TOPICS_API_KEY: 'sk-test' }));
-    await provider.classify(baseInput);
+    const provider = new OpenAiTopicClassificationProvider(
+      fakeAiConfig(resolved({ apiKey: 'sk-test' })),
+      new OpenAiChatClient(),
+    );
+    await provider.classify(USER, baseInput);
 
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect((init?.headers as Record<string, string>).authorization).toBe('Bearer sk-test');
