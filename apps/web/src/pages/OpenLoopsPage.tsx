@@ -5,15 +5,18 @@ import type { CommitmentDirection, OpenLoopDto, OpenLoopKind, OpenLoopState } fr
 import { listOpenLoops, updateOpenLoopState } from '../lib/api';
 import { LoopIcon } from '../components/icons';
 
-type KindFilter = 'all' | 'task' | 'commitment';
+type KindFilter = 'all' | 'task' | 'commitment' | 'question';
 type DirectionFilter = 'all' | CommitmentDirection;
+
+/** Commitments and (normalized) questions carry a who-owes-whom direction. */
+const DIRECTIONAL_KINDS: KindFilter[] = ['commitment', 'question'];
 
 /**
  * The unified open-loop ledger (JJ-29) — the "Zeigarnik list". Every unresolved
- * thread across all recordings (open tasks + open commitments both ways, later
- * questions), ranked server-side by age + importance, with one-tap done/dropped
- * and a link back to the source recording. State mutations delegate to each
- * item's source, so they survive re-extraction.
+ * thread across all recordings (open tasks, open commitments both ways, and
+ * unanswered questions), ranked server-side by age + importance, with one-tap
+ * done/dropped and a link back to the source recording. State mutations
+ * delegate to each item's source, so they survive re-extraction.
  */
 export function OpenLoopsPage() {
   const [loops, setLoops] = useState<OpenLoopDto[] | null>(null);
@@ -28,7 +31,8 @@ export function OpenLoopsPage() {
     try {
       const res = await listOpenLoops({
         kind: kind === 'all' ? undefined : kind,
-        direction: kind === 'commitment' && direction !== 'all' ? direction : undefined,
+        direction:
+          DIRECTIONAL_KINDS.includes(kind) && direction !== 'all' ? direction : undefined,
         includeResolved,
       });
       setLoops(res.openLoops);
@@ -86,8 +90,11 @@ export function OpenLoopsPage() {
           <FilterButton active={kind === 'commitment'} onPress={() => setKind('commitment')}>
             Commitments
           </FilterButton>
+          <FilterButton active={kind === 'question'} onPress={() => setKind('question')}>
+            Questions
+          </FilterButton>
         </div>
-        {kind === 'commitment' && (
+        {DIRECTIONAL_KINDS.includes(kind) && (
           <div className="flex flex-wrap gap-1.5">
             <FilterButton active={direction === 'all'} onPress={() => setDirection('all')}>
               Both ways
@@ -211,7 +218,7 @@ function OpenLoopCard({
             )}
             {loop.state === 'done' && (
               <Chip size="sm" variant="flat" color="success">
-                done
+                {loop.kind === 'question' ? 'answered' : 'done'}
               </Chip>
             )}
             {loop.state === 'dropped' && (
@@ -233,7 +240,7 @@ function OpenLoopCard({
           {!resolved ? (
             <>
               <Button size="sm" color="success" variant="flat" isLoading={busy} onPress={onDone}>
-                Done
+                {loop.kind === 'question' ? 'Answered' : 'Done'}
               </Button>
               <Button size="sm" variant="flat" isLoading={busy} onPress={onDrop}>
                 Drop
@@ -271,9 +278,11 @@ function KindChip({ loop }: { loop: OpenLoopDto }) {
     );
   }
   if (loop.kind === 'question') {
+    // Direction is normalized server-side: owed_by_me = I owe the answer.
+    const mine = loop.direction === 'owed_by_me';
     return (
-      <Chip size="sm" variant="flat" color="primary">
-        question
+      <Chip size="sm" variant="flat" color={mine ? 'warning' : 'secondary'}>
+        {mine ? 'question · I owe an answer' : 'question · awaiting answer'}
       </Chip>
     );
   }
