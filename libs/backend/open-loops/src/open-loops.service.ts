@@ -26,11 +26,12 @@ export class OpenLoopsService {
   /** The ranked ledger for a user, honoring the kind / direction / resolved filters. */
   async list(userId: string, query: OpenLoopListQuery): Promise<OpenLoopDto[]> {
     // Only query the sources the filter can match; a `direction` filter implies
-    // commitments (the only directional kind).
+    // the directional kinds (commitments, and questions normalized into the
+    // same who-owes-whom semantic) — tasks carry no direction.
     const kinds = query.kind
       ? [query.kind]
       : query.direction
-        ? (['commitment'] as OpenLoopKind[])
+        ? (['commitment', 'question'] as OpenLoopKind[])
         : [...this.sources.keys()];
 
     const batches = await Promise.all(

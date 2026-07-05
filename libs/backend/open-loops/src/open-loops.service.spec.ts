@@ -104,15 +104,19 @@ describe('OpenLoopsService', () => {
     expect(commitments.listCalls).toHaveLength(0);
   });
 
-  it('narrows to commitments and filters by direction', async () => {
+  it('narrows to the directional kinds and filters by direction', async () => {
     const commitments = new FakeSource('commitment', [
       loop({ id: 'mine', kind: 'commitment', direction: 'owed_by_me' }),
       loop({ id: 'theirs', kind: 'commitment', direction: 'owed_to_me' }),
     ]);
+    const questions = new FakeSource('question', [
+      loop({ id: 'answer-i-owe', kind: 'question', direction: 'owed_by_me' }),
+      loop({ id: 'answer-owed-me', kind: 'question', direction: 'owed_to_me' }),
+    ]);
     const tasks = new FakeSource('task', [loop({ id: 't', kind: 'task' })]);
-    const svc = new OpenLoopsService([tasks, commitments]);
+    const svc = new OpenLoopsService([tasks, commitments, questions]);
     const result = await svc.list('u1', { direction: 'owed_by_me', includeResolved: false });
-    expect(result.map((r) => r.id)).toEqual(['mine']);
+    expect(result.map((r) => r.id).sort()).toEqual(['answer-i-owe', 'mine']);
     expect(tasks.listCalls).toHaveLength(0);
   });
 

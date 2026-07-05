@@ -137,6 +137,12 @@ services:
       - FACTS_API_KEY=${SUMMARIZATION_API_KEY}
       - FACTS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
       - FACTS_MODEL=${FACTS_MODEL:-deepseek-chat}
+      # Memory chat (JJ-37) reuses the summarization key/endpoint; a non-empty
+      # key auto-enables it. Retrieval quality depends on the embeddings
+      # provider above (keyword search still works without it).
+      - CHAT_API_KEY=${SUMMARIZATION_API_KEY}
+      - CHAT_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
+      - CHAT_MODEL=${CHAT_MODEL:-deepseek-chat}
       # Transcription: the hosted ElevenLabs Scribe API — fill in
       # ELEVENLABS_API_KEY (get one at elevenlabs.io). Audio bytes are uploaded
       # to ElevenLabs directly (storage stays private).

@@ -22,3 +22,4 @@ export * from './auth';
 export * from './extraction';
 export * from './mcp';
 export * from './search';
+export * from './chat';
