@@ -22,3 +22,14 @@ export const AUDIO_BEARING_SOURCE_TYPES: readonly SourceType[] = ['audio', 'plau
 export function isAudioBearing(sourceType: SourceType): boolean {
   return AUDIO_BEARING_SOURCE_TYPES.includes(sourceType);
 }
+
+/**
+ * Source types whose payload is the note text itself. Their content enters the
+ * extraction DAG via a passthrough "transcription" row instead of a speech
+ * provider. Extend with 'web'/'email' once those adapters derive extractions.
+ */
+export const TEXT_BEARING_SOURCE_TYPES: readonly SourceType[] = ['text'];
+
+export function isTextBearing(sourceType: SourceType): boolean {
+  return TEXT_BEARING_SOURCE_TYPES.includes(sourceType);
+}

@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import type { ExtractionSegment, SummarySpeakerDto } from '@plaudern/contracts';
+import {
+  isTextBearing,
+  type ExtractionSegment,
+  type SummarySpeakerDto,
+} from '@plaudern/contracts';
 import {
   ExtractedPayloadEntity,
   InboxItemEntity,
@@ -90,6 +94,7 @@ export class SummaryContextService {
         language: transcription.language ?? undefined,
         occurredAt: iso(item.occurredAt),
         durationSeconds: maxSegmentEnd(transcription.segments ?? null),
+        sourceKind: isTextBearing(item.sourceType) ? 'note' : 'recording',
       },
       speakers: roster,
     };

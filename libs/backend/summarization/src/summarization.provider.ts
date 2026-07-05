@@ -28,6 +28,12 @@ export interface SummarizationInput {
   targetLanguage?: string;
   occurredAt?: string;
   durationSeconds?: number;
+  /**
+   * What the transcript actually is: a speech-to-text transcript of a
+   * recording, or the verbatim body of a typed note (passthrough). Steers the
+   * prompt wording; defaults to 'recording'.
+   */
+  sourceKind?: 'recording' | 'note';
 }
 
 export interface SummarizationResult {

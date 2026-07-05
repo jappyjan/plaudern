@@ -11,7 +11,7 @@ import {
   Tab,
   Tabs,
 } from '@heroui/react';
-import type { CalendarEventDto, InboxItemDto } from '@plaudern/contracts';
+import { isAudioBearing, type CalendarEventDto, type InboxItemDto } from '@plaudern/contracts';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   deleteCalendarLink,
@@ -282,8 +282,21 @@ export function ItemDetailPage() {
   }
 
   const transcription = latestTranscription(item);
+  // Audio-bearing items get the player + Transcript tab; everything else (text
+  // notes, web clips, ...) shows its content as a plain "Note" tab.
+  const audio = isAudioBearing(item.sourceType);
   const device = item.metadata?.device as Record<string, string> | undefined;
   const tags = item.metadata?.tags as Record<string, unknown> | undefined;
+  const reprocessSteps = REPROCESS_STEPS.filter(
+    (step) => audio || !['transcription', 'diarization'].includes(step.key),
+  ).map((step) =>
+    !audio && step.key === 'all'
+      ? {
+          ...step,
+          description: 'Re-run the whole pipeline from the note text (the summary follows).',
+        }
+      : step,
+  );
 
   const confirmDelete = async () => {
     if (!id) return;
@@ -340,7 +353,7 @@ export function ItemDetailPage() {
         </div>
       </div>
 
-      {sourceUrl && item.sourceType !== 'text' && item.sourceType !== 'web' && (
+      {sourceUrl && audio && (
         <Card>
           <CardBody>
             {/* Presigned GET straight from object storage. */}
@@ -352,7 +365,7 @@ export function ItemDetailPage() {
       <Card>
         <CardBody>
           <Tabs
-            aria-label="Recording views"
+            aria-label={audio ? 'Recording views' : 'Note views'}
             variant="underlined"
             selectedKey={tab ?? 'transcript'}
             onSelectionChange={(key) => setTab(String(key))}
@@ -365,39 +378,76 @@ export function ItemDetailPage() {
             <Tab
               key="transcript"
               title={
-                <div className="flex items-center gap-2">
-                  <span>Transcript</span>
-                  <TranscriptionChip item={item} />
-                </div>
+                audio ? (
+                  <div className="flex items-center gap-2">
+                    <span>Transcript</span>
+                    <TranscriptionChip item={item} />
+                  </div>
+                ) : (
+                  <span>Note</span>
+                )
               }
             >
               <div className="flex flex-col gap-2 pt-2">
-                {!transcription && (
-                  <p className="text-sm text-default-500">No transcription for this item.</p>
-                )}
+                {!transcription &&
+                  (audio ? (
+                    <p className="text-sm text-default-500">No transcription for this item.</p>
+                  ) : (
+                    // Legacy text note ingested before text processing existed:
+                    // its content only lives in storage until a reprocess run
+                    // copies it into an extraction row.
+                    <div className="flex flex-col gap-2">
+                      <p className="text-sm text-default-500">
+                        This note hasn't been processed yet.
+                      </p>
+                      <Button
+                        size="sm"
+                        color="primary"
+                        variant="flat"
+                        className="self-start"
+                        isLoading={busyStep === 'all'}
+                        isDisabled={busyStep !== null}
+                        onPress={() => id && runStep('all', () => reprocessItem(id))}
+                      >
+                        Process now
+                      </Button>
+                      {stepError && busyStep === null && (
+                        <p className="text-xs text-danger">{stepError}</p>
+                      )}
+                    </div>
+                  ))}
                 {transcription && ['queued', 'processing'].includes(transcription.status) && (
                   <div className="flex items-center gap-2 text-sm text-default-500">
-                    <Spinner size="sm" /> Transcribing…
+                    <Spinner size="sm" /> {audio ? 'Transcribing…' : 'Processing…'}
                   </div>
                 )}
-                {transcription?.status === 'succeeded' && (
-                  <SpeakerTranscript itemId={item.id} transcription={transcription} />
-                )}
+                {transcription?.status === 'succeeded' &&
+                  (audio ? (
+                    <SpeakerTranscript itemId={item.id} transcription={transcription} />
+                  ) : (
+                    <p className="whitespace-pre-wrap text-sm">{transcription.content}</p>
+                  ))}
                 {transcription?.status === 'failed' && (
                   <div className="flex flex-col gap-2">
                     <p className="text-sm text-danger">
-                      {transcription.error ?? 'Transcription failed.'}
+                      {transcription.error ??
+                        (audio ? 'Transcription failed.' : 'Processing failed.')}
                     </p>
                     <Button
                       size="sm"
                       color="primary"
                       variant="flat"
                       className="self-start"
-                      isLoading={busyStep === 'transcription'}
+                      isLoading={busyStep === (audio ? 'transcription' : 'all')}
                       isDisabled={busyStep !== null}
-                      onPress={() => id && runStep('transcription', () => retryTranscription(id))}
+                      onPress={() =>
+                        id &&
+                        (audio
+                          ? runStep('transcription', () => retryTranscription(id))
+                          : runStep('all', () => reprocessItem(id)))
+                      }
                     >
-                      Retry transcription
+                      {audio ? 'Retry transcription' : 'Retry'}
                     </Button>
                     {stepError && busyStep === null && (
                       <p className="text-xs text-danger">{stepError}</p>
@@ -481,7 +531,7 @@ export function ItemDetailPage() {
           <h2 className="text-sm font-semibold">Details</h2>
         </CardHeader>
         <CardBody className="gap-2 text-sm">
-          <DetailRow label="Recorded" value={formatDateTime(item.occurredAt)} />
+          <DetailRow label={audio ? 'Recorded' : 'Created'} value={formatDateTime(item.occurredAt)} />
           <DetailRow label="Added to inbox" value={formatDateTime(item.ingestedAt)} />
           {mergedFromCount > 0 && (
             <DetailRow label="Merged from" value={`${mergedFromCount} recordings`} />
@@ -564,7 +614,7 @@ export function ItemDetailPage() {
                 replaces what's shown; earlier attempts stay in the history. Later steps re-run
                 automatically after an earlier one finishes.
               </p>
-              {REPROCESS_STEPS.map((step) => (
+              {reprocessSteps.map((step) => (
                 <div
                   key={step.key}
                   className="flex items-center justify-between gap-3 rounded-medium bg-default-50 p-3"

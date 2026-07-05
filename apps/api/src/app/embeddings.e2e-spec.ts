@@ -149,7 +149,7 @@ describe('Embeddings pipeline (e2e, Path A)', () => {
     expect(await chunks.count({ where: { inboxItemId: itemId } })).toBe(0);
   });
 
-  it('never embeds a text item (nothing transcribed)', async () => {
+  it('embeds a text note via its passthrough transcription (chunks carry no timestamps)', async () => {
     const text = await request(app.getHttpServer())
       .post('/api/v1/ingest/text')
       .send({
@@ -158,14 +158,20 @@ describe('Embeddings pipeline (e2e, Path A)', () => {
         idempotencyKey: 'e2e-embed-text',
       })
       .expect(201);
-    // Give the pipeline a moment; a text item is never transcribed or embedded.
-    await new Promise((r) => setTimeout(r, 80));
 
-    const res = await request(app.getHttpServer())
-      .get(`/api/v1/inbox/${text.body.id}`)
-      .expect(200);
-    const embeddings = (res.body as InboxItemDto).extractions.filter((e) => e.kind === 'embedding');
-    expect(embeddings).toHaveLength(0);
+    const embedding = await waitForEmbedding(text.body.id);
+    expect(embedding.status).toBe('succeeded');
+    const payload = JSON.parse(embedding.content ?? '{}') as EmbeddingPayload;
+    expect(payload.transcriptChunks).toBeGreaterThan(0);
+
+    // The passthrough transcription has no segments, so unlike audio there are
+    // no timestamps to anchor the chunks to.
+    const rows = await chunks.find({ where: { inboxItemId: text.body.id } });
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows.filter((r) => r.source === 'transcript')) {
+      expect(row.startSeconds).toBeNull();
+      expect(row.endSeconds).toBeNull();
+    }
   });
 });
 

@@ -1,5 +1,5 @@
 import { Chip } from '@heroui/react';
-import type { ExtractionStatus, InboxItemDto } from '@plaudern/contracts';
+import { isAudioBearing, type ExtractionStatus, type InboxItemDto } from '@plaudern/contracts';
 
 const STATUS_COLOR: Record<ExtractionStatus, 'default' | 'secondary' | 'success' | 'danger'> = {
   queued: 'default',
@@ -14,6 +14,9 @@ export function latestTranscription(item: InboxItemDto) {
 }
 
 export function TranscriptionChip({ item }: { item: InboxItemDto }) {
+  // Text-bearing items get a passthrough transcription row (their own body),
+  // so a "transcribed" chip would be misleading — the chip is audio-only.
+  if (!isAudioBearing(item.sourceType)) return null;
   const transcription = latestTranscription(item);
   if (!transcription) return null;
   return (

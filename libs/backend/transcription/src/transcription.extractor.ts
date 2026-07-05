@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { isTextBearing } from '@plaudern/contracts';
 import type { Extractor, ExtractorDependency } from '@plaudern/inbox';
 import type { InboxItemEntity } from '@plaudern/persistence';
 import {
@@ -7,10 +8,25 @@ import {
 } from './transcription.service';
 
 /**
+ * Is this a text-bearing source whose payload is the note text itself? Gating
+ * on sourceType (not just contentType) keeps text/plain payloads of other
+ * sources (file uploads, emails) out until their adapters opt in.
+ */
+function isPassthroughSource(item: InboxItemEntity): boolean {
+  return (
+    isTextBearing(item.sourceType) && item.source?.contentType === 'text/plain'
+  );
+}
+
+/**
  * Transcription as a node of the extraction DAG: a root extractor (no
  * dependencies) applying to every committed audio source. `enqueue` delegates
  * to the existing service so the queue/provider path is byte-identical to the
  * pre-DAG behavior.
+ *
+ * Text-bearing sources also apply: they get a passthrough row whose content is
+ * the stored note body, so the downstream DAG (summary, entities, ...) runs
+ * for typed notes exactly as it does for recordings.
  */
 @Injectable()
 export class TranscriptionExtractor implements Extractor {
@@ -25,9 +41,9 @@ export class TranscriptionExtractor implements Extractor {
   }
 
   appliesTo(item: InboxItemEntity): boolean {
+    if (item.source?.uploadStatus !== 'committed') return false;
     return (
-      item.source?.uploadStatus === 'committed' &&
-      item.source.contentType.startsWith('audio/')
+      item.source.contentType.startsWith('audio/') || isPassthroughSource(item)
     );
   }
 
@@ -37,6 +53,7 @@ export class TranscriptionExtractor implements Extractor {
       storageKey: item.source.storageKey,
       contentType: item.source.contentType,
       filename: item.source.originalFilename ?? undefined,
+      passthrough: isPassthroughSource(item),
     });
   }
 }
