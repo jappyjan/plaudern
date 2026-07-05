@@ -1,0 +1,21 @@
+{
+  "name": "evals",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/backend/evals/src",
+  "projectType": "library",
+  "tags": ["scope:backend", "type:util"],
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc -p libs/backend/evals/tsconfig.json --noEmit"
+      }
+    },
+    "eval": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "jest --config libs/backend/evals/jest.eval.config.js"
+      }
+    }
+  }
+}

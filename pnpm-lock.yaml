@@ -551,6 +551,30 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3))
 
+  libs/backend/evals:
+    dependencies:
+      '@plaudern/commitments':
+        specifier: workspace:*
+        version: link:../commitments
+      '@plaudern/contracts':
+        specifier: workspace:*
+        version: link:../../contracts
+      '@plaudern/decisions':
+        specifier: workspace:*
+        version: link:../decisions
+      '@plaudern/facts':
+        specifier: workspace:*
+        version: link:../facts
+      '@plaudern/questions':
+        specifier: workspace:*
+        version: link:../questions
+      '@plaudern/tasks':
+        specifier: workspace:*
+        version: link:../tasks
+      '@plaudern/topics':
+        specifier: workspace:*
+        version: link:../topics
+
   libs/backend/extraction:
     dependencies:
       '@nestjs/common':
