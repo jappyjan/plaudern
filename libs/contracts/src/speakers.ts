@@ -23,6 +23,8 @@ export const voiceProfileSchema = z.object({
   /** null => unnamed; the UI renders a placeholder like "Speaker N". */
   name: z.string().nullable(),
   status: voiceProfileStatusSchema,
+  /** True when the user marked this contact as themselves (the account owner). */
+  isSelf: z.boolean(),
   /** Whether this person consented to being recorded. */
   consentStatus: consentStatusSchema,
   /**
@@ -64,6 +66,11 @@ export const updateVoiceProfileRequestSchema = z.object({
   name: z.string().min(1).max(120).optional(),
   /** Confirm-only; profiles cannot be un-confirmed. */
   status: z.literal('confirmed').optional(),
+  /**
+   * Mark (true) or unmark (false) this contact as the account owner ("me").
+   * Setting it on one profile clears it on every other profile of the user.
+   */
+  isSelf: z.boolean().optional(),
   /** Record whether this person consented to being recorded. */
   consentStatus: consentStatusSchema.optional(),
   /** Toggle read-model redaction of this speaker's segments. */
@@ -82,6 +89,8 @@ export const transcriptSpeakerSchema = z.object({
   name: z.string().nullable(),
   label: z.string(),
   status: voiceProfileStatusSchema,
+  /** True when this speaker is the account owner ("me"). */
+  isSelf: z.boolean(),
   /** Recording-consent state, so the UI can prompt for unknown/declined voices. */
   consentStatus: consentStatusSchema,
 });

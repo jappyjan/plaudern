@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
-import { InboxService } from '@plaudern/inbox';
+import { InboxService, SelfProfileService } from '@plaudern/inbox';
 import type { ExtractionStatus } from '@plaudern/contracts';
 import type { ExtractedPayloadEntity } from '@plaudern/persistence';
 import {
@@ -7,7 +7,7 @@ import {
   type TaskExtractionProvider,
 } from './tasks.provider';
 import { TASK_EXTRACTION_QUEUE, type TaskExtractionQueue } from './tasks.job';
-import { buildTaskExtractionInput } from './task-context';
+import { TaskContextService } from './task-context';
 
 const ACTIVE_STATUSES: ExtractionStatus[] = ['queued', 'processing'];
 
@@ -33,6 +33,8 @@ export class TasksService {
     private readonly provider: TaskExtractionProvider,
     @Inject(TASK_EXTRACTION_QUEUE)
     private readonly queue: TaskExtractionQueue,
+    private readonly context: TaskContextService,
+    private readonly selfProfile: SelfProfileService,
   ) {}
 
   /**
@@ -54,19 +56,29 @@ export class TasksService {
         'task extraction is not configured (set TASKS_API_KEY, or TASKS_ENABLED=true for keyless local endpoints such as Ollama)',
       );
     }
+    if (!(await this.selfProfile.hasOwner(userId))) {
+      throw new BadRequestException(
+        'set which contact is you ("This is me") before extracting tasks',
+      );
+    }
     const item = await this.inbox.getItem(userId, inboxItemId);
-    if (!buildTaskExtractionInput(item)) {
+    if (!(await this.context.build(item))) {
       throw new BadRequestException('item has no summary or transcription to extract tasks from');
     }
     const tasks = latestOfKind(item.extractions ?? [], 'tasks');
     if (tasks && ACTIVE_STATUSES.includes(tasks.status)) {
       throw new ConflictException('task extraction is already running');
     }
-    return this.enqueueTasks(inboxItemId);
+    return (await this.enqueueTasks(inboxItemId, userId)) as string;
   }
 
-  /** Append a fresh `queued` tasks row and hand the job to the queue. */
-  async enqueueTasks(inboxItemId: string): Promise<string> {
+  /**
+   * Append a fresh `queued` tasks row and hand the job to the queue. No-op
+   * (returns null) when the user has not designated an account owner — we only
+   * extract the owner's tasks, so there is nothing to do without one.
+   */
+  async enqueueTasks(inboxItemId: string, userId: string): Promise<string | null> {
+    if (!(await this.selfProfile.hasOwner(userId))) return null;
     const extraction = await this.inbox.addExtraction(
       inboxItemId,
       'tasks',

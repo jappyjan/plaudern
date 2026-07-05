@@ -4,10 +4,12 @@ import {
   ALL_ENTITIES,
   ExtractedPayloadEntity,
   InboxItemEntity,
+  SpeakerOccurrenceEntity,
   TaskCitationEntity,
   TaskEntity,
+  VoiceProfileEntity,
 } from '@plaudern/persistence';
-import type { InboxService } from '@plaudern/inbox';
+import { SelfProfileService, type InboxService } from '@plaudern/inbox';
 import type { EmbeddingProvider } from '@plaudern/embeddings';
 import { taskExtractionPayloadSchema } from '@plaudern/contracts';
 import type {
@@ -16,6 +18,7 @@ import type {
   TaskExtractionResult,
 } from './tasks.provider';
 import { TasksRegistryService } from './tasks-registry.service';
+import { TaskContextService } from './task-context';
 import { TasksProcessor } from './tasks.processor';
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
@@ -96,6 +99,9 @@ describe('TasksProcessor + semantic dedupe', () => {
       synchronize: true,
     });
     await dataSource.initialize();
+    // Every seeded item belongs to USER; give them an account owner so the task
+    // context resolves to `ready` (extraction is gated on a self profile).
+    await dataSource.getRepository(VoiceProfileEntity).save({ userId: USER, name: null, isSelf: true });
   });
 
   afterEach(async () => {
@@ -106,14 +112,20 @@ describe('TasksProcessor + semantic dedupe', () => {
     provider: TaskExtractionProvider,
     embeddingsEnabled = true,
   ): { processor: TasksProcessor; registry: TasksRegistryService } {
+    const selfProfile = new SelfProfileService(dataSource.getRepository(VoiceProfileEntity));
     const registry = new TasksRegistryService(
       dataSource.getRepository(TaskEntity),
       dataSource.getRepository(TaskCitationEntity),
       dataSource.getRepository(ExtractedPayloadEntity),
       fakeEmbeddings(embeddingsEnabled),
       fakeConfig,
+      selfProfile,
     );
-    const processor = new TasksProcessor(fakeInbox(dataSource), registry, provider);
+    const context = new TaskContextService(
+      dataSource.getRepository(SpeakerOccurrenceEntity),
+      selfProfile,
+    );
+    const processor = new TasksProcessor(fakeInbox(dataSource), registry, provider, context);
     return { processor, registry };
   }
 

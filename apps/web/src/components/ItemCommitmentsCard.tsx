@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Card, CardBody, CardHeader, Chip, Spinner } from '@heroui/react';
+import { Link } from 'react-router-dom';
 import type { CommitmentDto, CommitmentStatus, ItemCommitmentsResponse } from '@plaudern/contracts';
 import { getItemCommitments, retryItemCommitments, updateCommitmentStatus } from '../lib/api';
 import { formatDateTime } from '../lib/format';
@@ -100,7 +101,27 @@ export function ItemCommitmentsCard({ itemId }: { itemId: string }) {
           </div>
         )}
 
-        {data && (status === 'queued' || status === 'processing') && (
+        {data?.needsOwner && (
+          <div className="flex flex-col gap-2">
+            <p className="text-default-500">
+              Tell Plaudern which contact is you so it knows which way a commitment points — who
+              owes whom. Nothing is attributed to you until you do.
+            </p>
+            <Button
+              as={Link}
+              to="/contacts"
+              size="sm"
+              color="primary"
+              variant="flat"
+              className="self-start"
+              startContent={<PeopleIcon className="h-4 w-4" />}
+            >
+              Choose “me” in Contacts
+            </Button>
+          </div>
+        )}
+
+        {data && !data.needsOwner && (status === 'queued' || status === 'processing') && (
           <div className="flex items-center gap-2 text-default-500">
             <Spinner size="sm" /> Extracting commitments…
           </div>
@@ -123,7 +144,7 @@ export function ItemCommitmentsCard({ itemId }: { itemId: string }) {
           </div>
         )}
 
-        {data && status === null && (
+        {data && !data.needsOwner && status === null && (
           <div className="flex flex-col gap-2">
             <p className="text-default-500">Commitments have not been extracted yet.</p>
             <Button

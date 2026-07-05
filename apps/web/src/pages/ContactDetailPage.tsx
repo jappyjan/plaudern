@@ -94,6 +94,11 @@ export function ContactDetailPage() {
             <div>
               <p className="text-lg font-semibold">{speakerDisplayName(profile)}</p>
               <div className="flex items-center gap-2 text-xs text-default-500">
+                {profile.isSelf && (
+                  <Chip size="sm" variant="flat" color="primary">
+                    You
+                  </Chip>
+                )}
                 <Chip
                   size="sm"
                   variant="flat"
@@ -151,7 +156,20 @@ export function ContactDetailPage() {
                 Confirm
               </Button>
             )}
+            <Button
+              size="sm"
+              variant={profile.isSelf ? 'solid' : 'flat'}
+              color={profile.isSelf ? 'primary' : 'default'}
+              isDisabled={busy}
+              onPress={() => run(() => updateSpeaker(id, { isSelf: !profile.isSelf }))}
+            >
+              {profile.isSelf ? "This is me ✓" : 'This is me'}
+            </Button>
           </div>
+          <p className="text-xs text-default-500">
+            Marking a contact as “me” lets Plaudern tell which commitments and tasks are yours.
+            Only one contact can be you; setting it here re-analyzes your recordings.
+          </p>
 
           {/* Consent guardian (§ 201 StGB): record whether this person knows
               they're being recorded, and redact their speech if not. */}

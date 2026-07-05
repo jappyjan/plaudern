@@ -75,6 +75,11 @@ export function ContactsPage() {
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1">
+                {profile.isSelf && (
+                  <Chip size="sm" variant="flat" color="primary">
+                    You
+                  </Chip>
+                )}
                 {profile.consentStatus === 'declined' && (
                   <Chip size="sm" variant="flat" color="danger">
                     declined

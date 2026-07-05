@@ -8,6 +8,8 @@ export interface SummarizationSpeaker {
   displayName: string;
   /** Whether the person is a confirmed contact — purely informational. */
   confirmed: boolean;
+  /** True when this speaker is the account owner ("me"), so action items read as theirs. */
+  isSelf: boolean;
 }
 
 export interface SummarizationInput {

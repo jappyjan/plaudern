@@ -8,7 +8,7 @@ import {
 } from './tasks.provider';
 import { Inject } from '@nestjs/common';
 import { TasksRegistryService, type TaskCandidate } from './tasks-registry.service';
-import { buildTaskExtractionInput } from './task-context';
+import { TaskContextService } from './task-context';
 import type { TaskExtractionJob } from './tasks.job';
 
 /**
@@ -29,6 +29,7 @@ export class TasksProcessor {
     private readonly registry: TasksRegistryService,
     @Inject(TASK_EXTRACTION_PROVIDER)
     private readonly provider: TaskExtractionProvider,
+    private readonly context: TaskContextService,
   ) {}
 
   async process(job: TaskExtractionJob): Promise<void> {
@@ -37,12 +38,17 @@ export class TasksProcessor {
       const item = await this.inbox.getItemById(job.inboxItemId);
       if (!item) throw new Error('inbox item no longer exists');
 
-      const input = buildTaskExtractionInput(item);
-      if (!input) {
+      const ctx = await this.context.build(item);
+      if (!ctx) {
         throw new Error('no succeeded summary or transcription to extract tasks from');
       }
 
-      const result = await this.provider.extract(input);
+      // Owner not anchored for this item → ingest zero tasks (which supersedes
+      // any stale/mis-attributed ones) rather than guessing whose tasks these are.
+      const result =
+        ctx.kind === 'ready'
+          ? await this.provider.extract(ctx.input)
+          : { tasks: [], model: this.provider.id };
       const segments = transcriptionSegments(item);
       const candidates: TaskCandidate[] = result.tasks.map((task) => {
         const located = task.quote ? locateQuote(segments, task.quote) : null;

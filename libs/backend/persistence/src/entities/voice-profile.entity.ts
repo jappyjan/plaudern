@@ -32,6 +32,16 @@ export class VoiceProfileEntity {
   status!: VoiceProfileStatus;
 
   /**
+   * True when the user has marked this profile as *themselves* — the account
+   * owner ("me"). At most one profile per user carries this (enforced in
+   * VoiceProfilesService plus a partial unique index in Postgres). Owner-relative
+   * extractors (commitments direction, the owner's tasks) key off this; when no
+   * profile is self, that output is not produced (we never guess who "me" is).
+   */
+  @Column({ type: 'boolean', default: false })
+  isSelf!: boolean;
+
+  /**
    * Recording-consent state (§ 201 StGB guardian). `unknown` until the user
    * records whether this person consented to being recorded.
    */

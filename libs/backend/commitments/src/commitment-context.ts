@@ -7,7 +7,20 @@ import {
   InboxItemEntity,
   SpeakerOccurrenceEntity,
 } from '@plaudern/persistence';
+import { SelfProfileService } from '@plaudern/inbox';
 import type { CommitmentExtractionInput, CommitmentSpeaker } from './commitments.provider';
+
+/**
+ * Outcome of assembling a commitment-extraction input:
+ * - `ready`: run the model on `input`.
+ * - `owner-absent`: the account owner ("me") could not be anchored for this item
+ *   (no self profile, or a multi-speaker recording the owner did not speak in),
+ *   so we must NOT guess direction — the processor persists zero commitments
+ *   (reaping any stale ones) instead of failing.
+ */
+export type CommitmentContextResult =
+  | { kind: 'ready'; input: CommitmentExtractionInput }
+  | { kind: 'owner-absent' };
 
 /** Fallback display name for an unnamed profile, mirroring the summary/web helper. */
 function displayName(name: string | null, index: number): string {
@@ -31,12 +44,13 @@ export class CommitmentContextService {
   constructor(
     @InjectRepository(SpeakerOccurrenceEntity)
     private readonly occurrences: Repository<SpeakerOccurrenceEntity>,
+    private readonly selfProfile: SelfProfileService,
   ) {}
 
   async build(
     item: InboxItemEntity,
     maxChars: number = DEFAULT_MAX_CHARS,
-  ): Promise<CommitmentExtractionInput | null> {
+  ): Promise<CommitmentContextResult | null> {
     const transcription = latestOfKind(item.extractions ?? [], 'transcription');
     const diarization = latestOfKind(item.extractions ?? [], 'diarization');
 
@@ -44,7 +58,13 @@ export class CommitmentContextService {
       return null;
     }
 
+    // Direction (owed_by_me vs owed_to_me) is meaningless without knowing who
+    // "me" is. No self profile → don't guess.
+    const self = await this.selfProfile.getSelf(item.userId);
+    if (!self) return { kind: 'owner-absent' };
+
     const roster: { label: string; name: string | null }[] = [];
+    const ownerOccurrences: { label: string; voiceProfileId: string }[] = [];
     // Redacted speakers (consent guardian) are kept out of the transcript
     // entirely, so a commitment is never attributed to someone who withdrew.
     const redactedLabels = new Set<string>();
@@ -60,8 +80,14 @@ export class CommitmentContextService {
           continue;
         }
         roster.push({ label: row.label, name: row.voiceProfile.name });
+        ownerOccurrences.push({ label: row.label, voiceProfileId: row.voiceProfileId });
       }
     }
+
+    const owner = this.selfProfile.resolveOwner(self, ownerOccurrences);
+    // A diarized (multi-speaker) recording the owner did not speak in: we can't
+    // anchor direction to them, so don't guess — persist nothing for this item.
+    if (roster.length > 0 && owner.ownerLabel === null) return { kind: 'owner-absent' };
 
     const speakerLabels = new Set(roster.map((s) => s.label));
     const transcript = buildTranscriptText(
@@ -78,13 +104,15 @@ export class CommitmentContextService {
     }));
 
     return {
-      transcript: truncate(transcript, maxChars),
-      speakers,
-      // Owner voice is not identified today, so direction leans on first-person
-      // language; the field is wired for when a self-profile lands.
-      ownerLabel: null,
-      language: transcription.language ?? undefined,
-      occurredAt: iso(item.occurredAt),
+      kind: 'ready',
+      input: {
+        transcript: truncate(transcript, maxChars),
+        speakers,
+        ownerLabel: owner.ownerLabel,
+        ownerName: owner.ownerName,
+        language: transcription.language ?? undefined,
+        occurredAt: iso(item.occurredAt),
+      },
     };
   }
 }

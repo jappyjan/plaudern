@@ -16,7 +16,7 @@ import {
   type TaskListResponse,
 } from '@plaudern/contracts';
 import { CurrentUser, type AuthenticatedUser } from '@plaudern/auth';
-import { InboxService } from '@plaudern/inbox';
+import { InboxService, SelfProfileService } from '@plaudern/inbox';
 import { TasksRegistryService } from './tasks-registry.service';
 import { TasksService } from './tasks.service';
 
@@ -30,7 +30,10 @@ import { TasksService } from './tasks.service';
  */
 @Controller({ path: 'tasks', version: '1' })
 export class TasksController {
-  constructor(private readonly registry: TasksRegistryService) {}
+  constructor(
+    private readonly registry: TasksRegistryService,
+    private readonly selfProfile: SelfProfileService,
+  ) {}
 
   @Get()
   async list(
@@ -41,7 +44,11 @@ export class TasksController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues[0]?.message ?? 'invalid query');
     }
-    return { tasks: await this.registry.list(user.id, parsed.data.status) };
+    // Tasks are the owner's; without a designated owner, prompt to set one.
+    if (!(await this.selfProfile.hasOwner(user.id))) {
+      return { tasks: [], needsOwner: true };
+    }
+    return { tasks: await this.registry.list(user.id, parsed.data.status), needsOwner: false };
   }
 
   @Patch(':id')
