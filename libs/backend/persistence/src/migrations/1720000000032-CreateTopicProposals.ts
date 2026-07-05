@@ -34,8 +34,9 @@ export class CreateTopicProposals1720000000032 implements MigrationInterface {
     await queryRunner.query(
       `CREATE INDEX "IDX_topic_proposals_userId_status" ON "topic_proposals" ("userId", "status")`,
     );
+    // Unique so two concurrent generate runs can't store the same cluster twice.
     await queryRunner.query(
-      `CREATE INDEX "IDX_topic_proposals_userId_fingerprint" ON "topic_proposals" ("userId", "fingerprint")`,
+      `CREATE UNIQUE INDEX "IDX_topic_proposals_userId_fingerprint" ON "topic_proposals" ("userId", "fingerprint")`,
     );
   }
 

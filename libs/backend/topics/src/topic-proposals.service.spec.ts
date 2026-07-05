@@ -6,13 +6,14 @@ import {
   ExtractedPayloadEntity,
   InboxItemEntity,
   ItemTopicEntity,
+  TopicEntity,
   TopicProposalEntity,
 } from '@plaudern/persistence';
 import type { InboxService } from '@plaudern/inbox';
 import type { EmbeddingSearchService } from '@plaudern/embeddings';
-import type { CreateTopicRequest, TopicDto } from '@plaudern/contracts';
 import type { TopicsService } from './topics.service';
 import type { TopicProposalLabelProvider } from './topic-proposals.provider';
+import { clusterFingerprint } from './topic-proposals.clustering';
 import { TopicProposalsService } from './topic-proposals.service';
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
@@ -35,7 +36,6 @@ describe('TopicProposalsService', () => {
   let dataSource: DataSource;
   let vectorMap: Map<string, number[]>;
   let enqueued: string[];
-  let createdTopics: Array<{ userId: string; req: CreateTopicRequest }>;
   let labelCalls: number;
 
   function fakeInbox(): InboxService {
@@ -47,22 +47,13 @@ describe('TopicProposalsService', () => {
     } as unknown as InboxService;
   }
 
+  // The topic row itself is created inside accept()'s transaction (via the
+  // entity manager), so the fake only supplies the enabled gate and the
+  // reclassification enqueue.
   function fakeTopics(enabled = true): TopicsService {
     return {
       get enabled() {
         return enabled;
-      },
-      async createTopic(userId: string, req: CreateTopicRequest): Promise<TopicDto> {
-        createdTopics.push({ userId, req });
-        const now = new Date().toISOString();
-        return {
-          id: '00000000-0000-0000-0000-0000000000cc',
-          name: req.name,
-          description: req.description ?? null,
-          archived: false,
-          createdAt: now,
-          updatedAt: now,
-        };
       },
       async enqueueTopics(inboxItemId: string): Promise<string> {
         enqueued.push(inboxItemId);
@@ -123,7 +114,6 @@ describe('TopicProposalsService', () => {
     await dataSource.initialize();
     vectorMap = new Map();
     enqueued = [];
-    createdTopics = [];
     labelCalls = 0;
   });
 
@@ -227,9 +217,17 @@ describe('TopicProposalsService', () => {
     const topic = await service.accept(USER, aProposal.id);
 
     expect(topic.name).toBe('Hausbau');
-    expect(createdTopics).toEqual([
-      { userId: USER, req: { name: 'Hausbau', description: 'Building a house' } },
-    ]);
+    expect(topic.description).toBe('Building a house');
+    // The topic landed in the taxonomy table (created inside the transaction).
+    const topicRows = await dataSource.getRepository(TopicEntity).find();
+    expect(topicRows).toHaveLength(1);
+    expect(topicRows[0]).toMatchObject({
+      id: topic.id,
+      userId: USER,
+      name: 'Hausbau',
+      description: 'Building a house',
+      archived: false,
+    });
     // All four cluster members were re-enqueued for classification.
     expect(new Set(enqueued)).toEqual(new Set(aIds));
 
@@ -237,11 +235,87 @@ describe('TopicProposalsService', () => {
       .getRepository(TopicProposalEntity)
       .findOneByOrFail({ id: aProposal.id });
     expect(row.status).toBe('accepted');
-    expect(row.acceptedTopicId).toBe('00000000-0000-0000-0000-0000000000cc');
+    expect(row.acceptedTopicId).toBe(topic.id);
     // Accepted proposals drop out of the pending list.
     expect((await service.listProposals(USER)).proposals.some((p) => p.id === aProposal.id)).toBe(
       false,
     );
+  });
+
+  it('accept loses cleanly when the proposal is resolved between check and claim (race guard)', async () => {
+    const aIds = await seedCluster([1, 0], 4);
+    const service = buildService();
+    await service.generate(USER);
+    const { proposals } = await service.listProposals(USER);
+    const proposal = proposals.find((p) => p.sampleItemIds.some((id) => aIds.includes(id)))!;
+
+    // Simulate the multi-tab race: the row is resolved AFTER this request's
+    // pending pre-check but BEFORE its claim. The stale pre-check read passes;
+    // the guarded conditional update must then affect zero rows and Conflict.
+    const repo = dataSource.getRepository(TopicProposalEntity);
+    const stale = await repo.findOneByOrFail({ id: proposal.id });
+    await repo.update({ id: proposal.id }, { status: 'dismissed' });
+    const spy = jest.spyOn(repo, 'findOne').mockResolvedValueOnce({ ...stale, status: 'pending' });
+    try {
+      await expect(service.accept(USER, proposal.id)).rejects.toBeInstanceOf(ConflictException);
+    } finally {
+      spy.mockRestore();
+    }
+
+    // The losing accept created no topic and enqueued no reclassification.
+    expect(await dataSource.getRepository(TopicEntity).count()).toBe(0);
+    expect(enqueued).toHaveLength(0);
+    const row = await repo.findOneByOrFail({ id: proposal.id });
+    expect(row.status).toBe('dismissed');
+    expect(row.acceptedTopicId).toBeNull();
+  });
+
+  it('generate skips a cluster whose fingerprint was concurrently stored (unique index)', async () => {
+    const aIds = await seedCluster([1, 0], 4);
+    const bIds = await seedCluster([0, 1], 3);
+
+    // Simulate a concurrent generate having already stored cluster A: same
+    // (userId, fingerprint), but member ids that defeat the Jaccard pre-check —
+    // forcing this run's insert to hit the unique index instead.
+    await dataSource.getRepository(TopicProposalEntity).save({
+      userId: USER,
+      fingerprint: clusterFingerprint(aIds),
+      label: 'Concurrent winner',
+      description: null,
+      itemCount: aIds.length,
+      memberItemIds: [],
+      sampleItemIds: [],
+      status: 'pending',
+      acceptedTopicId: null,
+    });
+
+    const service = buildService();
+    // Must not throw: the violation is caught and the cluster skipped.
+    await service.generate(USER);
+
+    const rows = await dataSource.getRepository(TopicProposalEntity).find({
+      where: { userId: USER },
+    });
+    // Exactly one row for cluster A (the concurrent winner, label untouched)...
+    const aRows = rows.filter((r) => r.fingerprint === clusterFingerprint(aIds));
+    expect(aRows).toHaveLength(1);
+    expect(aRows[0].label).toBe('Concurrent winner');
+    // ...and the run continued: cluster B was still proposed.
+    expect(rows.some((r) => r.fingerprint === clusterFingerprint(bIds))).toBe(true);
+  });
+
+  it('coalesces a generate call while one is already in flight for the user', async () => {
+    await seedCluster([1, 0], 4);
+    const service = buildService();
+
+    // Fire two overlapping generates; the in-process guard lets only one run.
+    const [first, second] = await Promise.all([service.generate(USER), service.generate(USER)]);
+    expect(first.enabled).toBe(true);
+    expect(second.enabled).toBe(true);
+
+    const rows = await dataSource.getRepository(TopicProposalEntity).find();
+    expect(rows).toHaveLength(1);
+    expect(labelCalls).toBe(1);
   });
 
   it('rejects accepting/dismissing an unknown or already-resolved proposal', async () => {

@@ -14,7 +14,11 @@ describe('topic-proposals clustering', () => {
         { inboxItemId: 'c1', vector: [-1, -1] },
       ];
 
-      const clusters = clusterItems(items, { threshold: 0.8, minSize: 3 });
+      const { clusters, mismatchedDimensionCount } = clusterItems(items, {
+        threshold: 0.8,
+        minSize: 3,
+      });
+      expect(mismatchedDimensionCount).toBe(0);
       expect(clusters).toHaveLength(2);
       const sets = clusters.map((c) => new Set(c.memberItemIds));
       expect(sets.some((s) => s.has('a1') && s.has('a2') && s.has('a3'))).toBe(true);
@@ -32,7 +36,7 @@ describe('topic-proposals clustering', () => {
         { inboxItemId: 'b1', vector: [0, 1] },
         { inboxItemId: 'b2', vector: [0, 1] },
       ];
-      const clusters = clusterItems(items, { threshold: 0.8, minSize: 2 });
+      const { clusters } = clusterItems(items, { threshold: 0.8, minSize: 2 });
       expect(clusters.map((c) => c.memberItemIds.length)).toEqual([4, 2]);
     });
 
@@ -42,7 +46,25 @@ describe('topic-proposals clustering', () => {
         { inboxItemId: 'z', vector: [0, 0] },
         { inboxItemId: 'a2', vector: [1, 0] },
       ];
-      const clusters = clusterItems(items, { threshold: 0.8, minSize: 2 });
+      const { clusters } = clusterItems(items, { threshold: 0.8, minSize: 2 });
+      expect(clusters).toHaveLength(1);
+      expect(clusters[0].memberItemIds).toEqual(['a1', 'a2']);
+    });
+
+    it('skips (and counts) vectors whose dimension differs from the first valid vector', () => {
+      const items = [
+        { inboxItemId: 'a1', vector: [1, 0] },
+        // A provider/dimension switch mid-history: 3-dim vectors must not be
+        // truncated into the 2-dim run — they sit out and are counted.
+        { inboxItemId: 'x1', vector: [1, 0, 0] },
+        { inboxItemId: 'a2', vector: [1, 0] },
+        { inboxItemId: 'x2', vector: [0.9, 0.1, 0] },
+      ];
+      const { clusters, mismatchedDimensionCount } = clusterItems(items, {
+        threshold: 0.8,
+        minSize: 2,
+      });
+      expect(mismatchedDimensionCount).toBe(2);
       expect(clusters).toHaveLength(1);
       expect(clusters[0].memberItemIds).toEqual(['a1', 'a2']);
     });

@@ -12,7 +12,12 @@ import { In, Repository } from 'typeorm';
 import { InboxService } from '@plaudern/inbox';
 import { EmbeddingSearchService } from '@plaudern/embeddings';
 import type { TopicDto, TopicProposalDto, TopicProposalListResponse } from '@plaudern/contracts';
-import { InboxItemEntity, ItemTopicEntity, TopicProposalEntity } from '@plaudern/persistence';
+import {
+  InboxItemEntity,
+  ItemTopicEntity,
+  TopicEntity,
+  TopicProposalEntity,
+} from '@plaudern/persistence';
 import { TopicsService } from './topics.service';
 import { buildTopicContent } from './topic-context';
 import {
@@ -91,15 +96,28 @@ export class TopicProposalsService {
     return { proposals: rows.map(toProposalDto), enabled: this.enabled };
   }
 
+  /** Users with a generate run in flight — a double-click coalesces, not duplicates. */
+  private readonly generating = new Set<string>();
+
   /**
    * (Re)generate proposals: cluster recent uncovered items, label the largest
    * new clusters, and persist them as pending. Suppresses clusters the user
    * already dismissed/accepted and clusters already pending. No-ops (returning
-   * the current list) when the feature is disabled. Returns the refreshed list.
+   * the current list) when the feature is disabled or a run is already in
+   * flight for the user. Returns the refreshed list.
    */
   async generate(userId: string): Promise<TopicProposalListResponse> {
     if (!this.enabled) return this.listProposals(userId);
+    if (this.generating.has(userId)) return this.listProposals(userId);
+    this.generating.add(userId);
+    try {
+      return await this.generateLocked(userId);
+    } finally {
+      this.generating.delete(userId);
+    }
+  }
 
+  private async generateLocked(userId: string): Promise<TopicProposalListResponse> {
     const candidateIds = await this.recentUncoveredItemIds(userId);
     if (candidateIds.length < this.minClusterSize) return this.listProposals(userId);
 
@@ -113,10 +131,17 @@ export class TopicProposalsService {
       if (vector) ordered.push({ inboxItemId: id, vector });
     }
 
-    const clusters = clusterItems(ordered, {
+    const { clusters, mismatchedDimensionCount } = clusterItems(ordered, {
       threshold: this.similarity,
       minSize: this.minClusterSize,
     });
+    if (mismatchedDimensionCount > 0) {
+      // An embedding provider/dimension switch mid-history; those items can't
+      // be compared against the current run's vectors, so they sat out.
+      this.logger.warn(
+        `skipped ${mismatchedDimensionCount} item(s) with mismatched embedding dimensions for user ${userId}`,
+      );
+    }
     if (clusters.length === 0) return this.listProposals(userId);
 
     const existing = await this.proposals.find({ where: { userId } });
@@ -138,19 +163,26 @@ export class TopicProposalsService {
       if (!labeled) continue;
 
       const sampleItemIds = cluster.memberItemIds.slice(0, SAMPLE_ITEMS);
-      await this.proposals.save(
-        this.proposals.create({
-          userId,
-          fingerprint: clusterFingerprint(cluster.memberItemIds),
-          label: labeled.label,
-          description: labeled.description,
-          itemCount: cluster.memberItemIds.length,
-          memberItemIds: cluster.memberItemIds,
-          sampleItemIds,
-          status: 'pending',
-          acceptedTopicId: null,
-        }),
-      );
+      try {
+        await this.proposals.save(
+          this.proposals.create({
+            userId,
+            fingerprint: clusterFingerprint(cluster.memberItemIds),
+            label: labeled.label,
+            description: labeled.description,
+            itemCount: cluster.memberItemIds.length,
+            memberItemIds: cluster.memberItemIds,
+            sampleItemIds,
+            status: 'pending',
+            acceptedTopicId: null,
+          }),
+        );
+      } catch (err) {
+        // Lost a race on the (userId, fingerprint) unique index — a concurrent
+        // generate already stored this exact cluster; skip it.
+        if (!isUniqueViolation(err)) throw err;
+        continue;
+      }
       // Track the just-created cluster so a near-duplicate later in the run is skipped.
       pending.push(cluster.memberItemIds);
       budget -= 1;
@@ -163,6 +195,13 @@ export class TopicProposalsService {
    * Accept a proposal: create the topic in the taxonomy and reclassify the
    * cluster's items against the now-extended taxonomy via the existing per-item
    * topics pipeline (no new pipeline is invented). Returns the created topic.
+   *
+   * Claim + create run in one transaction, and the claim is a guarded
+   * conditional update (`... WHERE status = 'pending'`): of two concurrent
+   * accepts (multi-tab) exactly one flips the row and creates the topic — the
+   * loser affects zero rows and gets the same Conflict an already-resolved
+   * proposal would. A crash mid-accept rolls the topic back with the claim, so
+   * no orphan topic can be left behind a still-pending proposal.
    */
   async accept(userId: string, proposalId: string): Promise<TopicDto> {
     const proposal = await this.proposals.findOne({ where: { id: proposalId, userId } });
@@ -176,14 +215,27 @@ export class TopicProposalsService {
       );
     }
 
-    const topic = await this.topics.createTopic(userId, {
-      name: proposal.label,
-      description: proposal.description ?? undefined,
+    const topic = await this.proposals.manager.transaction(async (em) => {
+      const claimed = await em
+        .getRepository(TopicProposalEntity)
+        .update({ id: proposalId, userId, status: 'pending' }, { status: 'accepted' });
+      if (!claimed.affected) {
+        throw new ConflictException('proposal has already been resolved');
+      }
+      const topicsRepo = em.getRepository(TopicEntity);
+      const row = await topicsRepo.save(
+        topicsRepo.create({
+          userId,
+          name: proposal.label,
+          description: proposal.description,
+          archived: false,
+        }),
+      );
+      await em
+        .getRepository(TopicProposalEntity)
+        .update({ id: proposalId }, { acceptedTopicId: row.id });
+      return toTopicDto(row);
     });
-
-    proposal.status = 'accepted';
-    proposal.acceptedTopicId = topic.id;
-    await this.proposals.save(proposal);
 
     // Reclassify the cluster's members so they pick up the new topic. Reuses the
     // existing per-item enqueue; items deleted or without classifiable content
@@ -293,6 +345,18 @@ function toProposalDto(row: TopicProposalEntity): TopicProposalDto {
   };
 }
 
+/** Mirrors TopicsService's DTO mapping for the topic created inside accept()'s transaction. */
+function toTopicDto(row: TopicEntity): TopicDto {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    archived: row.archived,
+    createdAt: iso(row.createdAt)!,
+    updatedAt: iso(row.updatedAt)!,
+  };
+}
+
 function iso(value: Date | string | null): string | null {
   if (value === null) return null;
   return value instanceof Date ? value.toISOString() : value;
@@ -301,4 +365,21 @@ function iso(value: Date | string | null): string | null {
 function num(config: ConfigService, key: string, fallback: number): number {
   const parsed = Number(config.get<string>(key, String(fallback)));
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/**
+ * Whether a save failed on a unique index, across the drivers we run on:
+ * Postgres surfaces SQLSTATE 23505 (unique_violation), better-sqlite3 a
+ * SQLITE_CONSTRAINT* code / "UNIQUE constraint failed" message. Anything else
+ * must propagate. (Same pattern as the commitments/tasks persistence.)
+ */
+function isUniqueViolation(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const driverError = (err as { driverError?: unknown }).driverError ?? err;
+  if (!driverError || typeof driverError !== 'object') return false;
+  const code = (driverError as { code?: unknown }).code;
+  if (code === '23505') return true;
+  if (typeof code === 'string' && code.startsWith('SQLITE_CONSTRAINT')) return true;
+  const message = (driverError as { message?: unknown }).message;
+  return typeof message === 'string' && message.includes('UNIQUE constraint failed');
 }

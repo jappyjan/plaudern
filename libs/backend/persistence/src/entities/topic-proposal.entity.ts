@@ -22,7 +22,10 @@ import type { TopicProposalStatus } from '@plaudern/contracts';
 @Entity({ name: 'topic_proposals' })
 @Index(['userId'])
 @Index(['userId', 'status'])
-@Index(['userId', 'fingerprint'])
+// Unique so two concurrent generate runs can't store the same cluster twice;
+// the losing insert catches the violation and skips (same race-recovery
+// pattern as the commitments/tasks persistence).
+@Index(['userId', 'fingerprint'], { unique: true })
 export class TopicProposalEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

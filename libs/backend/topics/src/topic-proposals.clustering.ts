@@ -18,6 +18,17 @@ export interface ClusterOptions {
   minSize: number;
 }
 
+export interface ClusterOutcome {
+  clusters: Cluster[];
+  /**
+   * Items skipped because their vector dimension differed from the run's first
+   * valid vector (an embedding provider/model switch mid-history). Comparing
+   * across dimensions would yield meaningless similarities, so they're dropped;
+   * the caller logs the count.
+   */
+  mismatchedDimensionCount: number;
+}
+
 /**
  * Greedy "leader" clustering over item embeddings — dependency-light and
  * fully deterministic given the input order. Each item joins the existing
@@ -29,17 +40,27 @@ export interface ClusterOptions {
  * Vectors are L2-normalized up front so cosine similarity is a plain dot
  * product, and each cluster tracks the sum of its members' normalized vectors
  * (its centroid direction is that sum, itself normalized) so the "closest
- * centroid" test stays O(dims) per comparison.
+ * centroid" test stays O(dims) per comparison. The dimension is pinned to the
+ * first valid vector; items with any other dimension are skipped (and counted)
+ * rather than silently truncated into nonsense similarities.
  *
  * Returned clusters are filtered to `minSize` and ordered largest-first, so a
  * caller that labels only the top-K proposes the most prominent themes.
  */
-export function clusterItems(items: ClusterInput[], options: ClusterOptions): Cluster[] {
+export function clusterItems(items: ClusterInput[], options: ClusterOptions): ClusterOutcome {
   const clusters: Array<{ memberItemIds: string[]; centroidSum: number[] }> = [];
+  let dims: number | null = null;
+  let mismatchedDimensionCount = 0;
 
   for (const item of items) {
     const unit = normalize(item.vector);
     if (!unit) continue; // zero/empty vector — nothing to compare.
+    if (dims === null) {
+      dims = unit.length;
+    } else if (unit.length !== dims) {
+      mismatchedDimensionCount += 1;
+      continue;
+    }
 
     let best: (typeof clusters)[number] | null = null;
     let bestSim = -Infinity;
@@ -61,10 +82,13 @@ export function clusterItems(items: ClusterInput[], options: ClusterOptions): Cl
     }
   }
 
-  return clusters
-    .filter((c) => c.memberItemIds.length >= options.minSize)
-    .map((c) => ({ memberItemIds: c.memberItemIds }))
-    .sort((a, b) => b.memberItemIds.length - a.memberItemIds.length);
+  return {
+    clusters: clusters
+      .filter((c) => c.memberItemIds.length >= options.minSize)
+      .map((c) => ({ memberItemIds: c.memberItemIds }))
+      .sort((a, b) => b.memberItemIds.length - a.memberItemIds.length),
+    mismatchedDimensionCount,
+  };
 }
 
 /**
