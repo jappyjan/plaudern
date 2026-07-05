@@ -367,7 +367,9 @@ export function ItemDetailPage() {
     !audio && step.key === 'all'
       ? {
           ...step,
-          description: 'Re-run the whole pipeline from the note text (the summary follows).',
+          description: isDocument
+            ? 'Re-run the whole pipeline from the recognized text (the summary follows).'
+            : 'Re-run the whole pipeline from the note text (the summary follows).',
         }
       : step,
   );
@@ -454,6 +456,15 @@ export function ItemDetailPage() {
 
       <Card>
         <CardBody>
+          {isDocument ? (
+            // Documents have no separate transcript/note view — the recognized
+            // text lives in the "Scanned document" card above. Show only the
+            // summary, which the pipeline now generates from the OCR text.
+            <div className="flex flex-col gap-2">
+              <h2 className="text-sm font-semibold">Summary</h2>
+              <SummaryView itemId={item.id} />
+            </div>
+          ) : (
           <Tabs
             aria-label={audio ? 'Recording views' : 'Note views'}
             variant="underlined"
@@ -554,6 +565,7 @@ export function ItemDetailPage() {
               </div>
             </Tab>
           </Tabs>
+          )}
         </CardBody>
       </Card>
 
