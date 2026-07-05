@@ -37,8 +37,8 @@ function configuredDimensions(): number {
  * (…019); `CREATE EXTENSION IF NOT EXISTS` here keeps this migration
  * self-standing.
  */
-export class CreateTasks1720000000024 implements MigrationInterface {
-  name = 'CreateTasks1720000000024';
+export class CreateTasks1720000000029 implements MigrationInterface {
+  name = 'CreateTasks1720000000029';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     const dimensions = configuredDimensions();
