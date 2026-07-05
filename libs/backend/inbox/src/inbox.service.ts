@@ -17,6 +17,7 @@ import {
   InboxItemEntity,
   InboxTombstoneEntity,
   ItemTopicEntity,
+  QuestionEntity,
   RecordingEventLinkEntity,
   RecordingMergeEntity,
   SourcePayloadEntity,
@@ -294,6 +295,7 @@ export class InboxService {
       await em.getRepository(EntityMentionEntity).delete({ inboxItemId: item.id });
       await em.getRepository(ItemTopicEntity).delete({ inboxItemId: item.id });
       await em.getRepository(CommitmentEntity).delete({ inboxItemId: item.id });
+      await em.getRepository(QuestionEntity).delete({ inboxItemId: item.id });
       // Tasks: remember which tasks this item cited, drop the citations, then
       // hard-delete OPEN tasks left with no citations at all — an open task no
       // recording supports any more is a ghost. Completed/dismissed tasks are
@@ -372,6 +374,7 @@ export class InboxService {
         await em.getRepository(EntityMentionEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(ItemTopicEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(CommitmentEntity).delete({ inboxItemId: In(itemIds) });
+        await em.getRepository(QuestionEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(TaskCitationEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(ExtractedPayloadEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(SourcePayloadEntity).delete({ inboxItemId: In(itemIds) });
