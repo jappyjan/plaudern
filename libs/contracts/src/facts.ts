@@ -108,7 +108,13 @@ export type FactCitationDto = z.infer<typeof factCitationSchema>;
  */
 export const factListQuerySchema = z.object({
   personEntityId: z.string().uuid().optional(),
-  includeSuperseded: z.coerce.boolean().optional().default(false),
+  // Query params arrive as strings, so coerce explicitly: only "true"/"1"
+  // enable it. `z.coerce.boolean()` is WRONG here — it maps any non-empty
+  // string (including "false") to true.
+  includeSuperseded: z
+    .union([z.boolean(), z.string()])
+    .optional()
+    .transform((v) => v === true || v === 'true' || v === '1'),
 });
 export type FactListQuery = z.infer<typeof factListQuerySchema>;
 
