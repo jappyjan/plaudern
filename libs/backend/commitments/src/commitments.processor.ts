@@ -41,17 +41,22 @@ export class CommitmentsProcessor {
       const item = await this.inbox.getItemById(job.inboxItemId);
       if (!item) throw new Error('inbox item no longer exists');
 
-      const input = await this.context.build(item);
-      if (!input) {
+      const ctx = await this.context.build(item);
+      if (!ctx) {
         throw new Error('no succeeded transcription to extract commitments from');
       }
 
-      const result = await this.provider.extract(input);
+      // Owner not anchored for this item → persist zero commitments (which reaps
+      // any stale/previously mis-attributed ones) rather than guessing direction.
+      const result =
+        ctx.kind === 'ready'
+          ? await this.provider.extract(ctx.input)
+          : { commitments: [], model: this.provider.id };
       const commitmentCount = await this.persistence.persist(
         item.userId,
         item.id,
         job.extractionId,
-        input.occurredAt,
+        ctx.kind === 'ready' ? ctx.input.occurredAt : undefined,
         result.commitments,
       );
 

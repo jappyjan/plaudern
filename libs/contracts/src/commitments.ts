@@ -98,6 +98,12 @@ export const itemCommitmentsResponseSchema = z.object({
   error: z.string().nullable(),
   createdAt: z.string().datetime().nullable(),
   completedAt: z.string().datetime().nullable(),
+  /**
+   * True when the user has not designated an account owner ("This is me").
+   * Direction (owed_by_me vs owed_to_me) is meaningless without it, so
+   * commitments are neither extracted nor shown until an owner is set.
+   */
+  needsOwner: z.boolean().default(false),
 });
 export type ItemCommitmentsResponse = z.infer<typeof itemCommitmentsResponseSchema>;
 
@@ -110,6 +116,8 @@ export type CommitmentListQuery = z.infer<typeof commitmentListQuerySchema>;
 
 export const commitmentListResponseSchema = z.object({
   commitments: z.array(commitmentSchema),
+  /** True when no account owner is set — the list is empty until one is. */
+  needsOwner: z.boolean().default(false),
 });
 export type CommitmentListResponse = z.infer<typeof commitmentListResponseSchema>;
 

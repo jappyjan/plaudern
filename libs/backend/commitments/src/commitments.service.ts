@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { InboxService } from '@plaudern/inbox';
+import { InboxService, SelfProfileService } from '@plaudern/inbox';
 import type {
   CommitmentDto,
   CommitmentListQuery,
@@ -59,6 +59,7 @@ export class CommitmentsService {
     private readonly commitments: Repository<CommitmentEntity>,
     @InjectRepository(InboxItemEntity)
     private readonly items: Repository<InboxItemEntity>,
+    private readonly selfProfile: SelfProfileService,
   ) {}
 
   /**
@@ -82,6 +83,11 @@ export class CommitmentsService {
         'commitment extraction is not configured (set COMMITMENTS_API_KEY, or COMMITMENTS_ENABLED=true for keyless local endpoints such as Ollama)',
       );
     }
+    if (!(await this.selfProfile.hasOwner(userId))) {
+      throw new BadRequestException(
+        'set which contact is you ("This is me") before extracting commitments',
+      );
+    }
     const item = await this.inbox.getItem(userId, inboxItemId);
     const extractions = item.extractions ?? [];
     const transcription = latestOfKind(extractions, 'transcription');
@@ -92,11 +98,16 @@ export class CommitmentsService {
     if (commitments && ACTIVE_STATUSES.includes(commitments.status)) {
       throw new ConflictException('commitment extraction is already running');
     }
-    return this.enqueueCommitments(inboxItemId);
+    return (await this.enqueueCommitments(inboxItemId, userId)) as string;
   }
 
-  /** Append a fresh `queued` commitments row and hand the job to the queue. */
-  async enqueueCommitments(inboxItemId: string): Promise<string> {
+  /**
+   * Append a fresh `queued` commitments row and hand the job to the queue.
+   * No-op (returns null) when the user has not designated an account owner —
+   * direction is meaningless without one, so we never extract or guess.
+   */
+  async enqueueCommitments(inboxItemId: string, userId: string): Promise<string | null> {
+    if (!(await this.selfProfile.hasOwner(userId))) return null;
     const extraction = await this.inbox.addExtraction(
       inboxItemId,
       'commitments',
@@ -112,6 +123,19 @@ export class CommitmentsService {
   /** An item's commitments tab: latest extraction's status + the item's commitments. */
   async getItemCommitments(userId: string, inboxItemId: string): Promise<ItemCommitmentsResponse> {
     const item = await this.inbox.getItem(userId, inboxItemId);
+    // Without an account owner, direction can't be trusted — surface the prompt
+    // to set one instead of showing (possibly mis-attributed) commitments.
+    if (!(await this.selfProfile.hasOwner(userId))) {
+      return {
+        status: null,
+        commitments: [],
+        model: null,
+        error: null,
+        createdAt: null,
+        completedAt: null,
+        needsOwner: true,
+      };
+    }
     const latest = latestOfKind(item.extractions ?? [], 'commitments');
     const occurredAt = iso(item.occurredAt)!;
     const rows = await this.commitments.find({ where: { userId, inboxItemId } });
@@ -124,11 +148,15 @@ export class CommitmentsService {
       error: latest?.error ?? null,
       createdAt: latest ? iso(latest.createdAt) : null,
       completedAt: latest?.completedAt ?? null,
+      needsOwner: false,
     };
   }
 
   /** The user's commitments, optionally filtered by direction and/or status. */
   async list(userId: string, filters: CommitmentListQuery): Promise<CommitmentListResponse> {
+    if (!(await this.selfProfile.hasOwner(userId))) {
+      return { commitments: [], needsOwner: true };
+    }
     const rows = await this.commitments.find({
       where: {
         userId,
@@ -140,7 +168,7 @@ export class CommitmentsService {
     const commitments = rows
       .map((row) => toCommitmentDto(row, occurredById.get(row.inboxItemId) ?? row.createdAt.toISOString()))
       .sort(byDueThenCreated);
-    return { commitments };
+    return { commitments, needsOwner: false };
   }
 
   /** Advance a commitment's lifecycle status (open → fulfilled / dismissed). */

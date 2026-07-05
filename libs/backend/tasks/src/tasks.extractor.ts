@@ -32,6 +32,6 @@ export class TasksExtractor implements Extractor {
   }
 
   async enqueue(item: InboxItemEntity): Promise<string | null> {
-    return this.tasks.enqueueTasks(item.id);
+    return this.tasks.enqueueTasks(item.id, item.userId);
   }
 }

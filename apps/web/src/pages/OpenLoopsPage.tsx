@@ -17,6 +17,7 @@ type DirectionFilter = 'all' | CommitmentDirection;
  */
 export function OpenLoopsPage() {
   const [loops, setLoops] = useState<OpenLoopDto[] | null>(null);
+  const [needsOwner, setNeedsOwner] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [kind, setKind] = useState<KindFilter>('all');
   const [direction, setDirection] = useState<DirectionFilter>('all');
@@ -32,6 +33,7 @@ export function OpenLoopsPage() {
         includeResolved,
       });
       setLoops(res.openLoops);
+      setNeedsOwner(res.needsOwner);
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -126,7 +128,27 @@ export function OpenLoopsPage() {
         </div>
       )}
 
-      {loops && loops.length === 0 && (
+      {loops && needsOwner && (
+        <Card>
+          <CardBody className="flex flex-col items-center gap-3 py-10 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-default-100 text-default-500">
+              <LoopIcon className="h-6 w-6" />
+            </span>
+            <div className="flex flex-col gap-1">
+              <p className="text-sm font-medium">Tell Plaudern who you are</p>
+              <p className="max-w-sm text-sm text-default-500">
+                Open loops are your tasks and the commitments you owe or are owed. Mark which
+                contact is you and Plaudern will fill this in from your recordings.
+              </p>
+            </div>
+            <Button as={Link} to="/contacts" size="sm" color="primary" variant="flat">
+              Choose “me” in Contacts
+            </Button>
+          </CardBody>
+        </Card>
+      )}
+
+      {loops && !needsOwner && loops.length === 0 && (
         <Card>
           <CardBody className="flex flex-col items-center gap-3 py-10 text-center">
             <span className="flex h-12 w-12 items-center justify-center rounded-full bg-default-100 text-default-500">

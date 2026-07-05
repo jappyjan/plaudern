@@ -90,6 +90,12 @@ export type OpenLoopListQuery = z.infer<typeof openLoopListQuerySchema>;
 
 export const openLoopListResponseSchema = z.object({
   openLoops: z.array(openLoopSchema),
+  /**
+   * True when no account owner ("This is me") is set. Owner-relative loops
+   * (commitments, the owner's tasks) are not surfaced until one is, so the UI
+   * prompts the user to set it instead of showing an empty list.
+   */
+  needsOwner: z.boolean().default(false),
 });
 export type OpenLoopListResponse = z.infer<typeof openLoopListResponseSchema>;
 

@@ -7,6 +7,7 @@ import {
   type OpenLoopListResponse,
 } from '@plaudern/contracts';
 import { CurrentUser, type AuthenticatedUser } from '@plaudern/auth';
+import { SelfProfileService } from '@plaudern/inbox';
 import { OpenLoopsService } from './open-loops.service';
 
 /**
@@ -17,7 +18,10 @@ import { OpenLoopsService } from './open-loops.service';
  */
 @Controller({ path: 'open-loops', version: '1' })
 export class OpenLoopsController {
-  constructor(private readonly openLoops: OpenLoopsService) {}
+  constructor(
+    private readonly openLoops: OpenLoopsService,
+    private readonly selfProfile: SelfProfileService,
+  ) {}
 
   @Get()
   async list(
@@ -28,7 +32,12 @@ export class OpenLoopsController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues[0]?.message ?? 'invalid query');
     }
-    return { openLoops: await this.openLoops.list(user.id, parsed.data) };
+    // Every ledger source is owner-relative; without an owner the list is empty
+    // by construction, so tell the UI to prompt for one.
+    if (!(await this.selfProfile.hasOwner(user.id))) {
+      return { openLoops: [], needsOwner: true };
+    }
+    return { openLoops: await this.openLoops.list(user.id, parsed.data), needsOwner: false };
   }
 
   @Patch(':kind/:id')

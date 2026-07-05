@@ -22,6 +22,12 @@ export interface CommitmentExtractionInput {
    * case the model falls back to first-person ("I'll…") language.
    */
   ownerLabel?: string | null;
+  /**
+   * The owner's name, whenever a self profile exists (even if they did not
+   * speak in this recording). Lets the model anchor direction on the name when
+   * no owner label is available.
+   */
+  ownerName?: string | null;
   /** Detected transcript language (2-letter code), for context. */
   language?: string;
   /** When the recording occurred — the anchor for resolving relative dates. */

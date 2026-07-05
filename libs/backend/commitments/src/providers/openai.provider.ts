@@ -106,9 +106,14 @@ export const SYSTEM_PROMPT = [
   '  - owed_to_me: someone else promised to do something for the owner.',
   '',
   'The transcript may be speaker-attributed with LABEL: prefixes (e.g. SPEAKER_00:).',
-  'The owner is the first-person speaker — statements like "I\'ll send you the draft"',
-  'are owed_by_me. Statements attributed to a NAMED other person, or reported',
-  'speech like "Tom said he\'d check with the landlord", are owed_to_me.',
+  'The speaker roster in the user message marks exactly one participant as the',
+  'owner ("me"). Attribute direction relative to THAT owner: things the owner',
+  'promises ("I\'ll send you the draft") are owed_by_me; things any other',
+  'participant promises — including reported speech like "Tom said he\'d check',
+  'with the landlord" — are owed_to_me.',
+  'If the roster gives the owner\'s name but the transcript has no speaker labels,',
+  'use the name to decide direction. Only when neither the owner label nor name',
+  'can be found in the transcript should you fall back to first-person language.',
   '',
   'Always respond with a single JSON object and nothing else, of the shape:',
   '  { "commitments": [ {',
@@ -143,6 +148,12 @@ export function buildUserPrompt(input: CommitmentExtractionInput): string {
       parts.push(`- ${s.label}: ${s.displayName}${owner}`);
     }
     parts.push('');
+  }
+
+  // The owner's name anchors direction even when they were not diarized as a
+  // labelled speaker (e.g. a single-speaker note or an untagged transcript).
+  if (input.ownerName) {
+    parts.push(`The owner ("me") is ${input.ownerName}.`, '');
   }
 
   parts.push('Transcript:', '"""', input.transcript.trim(), '"""');

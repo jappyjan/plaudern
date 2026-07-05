@@ -68,6 +68,7 @@ export class SummaryContextService {
           name: row.voiceProfile.name,
           label: row.label,
           status: row.voiceProfile.status,
+          isSelf: row.voiceProfile.isSelf,
         });
       }
     }
@@ -85,6 +86,7 @@ export class SummaryContextService {
       label: s.label,
       displayName: displayName(s.name, index),
       confirmed: s.status === 'confirmed',
+      isSelf: s.isSelf,
     }));
 
     return {

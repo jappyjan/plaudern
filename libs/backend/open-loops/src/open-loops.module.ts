@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { TaskCitationEntity } from '@plaudern/persistence';
+import { InboxModule } from '@plaudern/inbox';
 import { TasksModule } from '@plaudern/tasks';
 import { CommitmentsModule } from '@plaudern/commitments';
 import { OPEN_LOOP_SOURCES, type OpenLoopSource } from './open-loop-source';
@@ -21,6 +22,7 @@ import { OpenLoopsController } from './open-loops.controller';
  */
 @Module({
   imports: [
+    InboxModule,
     TasksModule,
     CommitmentsModule,
     // TaskOpenLoopSource resolves each task's most-recent source recording.

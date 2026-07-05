@@ -62,6 +62,7 @@ export class SpeakerTranscriptService {
           name: row.voiceProfile.name,
           label: row.label,
           status: row.voiceProfile.status,
+          isSelf: row.voiceProfile.isSelf,
           consentStatus: row.voiceProfile.consentStatus,
         };
         if (row.voiceProfile.redacted) {

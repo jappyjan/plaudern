@@ -72,6 +72,7 @@ import { ExtractionRunTrigger1720000000028 } from './migrations/1720000000028-Ex
 import { CreateTasks1720000000029 } from './migrations/1720000000029-CreateTasks';
 import { CreateQuestions1720000000030 } from './migrations/1720000000030-CreateQuestions';
 import { CreateTopicProposals1720000000032 } from './migrations/1720000000032-CreateTopicProposals';
+import { VoiceProfileSelf1720000000033 } from './migrations/1720000000033-VoiceProfileSelf';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -148,6 +149,7 @@ export const ALL_MIGRATIONS = [
   CreateTasks1720000000029,
   CreateQuestions1720000000030,
   CreateTopicProposals1720000000032,
+  VoiceProfileSelf1720000000033,
 ];
 
 /**

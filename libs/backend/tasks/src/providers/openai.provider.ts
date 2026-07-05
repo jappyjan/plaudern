@@ -98,16 +98,22 @@ export class OpenAiTaskExtractionProvider implements TaskExtractionProvider {
 }
 
 export const SYSTEM_PROMPT = [
-  'You extract the SPEAKER\'S OWN self-directed tasks (things they intend to do) from a',
-  'transcribed audio recording for a note-taking app.',
+  "You extract the OWNER'S OWN self-directed tasks (things the owner intends to do)",
+  'from a transcribed audio recording or note for a note-taking app.',
+  'The user message identifies who the owner ("me") is — by name and, when the',
+  'recording is speaker-attributed, by their diarization LABEL.',
   'Always respond with a single JSON object and nothing else, of the shape:',
   '  { "tasks": [ { "title": <string>, "dueDate": <YYYY-MM-DD|null>, "quote": <string> }, ... ] }',
   '',
   'Rules:',
-  '- Extract ONLY genuine intentions/action items the speaker has for THEMSELVES',
-  '  ("I need to book the dentist", "remember to email Anna", "I should renew my passport").',
-  '- Do NOT extract tasks assigned to other people, hypotheticals, past/completed actions,',
-  '  or general facts and observations.',
+  '- Extract ONLY genuine intentions/action items that belong to the OWNER',
+  '  ("I need to book the dentist", "remember to email Anna", "I should renew my passport",',
+  '  or a task explicitly assigned TO the owner by name).',
+  '- Do NOT extract tasks assigned to any OTHER person, hypotheticals, past/completed',
+  '  actions, or general facts and observations. In a multi-speaker transcript, only the',
+  "  owner's own statements (or tasks handed to the owner) count.",
+  '- If the owner is not named or labelled, treat first-person intentions ("I need to…")',
+  '  as the owner\'s.',
   '- "title" is a short imperative rephrasing, e.g. "Book the dentist", "Email Anna".',
   '- "dueDate" is an ISO date (YYYY-MM-DD) if the recording clearly implies one (resolve',
   '  relative references like "tomorrow" against the recording time); otherwise null.',
@@ -116,7 +122,7 @@ export const SYSTEM_PROMPT = [
   '- Prefer precision over recall. If there are no tasks, return { "tasks": [] }.',
 ].join('\n');
 
-/** Build the user message: metadata + the text to extract from. */
+/** Build the user message: owner + roster + metadata + the text to extract from. */
 export function buildUserPrompt(input: TaskExtractionInput): string {
   const parts: string[] = [];
   const meta: string[] = [];
@@ -125,6 +131,28 @@ export function buildUserPrompt(input: TaskExtractionInput): string {
   if (meta.length > 0) {
     parts.push(`Recording metadata — ${meta.join(', ')}.`, '');
   }
+
+  // Identify the owner ("me") so the model scopes tasks to them and excludes
+  // everyone else. Both name and label are given when available.
+  const ownerBits: string[] = [];
+  if (input.ownerName) ownerBits.push(input.ownerName);
+  if (input.ownerLabel) ownerBits.push(`label ${input.ownerLabel}`);
+  parts.push(
+    ownerBits.length > 0
+      ? `The owner ("me") is ${ownerBits.join(', ')}. Extract only the owner's tasks.`
+      : "The owner (\"me\") is the first-person speaker. Extract only the owner's tasks.",
+    '',
+  );
+
+  if (input.speakers && input.speakers.length > 0) {
+    parts.push('Speakers:');
+    for (const s of input.speakers) {
+      const owner = input.ownerLabel && s.label === input.ownerLabel ? ' (the owner / me)' : '';
+      parts.push(`- ${s.label}: ${s.displayName}${owner}`);
+    }
+    parts.push('');
+  }
+
   parts.push('Text:', '"""', input.text.trim(), '"""');
   return parts.join('\n');
 }

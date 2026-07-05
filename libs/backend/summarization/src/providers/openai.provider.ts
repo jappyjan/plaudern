@@ -174,13 +174,24 @@ export function buildUserPrompt(input: SummarizationInput): string {
   }
 
   if (input.speakers.length > 0) {
+    const hasOwner = input.speakers.some((s) => s.isSelf);
     parts.push(
       '',
       'Speaker roster (use @[LABEL] to mention a speaker in prose):',
       ...input.speakers.map(
-        (s) => `- ${s.label} = ${s.displayName}${s.confirmed ? '' : ' (unconfirmed)'}`,
+        (s) =>
+          `- ${s.label} = ${s.displayName}${s.isSelf ? ' (the note owner / you)' : ''}${
+            s.confirmed ? '' : ' (unconfirmed)'
+          }`,
       ),
     );
+    // When we know who "you" are, phrase the owner's own action items as theirs.
+    if (hasOwner) {
+      parts.push(
+        'One speaker is marked as the note owner ("you"). Attribute action items to',
+        'the right speaker; write the owner\'s own action items as theirs ("you").',
+      );
+    }
   }
 
   parts.push('', isNote ? 'Note content:' : 'Transcript:', '"""', input.transcript.trim(), '"""');

@@ -17,6 +17,7 @@ import type {
 } from '@plaudern/contracts';
 import { taskExtractionPayloadSchema } from '@plaudern/contracts';
 import type { EmbeddingProvider } from '@plaudern/embeddings';
+import { SelfProfileService } from '@plaudern/inbox';
 import {
   ExtractedPayloadEntity,
   TaskCitationEntity,
@@ -78,6 +79,7 @@ export class TasksRegistryService {
     @Inject(TASK_DEDUPE_EMBEDDING_PROVIDER)
     private readonly embeddings: EmbeddingProvider,
     config: ConfigService,
+    private readonly selfProfile: SelfProfileService,
   ) {
     const raw = Number(config.get<string>('TASKS_DEDUPE_THRESHOLD', ''));
     this.threshold = Number.isFinite(raw) && raw > 0 && raw <= 1 ? raw : DEFAULT_DEDUPE_THRESHOLD;
@@ -256,6 +258,9 @@ export class TasksRegistryService {
    * way — the user explicitly actioned those.
    */
   async list(userId: string, status?: TaskStatus): Promise<TaskDto[]> {
+    // Tasks are the owner's; with no owner set we don't surface any (also
+    // hides stale rows if the owner was later cleared). See needsOwner gating.
+    if (!(await this.selfProfile.hasOwner(userId))) return [];
     const rows = await this.tasks.find({
       where: status ? { userId, status } : { userId },
     });
@@ -290,11 +295,31 @@ export class TasksRegistryService {
    * it cited (with this recording's quote/segment).
    */
   async getItemTasks(item: {
+    userId: string;
     extractions: ExtractedPayloadEntity[] | undefined;
   }): Promise<ItemTasksResponse> {
+    if (!(await this.selfProfile.hasOwner(item.userId))) {
+      return {
+        status: null,
+        tasks: [],
+        model: null,
+        error: null,
+        createdAt: null,
+        completedAt: null,
+        needsOwner: true,
+      };
+    }
     const extraction = latestOfKind(item.extractions ?? [], 'tasks');
     if (!extraction) {
-      return { status: null, tasks: [], model: null, error: null, createdAt: null, completedAt: null };
+      return {
+        status: null,
+        tasks: [],
+        model: null,
+        error: null,
+        createdAt: null,
+        completedAt: null,
+        needsOwner: false,
+      };
     }
     const payload = parsePayload(extraction.content);
     const citations = await this.citations.find({ where: { extractionId: extraction.id } });
@@ -321,6 +346,7 @@ export class TasksRegistryService {
       error: extraction.error,
       createdAt: iso(extraction.createdAt),
       completedAt: iso(extraction.completedAt),
+      needsOwner: false,
     };
   }
 
