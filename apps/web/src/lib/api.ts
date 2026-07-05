@@ -82,11 +82,13 @@ import {
   topicListResponseSchema,
   topicItemsResponseSchema,
   topicSchema,
+  topicProposalListResponseSchema,
   type CreateTopicRequest,
   type ItemTopicsResponse,
   type TopicDto,
   type TopicItemsResponse,
   type TopicListResponse,
+  type TopicProposalListResponse,
   type UpdateTopicRequest,
   itemTasksResponseSchema,
   taskListResponseSchema,
@@ -118,6 +120,15 @@ import {
   type CommitmentStatus,
   type ItemCommitmentsResponse,
   type UpdateCommitmentStatusRequest,
+  questionSchema,
+  questionListResponseSchema,
+  itemQuestionsResponseSchema,
+  type QuestionDto,
+  type QuestionDirection,
+  type QuestionListResponse,
+  type QuestionStatus,
+  type ItemQuestionsResponse,
+  type UpdateQuestionStatusRequest,
   openLoopSchema,
   openLoopListResponseSchema,
   type OpenLoopDto,
@@ -763,6 +774,30 @@ export async function retryItemTopics(itemId: string): Promise<ItemTopicsRespons
   );
 }
 
+/** Taxonomy proposals from embedding clusters (JJ-64), plus whether the feature is enabled. */
+export async function listTopicProposals(): Promise<TopicProposalListResponse> {
+  return topicProposalListResponseSchema.parse(await requestJson('/topics/proposals'));
+}
+
+/** Trigger a fresh clustering + labeling pass; returns the refreshed proposal list. */
+export async function generateTopicProposals(): Promise<TopicProposalListResponse> {
+  return topicProposalListResponseSchema.parse(
+    await requestJson('/topics/proposals/generate', { method: 'POST' }),
+  );
+}
+
+/** Accept a proposal: creates the topic and reclassifies the cluster's items. */
+export async function acceptTopicProposal(id: string): Promise<TopicDto> {
+  return topicSchema.parse(
+    await requestJson(`/topics/proposals/${id}/accept`, { method: 'POST' }),
+  );
+}
+
+/** Dismiss a proposal so its cluster is not proposed again. */
+export async function dismissTopicProposal(id: string): Promise<void> {
+  return requestVoid(`/topics/proposals/${id}/dismiss`, { method: 'POST' });
+}
+
 /** An item's extracted commitments plus the extraction pipeline status. */
 export async function getItemCommitments(itemId: string): Promise<ItemCommitmentsResponse> {
   return itemCommitmentsResponseSchema.parse(await requestJson(`/inbox/${itemId}/commitments`));
@@ -794,6 +829,40 @@ export async function updateCommitmentStatus(
 ): Promise<CommitmentDto> {
   return commitmentSchema.parse(
     await requestJson(`/commitments/${id}`, { method: 'PATCH', body: JSON.stringify(req) }),
+  );
+}
+
+/** An item's extracted open questions plus the extraction pipeline status. */
+export async function getItemQuestions(itemId: string): Promise<ItemQuestionsResponse> {
+  return itemQuestionsResponseSchema.parse(await requestJson(`/inbox/${itemId}/questions`));
+}
+
+/** Re-run question extraction for an item; returns the refreshed read model. */
+export async function retryItemQuestions(itemId: string): Promise<ItemQuestionsResponse> {
+  return itemQuestionsResponseSchema.parse(
+    await requestJson(`/inbox/${itemId}/questions/retry`, { method: 'POST' }),
+  );
+}
+
+/** The user's open questions across all recordings, optionally filtered. */
+export async function listQuestions(filters?: {
+  direction?: QuestionDirection;
+  status?: QuestionStatus;
+}): Promise<QuestionListResponse> {
+  const query = new URLSearchParams();
+  if (filters?.direction) query.set('direction', filters.direction);
+  if (filters?.status) query.set('status', filters.status);
+  const suffix = query.toString() ? `?${query}` : '';
+  return questionListResponseSchema.parse(await requestJson(`/questions${suffix}`));
+}
+
+/** Advance a question's lifecycle status (open → answered / dropped). */
+export async function updateQuestionStatus(
+  id: string,
+  req: UpdateQuestionStatusRequest,
+): Promise<QuestionDto> {
+  return questionSchema.parse(
+    await requestJson(`/questions/${id}`, { method: 'PATCH', body: JSON.stringify(req) }),
   );
 }
 

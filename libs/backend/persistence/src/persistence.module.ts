@@ -29,6 +29,7 @@ import {
   PasskeyCredentialEntity,
   PlaudSettingsEntity,
   PushSubscriptionEntity,
+  QuestionEntity,
   RecordingEventLinkEntity,
   RecordingMergeEntity,
   SourcePayloadEntity,
@@ -37,6 +38,7 @@ import {
   TaskCitationEntity,
   TaskEntity,
   TopicEntity,
+  TopicProposalEntity,
   UserEntity,
   VoiceProfileEntity,
 } from './entities';
@@ -70,6 +72,8 @@ import { AddFullTextSearch1720000000026 } from './migrations/1720000000026-AddFu
 import { CreateEntityCorrections1720000000027 } from './migrations/1720000000027-CreateEntityCorrections';
 import { ExtractionRunTrigger1720000000028 } from './migrations/1720000000028-ExtractionRunTrigger';
 import { CreateTasks1720000000029 } from './migrations/1720000000029-CreateTasks';
+import { CreateQuestions1720000000030 } from './migrations/1720000000030-CreateQuestions';
+import { CreateTopicProposals1720000000032 } from './migrations/1720000000032-CreateTopicProposals';
 import { CreateChatTables1720000000033 } from './migrations/1720000000033-CreateChatTables';
 
 export const ALL_ENTITIES = [
@@ -82,7 +86,9 @@ export const ALL_ENTITIES = [
   EntityMentionEntity,
   TopicEntity,
   ItemTopicEntity,
+  TopicProposalEntity,
   CommitmentEntity,
+  QuestionEntity,
   TaskEntity,
   TaskCitationEntity,
   ChatConversationEntity,
@@ -145,6 +151,8 @@ export const ALL_MIGRATIONS = [
   CreateEntityCorrections1720000000027,
   ExtractionRunTrigger1720000000028,
   CreateTasks1720000000029,
+  CreateQuestions1720000000030,
+  CreateTopicProposals1720000000032,
   CreateChatTables1720000000033,
 ];
 

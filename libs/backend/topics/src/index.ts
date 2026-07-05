@@ -7,3 +7,8 @@ export * from './topics.extractor';
 export * from './topics.controller';
 export * from './topics.module';
 export * from './providers/openai.provider';
+export * from './topic-proposals.provider';
+export * from './topic-proposals.clustering';
+export * from './topic-proposals.service';
+export * from './topic-proposals.controller';
+export * from './providers/openai.labeler';

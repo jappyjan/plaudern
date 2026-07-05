@@ -24,6 +24,7 @@ import {
   retryEmbeddings,
   retryEntities,
   retryItemCommitments,
+  retryItemQuestions,
   retryRelations,
   retrySummary,
   retryTranscription,
@@ -38,6 +39,7 @@ import { SpeakerTranscript } from '../components/SpeakerTranscript';
 import { SummaryView } from '../components/SummaryView';
 import { ItemTopicsCard } from '../components/ItemTopicsCard';
 import { ItemCommitmentsCard } from '../components/ItemCommitmentsCard';
+import { ItemQuestionsCard } from '../components/ItemQuestionsCard';
 import { ItemTasksCard } from '../components/ItemTasksCard';
 import { MoreLikeThisCard } from '../components/MoreLikeThisCard';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
@@ -64,6 +66,7 @@ type ReprocessStep =
   | 'entities'
   | 'relations'
   | 'commitments'
+  | 'questions'
   | 'all';
 
 /**
@@ -133,6 +136,15 @@ const REPROCESS_STEPS: {
     action: 'Re-extract',
     run: async (id) => {
       await retryItemCommitments(id);
+    },
+  },
+  {
+    key: 'questions',
+    label: 'Open questions',
+    description: 'Re-extract unanswered questions (asked by you ↔ asked of you).',
+    action: 'Re-extract',
+    run: async (id) => {
+      await retryItemQuestions(id);
     },
   },
   {
@@ -481,6 +493,8 @@ export function ItemDetailPage() {
       <ItemTopicsCard itemId={item.id} />
 
       <ItemCommitmentsCard itemId={item.id} />
+
+      <ItemQuestionsCard itemId={item.id} />
 
       <ItemTasksCard itemId={item.id} />
 
