@@ -40,7 +40,8 @@
       "@plaudern/notifications": ["libs/backend/notifications/src/index.ts"],
       "@plaudern/auth": ["libs/backend/auth/src/index.ts"],
       "@plaudern/mcp": ["libs/backend/mcp/src/index.ts"],
-      "@plaudern/search": ["libs/backend/search/src/index.ts"]
+      "@plaudern/search": ["libs/backend/search/src/index.ts"],
+      "@plaudern/chat": ["libs/backend/chat/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]

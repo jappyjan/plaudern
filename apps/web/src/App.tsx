@@ -15,6 +15,7 @@ import { EntitiesPage } from './pages/EntitiesPage';
 import { EntityDetailPage } from './pages/EntityDetailPage';
 import { GraphViewPage } from './pages/GraphViewPage';
 import { SearchPage } from './pages/SearchPage';
+import { ChatPage } from './pages/ChatPage';
 import { SharePage } from './pages/SharePage';
 import {
   CalendarIcon,
@@ -149,6 +150,7 @@ export function App() {
             <Routes>
               <Route path="/" element={<InboxPage />} />
               <Route path="/search" element={<SearchPage />} />
+              <Route path="/chat" element={<ChatPage />} />
               <Route path="/items/:id" element={<ItemDetailPage />} />
               <Route path="/calendar" element={<CalendarPage />} />
               <Route path="/contacts" element={<ContactsPage />} />

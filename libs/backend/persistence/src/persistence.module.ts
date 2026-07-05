@@ -5,6 +5,8 @@ import {
   AuthSessionEntity,
   CalendarEventEntity,
   CalendarFeedEntity,
+  ChatConversationEntity,
+  ChatMessageEntity,
   CommitmentEntity,
   ConsentSettingsEntity,
   EmailSettingsEntity,
@@ -68,6 +70,7 @@ import { AddFullTextSearch1720000000026 } from './migrations/1720000000026-AddFu
 import { CreateEntityCorrections1720000000027 } from './migrations/1720000000027-CreateEntityCorrections';
 import { ExtractionRunTrigger1720000000028 } from './migrations/1720000000028-ExtractionRunTrigger';
 import { CreateTasks1720000000029 } from './migrations/1720000000029-CreateTasks';
+import { CreateChatTables1720000000033 } from './migrations/1720000000033-CreateChatTables';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -82,6 +85,8 @@ export const ALL_ENTITIES = [
   CommitmentEntity,
   TaskEntity,
   TaskCitationEntity,
+  ChatConversationEntity,
+  ChatMessageEntity,
   EntityRelationEntity,
   EntityAliasEntity,
   EntitySuppressionEntity,
@@ -140,6 +145,7 @@ export const ALL_MIGRATIONS = [
   CreateEntityCorrections1720000000027,
   ExtractionRunTrigger1720000000028,
   CreateTasks1720000000029,
+  CreateChatTables1720000000033,
 ];
 
 /**

@@ -10,7 +10,7 @@ import type {
   TopicDto,
 } from '@plaudern/contracts';
 import { listEntities, listTopics, searchMemory } from '../lib/api';
-import { SearchIcon } from '../components/icons';
+import { ChatIcon, SearchIcon } from '../components/icons';
 
 const SOURCE_TYPES: { key: SourceType; label: string }[] = [
   { key: 'audio', label: 'Audio' },
@@ -145,7 +145,19 @@ export function SearchPage() {
 
   return (
     <div className="flex flex-col gap-4 pb-28">
-      <h1 className="text-lg font-semibold">Search your memory</h1>
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="text-lg font-semibold">Search your memory</h1>
+        <Button
+          as={Link}
+          to="/chat"
+          size="sm"
+          variant="flat"
+          color="primary"
+          startContent={<ChatIcon className="h-4 w-4" />}
+        >
+          Ask your memory
+        </Button>
+      </div>
 
       <Input
         size="lg"
