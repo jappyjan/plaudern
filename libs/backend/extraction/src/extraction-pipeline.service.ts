@@ -109,16 +109,17 @@ export class ExtractionPipelineService implements OnModuleInit, OnModuleDestroy 
       // `wait` means the sentinel hasn't classified the item yet — its
       // completion re-triggers this evaluation.
       if (isExternalLlmKind(extractor.kind)) {
-        const decision = await this.routing.decide(inboxItemId);
+        const decision = await this.routing.decide(inboxItemId, extractor.kind);
         if (decision === 'wait') return;
         if (decision === 'hold') {
           await this.routing.markHeld(inboxItemId);
           this.logger.log(
-            `holding '${extractor.kind}' for ${inboxItemId}: sensitive content, no local model tier`,
+            `holding '${extractor.kind}' for ${inboxItemId}: sensitive content, endpoint not local`,
           );
           return;
         }
-        // `external` or `local` — clear any prior hold and proceed.
+        // `external` (public/normal) or `local` (sensitive + this kind's endpoint
+        // is validated-local) — clear any prior hold and proceed.
         await this.routing.clearHeld(inboxItemId);
       }
 

@@ -194,14 +194,17 @@ services:
       - SENTINEL_LLM_BASE_URL=${SENTINEL_LLM_BASE_URL:-https://api.deepseek.com/v1}
       - SENTINEL_LLM_MODEL=${SENTINEL_LLM_MODEL:-deepseek-chat}
       # Local-only routing (JJ-21): items classified sensitive/secret are NEVER
-      # sent to an external LLM. If a LOCAL model tier is configured here they
-      # are released to it; otherwise they are HELD ("needs local model") rather
-      # than processed externally. Set LOCAL_LLM_ENABLED=true once you run a
-      # local OpenAI-compatible server (Ollama, llama.cpp) AND have pointed the
-      # per-kind *_BASE_URL above at it, so sensitive content stays on-box.
-      - LOCAL_LLM_ENABLED=${LOCAL_LLM_ENABLED:-false}
-      - LOCAL_LLM_BASE_URL=${LOCAL_LLM_BASE_URL:-http://localhost:11434/v1}
-      - LOCAL_LLM_MODEL=${LOCAL_LLM_MODEL:-llama3.1}
+      # sent to an external LLM — enforced, not trusted. The routing guard reads
+      # the SAME `<KIND>_BASE_URL` each extractor's provider reads and only lets a
+      # sensitive item run a kind whose endpoint resolves to a loopback/private
+      # address (localhost, 127.x, 10/172.16-31/192.168.x, *.local, a Docker
+      # service name, …). To process sensitive items locally, point the gated
+      # kinds at a local OpenAI-compatible server (Ollama, llama.cpp), e.g.
+      # SUMMARIZATION_BASE_URL=http://ollama:11434/v1 and likewise ENTITY_
+      # EXTRACTION_/TOPICS_/COMMITMENTS_/TASKS_/FACTS_/QUESTIONS_/DECISIONS_/
+      # REMINDERS_/EMBEDDINGS_BASE_URL. Any kind left pointed at a cloud endpoint
+      # HOLDS its sensitive items ("needs local model") instead of leaking them.
+      # No extra env is needed — the endpoints above ARE the local tier.
       # Transcription: the hosted ElevenLabs Scribe API — fill in
       # ELEVENLABS_API_KEY (get one at elevenlabs.io). Audio bytes are uploaded
       # to ElevenLabs directly (storage stays private).

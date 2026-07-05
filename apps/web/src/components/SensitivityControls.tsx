@@ -83,8 +83,8 @@ export function SensitivityBanner({
 
       {sensitivity.held && (
         <p className="text-xs text-warning-600">
-          Held: this item needs a local model tier to be processed. No sensitive content has been
-          sent to an external provider. Configure a local model (LOCAL_LLM_ENABLED) to process it.
+          Held: this item needs a local model to be processed. No sensitive content has been sent
+          to an external provider. Point the extractor endpoints at a local model to process it.
         </p>
       )}
 

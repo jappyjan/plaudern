@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import {
+  isLocalOnlyTier,
   summaryPayloadSchema,
   type EmbeddingChunkSource,
   type SourceType,
@@ -86,14 +87,18 @@ export class McpToolsService {
       query: args.query,
       limit: args.limit,
     });
-    return results.map((r) => ({
-      itemId: r.itemId,
-      source: r.snippetSource ?? 'summary',
-      snippet: stripHighlights(r.snippet ?? ''),
-      score: r.fusedScore,
-      startSeconds: r.startSeconds,
-      endSeconds: r.endSeconds,
-    }));
+    return results
+      // Local-only routing guard (JJ-21): never surface sensitive/secret item
+      // text to an MCP client's (external) model.
+      .filter((r) => !(r.sensitivityTier && isLocalOnlyTier(r.sensitivityTier)))
+      .map((r) => ({
+        itemId: r.itemId,
+        source: r.snippetSource ?? 'summary',
+        snippet: stripHighlights(r.snippet ?? ''),
+        score: r.fusedScore,
+        startSeconds: r.startSeconds,
+        endSeconds: r.endSeconds,
+      }));
   }
 
   /** get_item: full transcript, summary and metadata for one item. */

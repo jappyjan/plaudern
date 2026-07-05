@@ -170,6 +170,40 @@ describe('ChatService.ask', () => {
     expect(res.conversationId).toBeTruthy();
   });
 
+  it('EXCLUDES sensitive/secret items from retrieval so their text never reaches the LLM (JJ-21)', async () => {
+    const { service, provider, search } = build();
+    // A sensitive item whose snippet contains an IBAN, plus a normal item.
+    const secret = makeHit({
+      title: 'Bank details',
+      snippet: 'my IBAN is DE89370400440532013000',
+      sensitivityTier: 'sensitive',
+    });
+    const normal = makeHit({ title: 'Lunch plans', snippet: 'we grabbed pizza', sensitivityTier: 'normal' });
+    search.defaultResults = [secret, normal];
+    provider.replies = ['{"answer": "You had pizza [1].", "confidence": "high"}'];
+
+    const res = await service.ask(USER, { message: "what's my bank account?" });
+
+    // The sensitive item must not be a citation…
+    const citedIds = res.assistantMessage.citations.map((c) => c.inboxItemId);
+    expect(citedIds).not.toContain(secret.itemId);
+    expect(citedIds).toContain(normal.itemId);
+    // …and its text must never have been sent to the (external) chat provider.
+    const promptText = JSON.stringify(provider.calls);
+    expect(promptText).not.toContain('DE89370400440532013000');
+    expect(promptText).not.toContain('IBAN');
+  });
+
+  it('answers "not found" without calling the LLM when the only hits are sensitive (JJ-21)', async () => {
+    const { service, provider, search } = build();
+    search.defaultResults = [
+      makeHit({ snippet: 'password: hunter2xyz', sensitivityTier: 'secret' }),
+    ];
+    const res = await service.ask(USER, { message: 'what is the password?' });
+    expect(provider.calls).toHaveLength(0); // sensitive-only retrieval → nothing to send
+    expect(res.assistantMessage.content).toContain("couldn't find");
+  });
+
   it('maps cited markers to sources, strips invented ones, renumbers densely', async () => {
     const { service, provider, search } = build();
     const hitA = makeHit({ fusedScore: 0.05 });

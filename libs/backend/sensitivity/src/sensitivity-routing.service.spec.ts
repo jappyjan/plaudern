@@ -1,7 +1,7 @@
 import type { ConfigService } from '@nestjs/config';
 import type { Repository } from 'typeorm';
 import type { ItemSensitivityEntity } from '@plaudern/persistence';
-import { SensitivityRoutingService } from './sensitivity-routing.service';
+import { isLocalEndpoint, SensitivityRoutingService } from './sensitivity-routing.service';
 
 function makeConfig(overrides: Record<string, string> = {}): ConfigService {
   return {
@@ -26,62 +26,129 @@ function makeRepo(rows: Partial<ItemSensitivityEntity>[]): {
   return { repo, saved };
 }
 
+// A local endpoint for the summary kind; every other kind keeps its external default.
+const LOCAL_SUMMARY = { SUMMARIZATION_BASE_URL: 'http://localhost:11434/v1' };
+
+describe('isLocalEndpoint', () => {
+  it.each([
+    'http://localhost:11434/v1',
+    'http://127.0.0.1:11434/v1',
+    'http://10.1.2.3:8080/v1',
+    'http://192.168.1.50:11434/v1',
+    'http://172.16.0.9/v1',
+    'http://ollama:11434/v1', // docker service name (single label)
+    'http://gpu.local/v1',
+    'http://llm.internal/v1',
+  ])('treats %s as local', (url) => {
+    expect(isLocalEndpoint(url)).toBe(true);
+  });
+
+  it.each([
+    'https://api.deepseek.com/v1',
+    'https://api.openai.com/v1',
+    'https://evil.example.com/v1',
+    'http://8.8.8.8/v1',
+    'http://172.32.0.1/v1', // just outside RFC1918
+    '',
+    'not-a-url',
+    undefined,
+  ])('treats %s as NOT local (fail-closed)', (url) => {
+    expect(isLocalEndpoint(url as string)).toBe(false);
+  });
+});
+
 describe('SensitivityRoutingService', () => {
   describe('resolveTier (pure)', () => {
-    it('routes non-sensitive tiers to external', () => {
+    it('routes non-sensitive tiers to external regardless of endpoint', () => {
       const { repo } = makeRepo([]);
       const svc = new SensitivityRoutingService(makeConfig(), repo);
-      expect(svc.resolveTier('normal')).toBe('external');
-      expect(svc.resolveTier('public')).toBe('external');
+      expect(svc.resolveTier('normal', 'summary')).toBe('external');
+      expect(svc.resolveTier('public', 'summary')).toBe('external');
     });
 
-    it('HOLDS sensitive/secret when no local tier is configured', () => {
+    it('HOLDS sensitive/secret when the kind endpoint is external (default)', () => {
       const { repo } = makeRepo([]);
       const svc = new SensitivityRoutingService(makeConfig(), repo);
-      expect(svc.localTierConfigured).toBe(false);
-      expect(svc.resolveTier('sensitive')).toBe('hold');
-      expect(svc.resolveTier('secret')).toBe('hold');
+      expect(svc.resolveTier('sensitive', 'summary')).toBe('hold');
+      expect(svc.resolveTier('secret', 'entities')).toBe('hold');
     });
 
-    it('routes sensitive/secret to local when a local tier is configured', () => {
+    it('routes sensitive/secret to local ONLY for a kind pointed at a local endpoint', () => {
       const { repo } = makeRepo([]);
-      const svc = new SensitivityRoutingService(makeConfig({ LOCAL_LLM_ENABLED: 'true' }), repo);
-      expect(svc.localTierConfigured).toBe(true);
-      expect(svc.resolveTier('sensitive')).toBe('local');
-      expect(svc.resolveTier('secret')).toBe('local');
+      const svc = new SensitivityRoutingService(makeConfig(LOCAL_SUMMARY), repo);
+      expect(svc.resolveTier('sensitive', 'summary')).toBe('local');
+      // A different kind still on its external default must HOLD, not leak.
+      expect(svc.resolveTier('sensitive', 'entities')).toBe('hold');
     });
   });
 
-  describe('decide (per item)', () => {
+  describe('decide (per item + kind)', () => {
     it('waits when the sentinel has not classified the item yet', async () => {
       const { repo } = makeRepo([]);
       const svc = new SensitivityRoutingService(makeConfig(), repo);
-      expect(await svc.decide('missing')).toBe('wait');
+      expect(await svc.decide('missing', 'summary')).toBe('wait');
     });
 
-    it('holds a sensitive item with no local tier', async () => {
+    it('holds a sensitive item when the kind endpoint is external', async () => {
       const { repo } = makeRepo([{ inboxItemId: 'a', detectedTier: 'sensitive', manualTier: null }]);
       const svc = new SensitivityRoutingService(makeConfig(), repo);
-      expect(await svc.decide('a')).toBe('hold');
+      expect(await svc.decide('a', 'summary')).toBe('hold');
     });
 
-    it('releases a sensitive item to local when the tier is configured', async () => {
+    it('releases a sensitive item to a local kind endpoint', async () => {
       const { repo } = makeRepo([{ inboxItemId: 'a', detectedTier: 'secret', manualTier: null }]);
-      const svc = new SensitivityRoutingService(makeConfig({ LOCAL_LLM_ENABLED: 'true' }), repo);
-      expect(await svc.decide('a')).toBe('local');
+      const svc = new SensitivityRoutingService(makeConfig(LOCAL_SUMMARY), repo);
+      expect(await svc.decide('a', 'summary')).toBe('local');
     });
 
     it("respects a user's manual override over the detected tier", async () => {
-      // Detected normal, but user marked it sensitive → must not go external.
       const { repo } = makeRepo([{ inboxItemId: 'a', detectedTier: 'normal', manualTier: 'sensitive' }]);
       const svc = new SensitivityRoutingService(makeConfig(), repo);
-      expect(await svc.decide('a')).toBe('hold');
+      expect(await svc.decide('a', 'summary')).toBe('hold');
     });
 
     it("respects a user's override downgrading a detected-sensitive item", async () => {
       const { repo } = makeRepo([{ inboxItemId: 'a', detectedTier: 'secret', manualTier: 'normal' }]);
       const svc = new SensitivityRoutingService(makeConfig(), repo);
-      expect(await svc.decide('a')).toBe('external');
+      expect(await svc.decide('a', 'summary')).toBe('external');
+    });
+  });
+
+  describe('INVARIANT: a sensitive/secret item is never released to an external endpoint', () => {
+    const gatedKinds = [
+      'summary',
+      'embedding',
+      'entities',
+      'relations',
+      'topics',
+      'commitments',
+      'tasks',
+      'facts',
+      'questions',
+      'decisions',
+      'reminders',
+    ] as const;
+
+    it.each(gatedKinds)(
+      'under the default (all external) config, %s HOLDS a secret item',
+      async (kind) => {
+        const { repo } = makeRepo([{ inboxItemId: 'a', detectedTier: 'secret', manualTier: null }]);
+        const svc = new SensitivityRoutingService(makeConfig(), repo);
+        const decision = await svc.decide('a', kind);
+        // Never `external` for a local-only item — only `local` (impossible here,
+        // all endpoints external) or `hold`.
+        expect(decision).toBe('hold');
+        expect(decision).not.toBe('external');
+      },
+    );
+
+    it('even when a kind endpoint is set to a PUBLIC url, a sensitive item is not released', async () => {
+      const { repo } = makeRepo([{ inboxItemId: 'a', detectedTier: 'sensitive', manualTier: null }]);
+      const svc = new SensitivityRoutingService(
+        makeConfig({ SUMMARIZATION_BASE_URL: 'https://api.deepseek.com/v1' }),
+        repo,
+      );
+      expect(await svc.decide('a', 'summary')).toBe('hold');
     });
   });
 
