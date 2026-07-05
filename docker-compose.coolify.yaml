@@ -145,6 +145,14 @@ services:
       - DECISIONS_API_KEY=${SUMMARIZATION_API_KEY}
       - DECISIONS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
       - DECISIONS_MODEL=${DECISIONS_MODEL:-deepseek-chat}
+      # Prospective-memory reminders (JJ-25) reuse the summarization key/endpoint;
+      # a non-empty key auto-enables it. Anything with a future date ("results by
+      # the 14th", contract expiries, "let's talk again next month") becomes a
+      # calendar-visible reminder. Only the model is independently overridable
+      # via REMINDERS_MODEL.
+      - REMINDERS_API_KEY=${SUMMARIZATION_API_KEY}
+      - REMINDERS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
+      - REMINDERS_MODEL=${REMINDERS_MODEL:-deepseek-chat}
       # Memory chat (JJ-37) reuses the summarization key/endpoint; a non-empty
       # key auto-enables it. Retrieval quality depends on the embeddings
       # provider above (keyword search still works without it).

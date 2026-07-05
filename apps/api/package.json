@@ -33,6 +33,7 @@
     "@plaudern/persistence": "workspace:*",
     "@plaudern/plaud-sync": "workspace:*",
     "@plaudern/questions": "workspace:*",
+    "@plaudern/reminders": "workspace:*",
     "@plaudern/search": "workspace:*",
     "@plaudern/speaker-id": "workspace:*",
     "@plaudern/storage": "workspace:*",

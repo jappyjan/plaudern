@@ -36,6 +36,7 @@ import {
   QuestionEntity,
   RecordingEventLinkEntity,
   RecordingMergeEntity,
+  ReminderEntity,
   SourcePayloadEntity,
   SpeakerOccurrenceEntity,
   SummarizationSettingsEntity,
@@ -85,6 +86,7 @@ import { AddCommitmentDuplicatesTask1720000000034 } from './migrations/172000000
 import { CreateDecisions1720000000035 } from './migrations/1720000000035-CreateDecisions';
 import { CreateTopicDocuments1720000000036 } from './migrations/1720000000036-CreateTopicDocuments';
 import { VoiceProfileSelf1720000000037 } from './migrations/1720000000037-VoiceProfileSelf';
+import { CreateReminders1720000000038 } from './migrations/1720000000038-CreateReminders';
 import { CreateJournalDocuments1720000000039 } from './migrations/1720000000039-CreateJournalDocuments';
 
 export const ALL_ENTITIES = [
@@ -103,6 +105,7 @@ export const ALL_ENTITIES = [
   CommitmentEntity,
   QuestionEntity,
   DecisionEntity,
+  ReminderEntity,
   TaskEntity,
   TaskCitationEntity,
   PersonalFactEntity,
@@ -175,6 +178,7 @@ export const ALL_MIGRATIONS = [
   CreateDecisions1720000000035,
   CreateTopicDocuments1720000000036,
   VoiceProfileSelf1720000000037,
+  CreateReminders1720000000038,
   CreateJournalDocuments1720000000039,
 ];
 
