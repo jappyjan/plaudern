@@ -27,9 +27,8 @@ function fakeProvider(
   const calls: JournalProviderInput[] = [];
   return {
     id: 'test:journal',
-    enabled: true,
     calls,
-    generate: async (input) => {
+    generate: async (_userId, input) => {
       calls.push(input);
       return respond(input);
     },

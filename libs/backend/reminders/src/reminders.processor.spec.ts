@@ -55,8 +55,7 @@ function fakeProvider(
 ): ReminderExtractionProvider {
   return {
     id: 'test:reminders',
-    enabled: true,
-    extract: async (input) => respond(input),
+    extract: async (_userId, input) => respond(input),
   };
 }
 

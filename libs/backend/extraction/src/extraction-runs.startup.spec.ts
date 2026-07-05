@@ -24,7 +24,7 @@ function fakeExtractor(
     kind,
     version,
     dependsOn: [],
-    enabled: () => enabled,
+    enabled: async () => enabled,
     appliesTo: () => true,
     enqueue: async (item) => {
       enqueued.push(item.id);
@@ -129,15 +129,34 @@ describe('ExtractionRunsService — startup backfill scan', () => {
     expect(new Set(enqueued)).toEqual(new Set([missing, failed, oldVersion, otherUser]));
   });
 
-  it('is a no-op for a disabled kind (returns null, creates no run)', async () => {
+  it('returns null for an unknown kind (no registered extractor, creates no run)', async () => {
+    const service = buildService([fakeExtractor('transcription', 1, enqueued)]);
+    await createItem(USER_A);
+
+    // 'summary' is a valid ExtractionKind but no extractor is registered for it.
+    const dto = await service.startStartupBackfill('summary');
+
+    expect(dto).toBeNull();
+    expect(enqueued).toEqual([]);
+    expect(await dataSource.getRepository(ExtractionRunEntity).count()).toBe(0);
+  });
+
+  it('still sweeps a globally-disabled kind but the per-item gate enqueues nothing', async () => {
+    // The sweep no longer filters kinds by global enablement — it starts a run
+    // for every registered kind; per-item `shouldEnqueue` (keyed by the item's
+    // owner) is what skips items whose owner has not configured the capability.
     const service = buildService([fakeExtractor('transcription', 1, enqueued, false)]);
     await createItem(USER_A);
 
     const dto = await service.startStartupBackfill('transcription');
 
-    expect(dto).toBeNull();
+    expect(dto).not.toBeNull();
+    const run = await waitForRun(dto!.id);
+    expect(run.status).toBe('completed');
+    expect(run.itemsMatched).toBe(1);
+    expect(run.itemsQueued).toBe(0);
+    expect(run.itemsSkipped).toBe(1);
     expect(enqueued).toEqual([]);
-    expect(await dataSource.getRepository(ExtractionRunEntity).count()).toBe(0);
   });
 
   /** Seed an open startup run row (fresh heartbeat, set by save()). */

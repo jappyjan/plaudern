@@ -68,7 +68,9 @@ describe('TranscriptionService.enqueueTranscription (passthrough)', () => {
         return { id: 'extraction-1' };
       },
     } as unknown as InboxService;
-    const provider = { id: 'speech:whisper' } as TranscriptionProvider;
+    const provider = {
+      providerId: async () => 'speech:whisper',
+    } as unknown as TranscriptionProvider;
     const queue: TranscriptionQueue = {
       enqueue: async (job) => {
         enqueued.push(job);
@@ -80,6 +82,7 @@ describe('TranscriptionService.enqueueTranscription (passthrough)', () => {
   it('records the text-passthrough provider id and flags the job', async () => {
     const { service, added, enqueued } = build();
     await service.enqueueTranscription('item-1', {
+      userId: 'user-1',
       storageKey: 'key-1',
       contentType: 'text/plain',
       passthrough: true,
@@ -93,6 +96,7 @@ describe('TranscriptionService.enqueueTranscription (passthrough)', () => {
   it('keeps the speech provider id for audio jobs', async () => {
     const { service, added, enqueued } = build();
     await service.enqueueTranscription('item-1', {
+      userId: 'user-1',
       storageKey: 'key-1',
       contentType: 'audio/mpeg',
     });
@@ -135,6 +139,7 @@ describe('TranscriptionProcessor passthrough', () => {
   const job: TranscriptionJob = {
     extractionId: 'extraction-1',
     inboxItemId: 'item-1',
+    userId: 'user-1',
     storageKey: 'key-1',
     contentType: 'text/plain',
     passthrough: true,

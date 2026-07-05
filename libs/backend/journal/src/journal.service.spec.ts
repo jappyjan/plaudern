@@ -7,6 +7,7 @@ import {
   JournalDocumentEntity,
   RecordingMergeEntity,
 } from '@plaudern/persistence';
+import type { AiConfigService } from '@plaudern/ai-config';
 import { JournalService } from './journal.service';
 import type { JournalProvider } from './journal.provider';
 import type { JournalJob, JournalQueue } from './journal.job';
@@ -14,25 +15,33 @@ import type { JournalJob, JournalQueue } from './journal.job';
 const USER = '00000000-0000-0000-0000-0000000000aa';
 const OTHER = '00000000-0000-0000-0000-0000000000bb';
 
-function fakeProvider(enabled = true): JournalProvider {
+function fakeProvider(): JournalProvider {
   return {
     id: 'test:journal',
-    enabled,
     generate: async () => ({ markdown: 'stub', model: 'test-model' }),
   };
+}
+
+function fakeAiConfig(enabled = true): AiConfigService {
+  return {
+    isEnabled: async () => enabled,
+    resolve: async () => null,
+    invalidate() {},
+  } as unknown as AiConfigService;
 }
 
 describe('JournalService', () => {
   let dataSource: DataSource;
   let enqueued: JournalJob[];
 
-  function build(provider: JournalProvider = fakeProvider()): JournalService {
+  function build(enabled = true, provider: JournalProvider = fakeProvider()): JournalService {
     const queue: JournalQueue = {
       enqueue: async (job) => {
         enqueued.push(job);
       },
     };
     return new JournalService(
+      fakeAiConfig(enabled),
       provider,
       queue,
       dataSource.getRepository(JournalDocumentEntity),
@@ -82,7 +91,7 @@ describe('JournalService', () => {
   }
 
   it('does not enqueue while disabled', async () => {
-    const service = build(fakeProvider(false));
+    const service = build(false);
     expect(await service.enqueueGeneration(USER, 'day', '2026-06-14')).toBeNull();
     expect(enqueued).toHaveLength(0);
     const rows = await dataSource.getRepository(JournalDocumentEntity).count();
@@ -214,7 +223,7 @@ describe('JournalService', () => {
   });
 
   it('regenerate gates on config, key validity and available sources', async () => {
-    await expect(build(fakeProvider(false)).regenerate(USER, 'day', '2026-06-14')).rejects.toThrow(
+    await expect(build(false).regenerate(USER, 'day', '2026-06-14')).rejects.toThrow(
       BadRequestException,
     );
     await expect(build().regenerate(USER, 'day', 'garbage')).rejects.toThrow(BadRequestException);

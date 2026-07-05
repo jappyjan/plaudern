@@ -1,11 +1,30 @@
 import { Readable } from 'node:stream';
 import { PyannoteAiSpeakerIdentifier } from './pyannoteai.identifier';
-import type { PyannoteAiClient, PyannoteAiDiarization } from '../providers/pyannoteai-client';
+import { PyannoteAiClient } from '../providers/pyannoteai-client';
+import type { PyannoteAiDiarization } from '../providers/pyannoteai-client';
+import type { AiConfigService, ResolvedAiConfig } from '@plaudern/ai-config';
 import type { VoiceprintMatcherService, DiarizedSpeakerLite } from '../voiceprint-matcher.service';
 
-const config = { get: (_: string, d?: string) => d } as any;
 // Audio is read from private storage and pushed to pyannoteAI — never presigned.
 const storage = { getObjectStream: async () => Readable.from([Buffer.from('AUDIO')]) } as any;
+
+/** A resolved speaker_id config; the identifier builds its client from this. */
+const cfg: ResolvedAiConfig = {
+  capability: 'speaker_id',
+  protocol: 'pyannoteai',
+  baseUrl: 'https://api.test/v1',
+  apiKey: 'key',
+  model: 'precision-2',
+  timeoutMs: 10_000,
+  params: {
+    matchThreshold: 50,
+    minEnrollSeconds: 6,
+    voiceprintMaxSeconds: 30,
+    pollIntervalMs: 0,
+  },
+  providerId: 'p1',
+  providerName: 'test',
+};
 
 const job = {
   userId: 'u1',
@@ -16,6 +35,11 @@ const job = {
 };
 
 function build(known: { id: string; voiceprint: string | null }[]) {
+  const aiConfig = {
+    resolve: async () => cfg,
+    isEnabled: async () => true,
+    invalidate() {},
+  } as unknown as AiConfigService;
   const captured: { speakers?: DiarizedSpeakerLite[] } = {};
   const matcher = {
     assignSpeakers: async (_job: unknown, speakers: DiarizedSpeakerLite[]) => {
@@ -35,13 +59,18 @@ function build(known: { id: string; voiceprint: string | null }[]) {
       return diar;
     },
   } as unknown as PyannoteAiClient;
+  // The identifier builds its client via PyannoteAiClient.fromResolvedConfig;
+  // hand it our fake so we can capture the diarize/identify calls.
+  jest.spyOn(PyannoteAiClient, 'fromResolvedConfig').mockReturnValue(client);
   let diar: PyannoteAiDiarization = { durationSeconds: 0, segments: [] };
   const setDiar = (d: PyannoteAiDiarization) => (diar = d);
-  const identifier = new PyannoteAiSpeakerIdentifier(config, storage, client, matcher, profiles);
+  const identifier = new PyannoteAiSpeakerIdentifier(aiConfig, storage, matcher, profiles);
   return { identifier, captured, clientCalls, setDiar };
 }
 
 describe('PyannoteAiSpeakerIdentifier', () => {
+  afterEach(() => jest.restoreAllMocks());
+
   it('diarizes (no /identify) when there are no known voiceprints', async () => {
     const { identifier, captured, clientCalls, setDiar } = build([]);
     setDiar({
