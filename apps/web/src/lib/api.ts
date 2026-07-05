@@ -112,11 +112,13 @@ import {
   entityContactSuggestionsResponseSchema,
   duplicateCandidatesResponseSchema,
   mergeSuggestionsResponseSchema,
+  reconcileResponseSchema,
   type AutoLinkEntitiesResponse,
   type EntityContactSuggestionsResponse,
   type DuplicateCandidatesResponse,
   type MergeSuggestionStatus,
   type MergeSuggestionsResponse,
+  type ReconcileResponse,
   type EntityListResponse,
   type EntityDetailWithRelationsDto,
   type EntityDossierDto,
@@ -684,6 +686,24 @@ export async function listMergeSuggestions(
 /** Dismiss a merge suggestion so it is not surfaced again. */
 export async function dismissMergeSuggestion(id: string): Promise<void> {
   await requestVoid(`/entities/suggestions/${id}/dismiss`, { method: 'POST' });
+}
+
+/**
+ * Ask the LLM judge whether `id` and `candidateId` are the same real-world
+ * thing (and which type/survivor to keep). Pass `web` to also consult opt-in web
+ * research. `recommendation` is null when no judge is configured.
+ */
+export async function reconcileEntity(
+  id: string,
+  candidateId: string,
+  web = false,
+): Promise<ReconcileResponse> {
+  return reconcileResponseSchema.parse(
+    await requestJson(`/entities/${id}/reconcile`, {
+      method: 'POST',
+      body: JSON.stringify({ candidateId, web }),
+    }),
+  );
 }
 
 /** Delete/suppress an entity so re-extraction cannot recreate it. */

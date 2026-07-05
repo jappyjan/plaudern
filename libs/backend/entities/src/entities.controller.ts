@@ -19,6 +19,7 @@ import {
   linkEntityContactRequestSchema,
   mergeEntityRequestSchema,
   mergeSuggestionsQuerySchema,
+  reconcileRequestSchema,
   updateEntityRequestSchema,
   type AutoLinkEntitiesResponse,
   type DuplicateCandidatesResponse,
@@ -28,6 +29,7 @@ import {
   type EntityListResponse,
   type EntityNeighborhoodResponse,
   type MergeSuggestionsResponse,
+  type ReconcileResponse,
 } from '@plaudern/contracts';
 import { CurrentUser, type AuthenticatedUser } from '@plaudern/auth';
 import { EntitiesRegistryService } from './entities-registry.service';
@@ -165,6 +167,29 @@ export class EntitiesController {
     return {
       candidates: await this.reconciliation.findCandidates(user.id, id, {
         fuzzy: parsed.data.fuzzy,
+      }),
+    };
+  }
+
+  /**
+   * Ask the LLM judge whether this entity and `candidateId` are the same
+   * real-world thing (and which type/survivor to keep). Advisory only — apply
+   * via the merge endpoint. `recommendation` is null when no judge is
+   * configured, so the client can degrade.
+   */
+  @Post(':id/reconcile')
+  async reconcile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ): Promise<ReconcileResponse> {
+    const parsed = reconcileRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues[0]?.message ?? 'invalid request');
+    }
+    return {
+      recommendation: await this.reconciliation.recommend(user.id, id, parsed.data.candidateId, {
+        web: parsed.data.web,
       }),
     };
   }

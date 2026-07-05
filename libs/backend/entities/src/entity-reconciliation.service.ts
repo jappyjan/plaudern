@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type {
   DuplicateCandidateDto,
   MergeSuggestionDto,
   MergeSuggestionStatus,
+  ReconcileRecommendation,
   RegistryEntityDto,
 } from '@plaudern/contracts';
 import {
@@ -13,6 +14,7 @@ import {
   EntityRegistryEntity,
 } from '@plaudern/persistence';
 import { EntitiesRegistryService } from './entities-registry.service';
+import { ENTITY_JUDGE_PROVIDER, type EntityJudgeProvider } from './entity-judge.provider';
 import { bestNameAffinity, FUZZY_DUPLICATE_FLOOR, nameKeys } from './contact-matching';
 
 /** Cap the candidate list so the UI (and any downstream judge) stays bounded. */
@@ -47,7 +49,70 @@ export class EntityReconciliationService {
     private readonly mentions: Repository<EntityMentionEntity>,
     @InjectRepository(EntityMergeSuggestionEntity)
     private readonly suggestions: Repository<EntityMergeSuggestionEntity>,
+    @Inject(ENTITY_JUDGE_PROVIDER)
+    private readonly judge: EntityJudgeProvider,
   ) {}
+
+  /**
+   * Ask the LLM judge whether two entities are the same real-world thing, and if
+   * so which type/survivor to keep. Read-only — it never merges. Returns null
+   * when no judge is configured, so callers degrade gracefully. When a recorded
+   * suggestion exists for the pair, its judgment fields are updated in place.
+   */
+  async recommend(
+    userId: string,
+    entityId: string,
+    candidateId: string,
+    _opts: { web?: boolean } = {},
+  ): Promise<ReconcileRecommendation | null> {
+    const all = await this.registry.list(userId, undefined, true);
+    const subject = all.find((e) => e.id === entityId);
+    const candidate = all.find((e) => e.id === candidateId);
+    if (!subject || !candidate) throw new NotFoundException('entity not found');
+    if (!this.judge.enabled) return null;
+
+    // Web research is wired in a later phase; nothing leaves the network here.
+    const usedWeb = false;
+    const { decision } = await this.judge.judge({
+      subject: { name: subject.canonicalName, type: subject.type, aliases: subject.aliases },
+      candidate: { name: candidate.canonicalName, type: candidate.type, aliases: candidate.aliases },
+    });
+    const survivorId = decision.survivor === 'candidate' ? candidate.id : subject.id;
+    const recommendation: ReconcileRecommendation = {
+      sameThing: decision.sameThing,
+      recommendedType: decision.recommendedType,
+      survivorId,
+      confidence: decision.confidence,
+      rationale: decision.rationale,
+      usedWeb,
+    };
+
+    await this.recordJudgment(userId, subject.id, candidate.id, recommendation).catch(() => {
+      // Best-effort: a failed persist doesn't invalidate the returned advice.
+    });
+    return recommendation;
+  }
+
+  /** Persist a judgment onto an existing suggestion row for the pair, if any. */
+  private async recordJudgment(
+    userId: string,
+    aId: string,
+    bId: string,
+    rec: ReconcileRecommendation,
+  ): Promise<void> {
+    const [entityId, candidateEntityId] = [aId, bId].sort();
+    const row = await this.suggestions.findOne({
+      where: { userId, entityId, candidateEntityId },
+    });
+    if (!row) return;
+    row.sameThing = rec.sameThing;
+    row.recommendedType = rec.recommendedType;
+    row.recommendedSurvivorId = rec.survivorId;
+    row.confidence = rec.confidence;
+    row.rationale = rec.rationale;
+    row.usedWeb = rec.usedWeb;
+    await this.suggestions.save(row);
+  }
 
   /**
    * Ranked duplicate candidates for one entity: exact cross-type first (score

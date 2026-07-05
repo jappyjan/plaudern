@@ -218,6 +218,38 @@ export const mergeSuggestionsResponseSchema = z.object({
 export type MergeSuggestionsResponse = z.infer<typeof mergeSuggestionsResponseSchema>;
 
 /**
+ * POST /v1/entities/:id/reconcile — ask the LLM judge whether the subject (:id)
+ * and `candidateId` are the same real-world thing. `web=true` additionally
+ * consults opt-in web research (a no-op when web research is disabled). Purely
+ * advisory: the caller still applies the merge through the merge endpoint.
+ */
+export const reconcileRequestSchema = z.object({
+  candidateId: z.string().uuid(),
+  web: z.boolean().default(false),
+});
+export type ReconcileRequest = z.infer<typeof reconcileRequestSchema>;
+
+export const reconcileRecommendationSchema = z.object({
+  /** Whether the judge decided the two denote the same real-world thing. */
+  sameThing: z.boolean(),
+  /** The type the judge recommends for the survivor. */
+  recommendedType: entityTypeSchema,
+  /** Which of the two entities the judge recommends keeping. */
+  survivorId: z.string().uuid(),
+  confidence: z.number().min(0).max(1),
+  rationale: z.string(),
+  /** True when web research contributed to the recommendation. */
+  usedWeb: z.boolean(),
+});
+export type ReconcileRecommendation = z.infer<typeof reconcileRecommendationSchema>;
+
+/** `recommendation` is null when no judge is configured, so the UI can degrade. */
+export const reconcileResponseSchema = z.object({
+  recommendation: reconcileRecommendationSchema.nullable(),
+});
+export type ReconcileResponse = z.infer<typeof reconcileResponseSchema>;
+
+/**
  * PATCH /v1/entities/:id — correct a registry entity: rename it and/or change
  * its type. Renaming keeps the OLD normalized name as a durable alias (and, on
  * retype, the old (type, name) too) so re-extraction folds back in instead of

@@ -14,13 +14,38 @@ import {
 import type { ExtractedEntity } from '@plaudern/contracts';
 import { EntitiesRegistryService } from './entities-registry.service';
 import { EntityReconciliationService } from './entity-reconciliation.service';
+import type {
+  EntityJudgeInput,
+  EntityJudgeProvider,
+  EntityJudgeResult,
+} from './entity-judge.provider';
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
+
+/** A judge fake whose enabled state and verdict tests can control. */
+class FakeJudge implements EntityJudgeProvider {
+  readonly id = 'fake-judge';
+  enabled = false;
+  lastInput: EntityJudgeInput | null = null;
+  decision: EntityJudgeResult['decision'] = {
+    sameThing: true,
+    recommendedType: 'product',
+    survivor: 'subject',
+    confidence: 0.9,
+    rationale: 'same thing',
+  };
+
+  judge(input: EntityJudgeInput): Promise<EntityJudgeResult> {
+    this.lastInput = input;
+    return Promise.resolve({ decision: this.decision, model: this.id });
+  }
+}
 
 describe('EntityReconciliationService', () => {
   let dataSource: DataSource;
   let registry: EntitiesRegistryService;
   let reconciliation: EntityReconciliationService;
+  let judge: FakeJudge;
 
   beforeEach(async () => {
     dataSource = new DataSource({
@@ -38,11 +63,13 @@ describe('EntityReconciliationService', () => {
       dataSource.getRepository(EntityAliasEntity),
       dataSource.getRepository(EntitySuppressionEntity),
     );
+    judge = new FakeJudge();
     reconciliation = new EntityReconciliationService(
       registry,
       dataSource.getRepository(EntityRegistryEntity),
       dataSource.getRepository(EntityMentionEntity),
       dataSource.getRepository(EntityMergeSuggestionEntity),
+      judge,
     );
   });
 
@@ -175,5 +202,50 @@ describe('EntityReconciliationService', () => {
     ]);
     expect(await reconciliation.detectExactForItem(USER, item)).toBe(0);
     expect(await reconciliation.listSuggestions(USER)).toHaveLength(0);
+  });
+
+  it('recommend returns null when no judge is configured', async () => {
+    await ingest([
+      { type: 'organization', name: 'Foo', mentions: ['Foo'] },
+      { type: 'product', name: 'Foo', mentions: ['Foo'] },
+    ]);
+    const rows = await dataSource.getRepository(EntityRegistryEntity).find({ where: { userId: USER } });
+    const org = rows.find((r) => r.type === 'organization')!;
+    const product = rows.find((r) => r.type === 'product')!;
+
+    judge.enabled = false;
+    expect(await reconciliation.recommend(USER, product.id, org.id)).toBeNull();
+  });
+
+  it('recommend maps the judge verdict and updates the recorded suggestion', async () => {
+    await ingest([{ type: 'organization', name: 'Foo', mentions: ['Foo'] }]);
+    const item2 = await ingest([{ type: 'product', name: 'Foo', mentions: ['Foo'] }]);
+    await reconciliation.detectExactForItem(USER, item2);
+
+    const rows = await dataSource.getRepository(EntityRegistryEntity).find({ where: { userId: USER } });
+    const org = rows.find((r) => r.type === 'organization')!;
+    const product = rows.find((r) => r.type === 'product')!;
+
+    judge.enabled = true;
+    judge.decision = {
+      sameThing: true,
+      recommendedType: 'product',
+      survivor: 'subject',
+      confidence: 0.88,
+      rationale: 'the real thing is the product',
+    };
+
+    const rec = await reconciliation.recommend(USER, product.id, org.id);
+    expect(rec).not.toBeNull();
+    expect(rec!.sameThing).toBe(true);
+    expect(rec!.recommendedType).toBe('product');
+    expect(rec!.survivorId).toBe(product.id); // survivor 'subject' = the viewed entity
+    expect(rec!.confidence).toBeCloseTo(0.88);
+
+    // The judgment is persisted onto the recorded suggestion.
+    const [s] = await reconciliation.listSuggestions(USER);
+    expect(s.sameThing).toBe(true);
+    expect(s.recommendedType).toBe('product');
+    expect(s.recommendedSurvivorId).toBe(product.id);
   });
 });

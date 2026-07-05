@@ -7,6 +7,7 @@ import type {
   EntityRelationEdgeDto,
   EntityType,
   GraphEntityDto,
+  ReconcileRecommendation,
   RegistryEntityDto,
   RelationType,
 } from '@plaudern/contracts';
@@ -21,6 +22,7 @@ import {
   linkEntityContact,
   listEntities,
   mergeEntities,
+  reconcileEntity,
   unlinkEntityContact,
 } from '../lib/api';
 import {
@@ -611,7 +613,6 @@ function DuplicatesPanel({
 }) {
   const [fuzzy, setFuzzy] = useState(false);
   const [candidates, setCandidates] = useState<DuplicateCandidateDto[] | null>(null);
-  const [confirmId, setConfirmId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -647,42 +648,102 @@ function DuplicatesPanel({
         <p className="text-xs text-default-500">No likely duplicates found.</p>
       ) : (
         <div className="flex flex-col gap-1">
-          {candidates.map(({ candidate: c, reason }) =>
-            confirmId === c.id ? (
-              <div
-                key={c.id}
-                className="flex items-center justify-between gap-2 rounded-medium bg-warning-50 p-2"
-              >
-                <span className="text-sm">
-                  Merge &ldquo;{c.canonicalName}&rdquo;
-                  {c.type !== entity.type ? ` (${ENTITY_TYPE_LABEL[c.type].toLowerCase()})` : ''} in?
-                </span>
-                <div className="flex gap-1">
-                  <Button size="sm" color="primary" isLoading={busy} onPress={() => onMerge(c.id)}>
-                    Confirm
-                  </Button>
-                  <Button size="sm" variant="light" onPress={() => setConfirmId(null)}>
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <button
-                key={c.id}
-                type="button"
-                className="flex items-center justify-between gap-2 rounded-medium p-2 text-left hover:bg-default-200"
-                onClick={() => setConfirmId(c.id)}
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{c.canonicalName}</p>
-                  <p className="text-xs text-default-500">{reasonLabel(reason)}</p>
-                </div>
-                <Chip size="sm" variant="flat" color={ENTITY_TYPE_COLOR[c.type]}>
-                  {ENTITY_TYPE_LABEL[c.type]}
-                </Chip>
-              </button>
-            ),
+          {candidates.map(({ candidate: c, reason }) => (
+            <DuplicateRow
+              key={c.id}
+              entity={entity}
+              candidate={c}
+              reason={reason}
+              busy={busy}
+              onMerge={onMerge}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One candidate row: shows the match, an optional AI verdict, and a merge confirm. */
+function DuplicateRow({
+  entity,
+  candidate: c,
+  reason,
+  busy,
+  onMerge,
+}: {
+  entity: EntityDetailWithRelationsDto;
+  candidate: RegistryEntityDto;
+  reason: DuplicateCandidateDto['reason'];
+  busy: boolean;
+  onMerge: (victimId: string) => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [asking, setAsking] = useState(false);
+  // undefined = not asked; null = judge unavailable.
+  const [rec, setRec] = useState<ReconcileRecommendation | null | undefined>(undefined);
+  const [askError, setAskError] = useState<string | null>(null);
+
+  function ask() {
+    setAsking(true);
+    setAskError(null);
+    void reconcileEntity(entity.id, c.id)
+      .then((res) => setRec(res.recommendation))
+      .catch((cause: unknown) => setAskError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setAsking(false));
+  }
+
+  return (
+    <div className="flex flex-col gap-1 rounded-medium bg-content1 p-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium">{c.canonicalName}</p>
+          <p className="text-xs text-default-500">{reasonLabel(reason)}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <Chip size="sm" variant="flat" color={ENTITY_TYPE_COLOR[c.type]}>
+            {ENTITY_TYPE_LABEL[c.type]}
+          </Chip>
+          <Button size="sm" variant="light" isLoading={asking} onPress={ask}>
+            Ask AI
+          </Button>
+          {confirming ? (
+            <>
+              <Button size="sm" color="primary" isLoading={busy} onPress={() => onMerge(c.id)}>
+                Confirm
+              </Button>
+              <Button size="sm" variant="light" onPress={() => setConfirming(false)}>
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <Button size="sm" variant="flat" onPress={() => setConfirming(true)}>
+              Merge
+            </Button>
           )}
+        </div>
+      </div>
+      {confirming && c.type !== entity.type && (
+        <p className="text-xs text-warning-600">
+          Cross-type merge: kept as {ENTITY_TYPE_LABEL[entity.type].toLowerCase()}.
+        </p>
+      )}
+      {askError && <p className="text-xs text-danger">{askError}</p>}
+      {rec === null && (
+        <p className="text-xs text-default-500">AI judging is not configured.</p>
+      )}
+      {rec && (
+        <div className="rounded-medium bg-default-100 p-2 text-xs">
+          <p>
+            <span className="font-semibold">
+              {rec.sameThing ? 'Likely the same' : 'Likely different'}
+            </span>{' '}
+            ({Math.round(rec.confidence * 100)}% confident
+            {rec.usedWeb ? ', web-assisted' : ''}) — recommends{' '}
+            {ENTITY_TYPE_LABEL[rec.recommendedType].toLowerCase()}, keep{' '}
+            {rec.survivorId === entity.id ? 'this entity' : `“${c.canonicalName}”`}.
+          </p>
+          {rec.rationale && <p className="mt-1 text-default-500">{rec.rationale}</p>}
         </div>
       )}
     </div>
