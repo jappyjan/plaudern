@@ -1,9 +1,11 @@
 import { DataSource } from 'typeorm';
 import {
   ALL_ENTITIES,
+  EntityAliasEntity,
   EntityMentionEntity,
   EntityRegistryEntity,
   EntityRelationEntity,
+  EntitySuppressionEntity,
   ExtractedPayloadEntity,
   InboxItemEntity,
   SpeakerOccurrenceEntity,
@@ -56,6 +58,8 @@ describe('EntityContactResolverService', () => {
       dataSource.getRepository(EntityMentionEntity),
       dataSource.getRepository(ExtractedPayloadEntity),
       dataSource.getRepository(VoiceProfileEntity),
+      dataSource.getRepository(EntityAliasEntity),
+      dataSource.getRepository(EntitySuppressionEntity),
     );
     const graph = new EntityGraphService(
       dataSource.getRepository(EntityRelationEntity),

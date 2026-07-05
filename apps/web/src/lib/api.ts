@@ -565,6 +565,30 @@ export async function connectEntities(
   return entityConnectResponseSchema.parse(await requestJson(`/entities/graph/connect?${query}`));
 }
 
+/**
+ * Merge & suppress tooling (JJ-63). Each mutation returns the refreshed entity
+ * detail (mentions + relations), so the detail page reloads from one call.
+ * Durability against re-extraction is enforced server-side.
+ */
+
+/** Merge `victimId` INTO `survivorId` (the survivor is kept). */
+export async function mergeEntities(
+  survivorId: string,
+  victimId: string,
+): Promise<EntityDetailWithRelationsDto> {
+  return entityDetailWithRelationsSchema.parse(
+    await requestJson(`/entities/${survivorId}/merge`, {
+      method: 'POST',
+      body: JSON.stringify({ victimId }),
+    }),
+  );
+}
+
+/** Delete/suppress an entity so re-extraction cannot recreate it. */
+export async function deleteEntity(id: string): Promise<void> {
+  await requestVoid(`/entities/${id}`, { method: 'DELETE' });
+}
+
 export async function listCalendarFeeds(): Promise<CalendarFeedsResponse> {
   return calendarFeedsResponseSchema.parse(await requestJson('/calendar/feeds'));
 }

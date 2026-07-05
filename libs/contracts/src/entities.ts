@@ -125,9 +125,29 @@ export const entityDetailSchema = registryEntitySchema.extend({
 export type EntityDetailDto = z.infer<typeof entityDetailSchema>;
 
 /**
- * Correct a registry entity (JJ-63): rename it and/or change its type. Renames
- * move the dedupe key, so the previous canonical name is kept as an alias;
- * re-typing away from `person` drops any contact link.
+ * Merge & correction tooling (JJ-63). The entity detail read model (with
+ * relations, `entityDetailWithRelationsSchema` in ./relations) is the response
+ * for every mutation below, so the UI can refresh from one call.
+ */
+
+/**
+ * POST /v1/entities/:id/merge — union the victim into the survivor addressed by
+ * the URL, then delete the victim. The victim's names are recorded as aliases
+ * of the survivor so future extraction resolves to it instead of resurrecting a
+ * duplicate. Both entities must be the same type (retype first to fix a
+ * mis-typed extraction, then merge).
+ */
+export const mergeEntityRequestSchema = z.object({
+  /** The entity merged INTO the survivor (:id), then deleted. */
+  victimId: z.string().uuid(),
+});
+export type MergeEntityRequest = z.infer<typeof mergeEntityRequestSchema>;
+
+/**
+ * PATCH /v1/entities/:id — correct a registry entity: rename it and/or change
+ * its type. Renaming keeps the OLD normalized name as a durable alias (and, on
+ * retype, the old (type, name) too) so re-extraction folds back in instead of
+ * recreating; re-typing away from `person` drops any contact link.
  */
 export const updateEntityRequestSchema = z
   .object({

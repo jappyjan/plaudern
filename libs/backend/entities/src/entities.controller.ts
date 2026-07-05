@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -15,6 +16,7 @@ import {
   entityListQuerySchema,
   entityNeighborhoodQuerySchema,
   linkEntityContactRequestSchema,
+  mergeEntityRequestSchema,
   updateEntityRequestSchema,
   type AutoLinkEntitiesResponse,
   type EntityConnectResponse,
@@ -25,6 +27,7 @@ import {
 } from '@plaudern/contracts';
 import { CurrentUser, type AuthenticatedUser } from '@plaudern/auth';
 import { EntitiesRegistryService } from './entities-registry.service';
+import { EntitiesCorrectionService } from './entities-correction.service';
 import { EntityContactResolverService } from './entity-contact-resolver.service';
 import { EntityGraphService } from './entity-graph.service';
 
@@ -32,9 +35,9 @@ import { EntityGraphService } from './entity-graph.service';
  * The per-user entity registry and knowledge graph (JJ-32 / JJ-22 / JJ-63):
  * list entities, fetch one entity with its mentions and edges, walk an
  * entity's neighborhood, find the subgraph connecting 2–3 entities — plus
- * correction tooling: edit name/type, link/unlink a person entity to a
- * contact-book voice profile, convert one into a new contact, and sweep
- * auto-linking over everything still unlinked.
+ * correction tooling: merge two entities, edit name/type, delete/suppress,
+ * link/unlink a person entity to a contact-book voice profile, convert one
+ * into a new contact, and sweep auto-linking over everything still unlinked.
  */
 @Controller({ path: 'entities', version: '1' })
 export class EntitiesController {
@@ -42,6 +45,7 @@ export class EntitiesController {
     private readonly registry: EntitiesRegistryService,
     private readonly graph: EntityGraphService,
     private readonly resolver: EntityContactResolverService,
+    private readonly corrections: EntitiesCorrectionService,
   ) {}
 
   @Get()
@@ -109,7 +113,30 @@ export class EntitiesController {
     return { suggestions: await this.resolver.suggest(user.id, id) };
   }
 
-  /** Correct an entity: rename it and/or change its type (JJ-63). */
+  /**
+   * Merge another entity (the victim) into this one (the survivor). Unions
+   * aliases/mentions/relations and records the victim's names as durable
+   * aliases so re-extraction resolves to the survivor. Returns the survivor.
+   */
+  @Post(':id/merge')
+  async merge(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ): Promise<EntityDetailWithRelationsDto> {
+    const parsed = mergeEntityRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues[0]?.message ?? 'invalid request');
+    }
+    const survivorId = await this.corrections.merge(user.id, id, parsed.data.victimId);
+    return this.detailWithRelations(user.id, survivorId);
+  }
+
+  /**
+   * Correct an entity: rename it and/or change its type (JJ-63). Durable
+   * against re-extraction: the old identity is recorded in `entity_aliases`
+   * so the pre-correction name folds back in instead of being recreated.
+   */
   @Patch(':id')
   async update(
     @CurrentUser() user: AuthenticatedUser,
@@ -120,8 +147,18 @@ export class EntitiesController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues[0]?.message ?? 'invalid request');
     }
-    await this.registry.update(user.id, id, parsed.data);
+    await this.corrections.update(user.id, id, parsed.data);
     return this.detailWithRelations(user.id, id);
+  }
+
+  /** Delete/suppress an entity so re-extraction cannot recreate it. */
+  @Delete(':id')
+  @HttpCode(204)
+  async remove(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ): Promise<void> {
+    await this.corrections.suppress(user.id, id);
   }
 
   /** Manually link a person entity to a contact-book voice profile. */

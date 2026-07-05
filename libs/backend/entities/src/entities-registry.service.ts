@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import type {
@@ -11,11 +6,12 @@ import type {
   EntityType,
   ExtractedEntity,
   RegistryEntityDto,
-  UpdateEntityRequest,
 } from '@plaudern/contracts';
 import {
+  EntityAliasEntity,
   EntityMentionEntity,
   EntityRegistryEntity,
+  EntitySuppressionEntity,
   ExtractedPayloadEntity,
   VoiceProfileEntity,
 } from '@plaudern/persistence';
@@ -24,13 +20,19 @@ import { exactContactMatch, normalize } from './contact-matching';
 /**
  * Owns the per-user entity registry (JJ-32): normalizing/deduping extracted
  * entities into `entities` rows, recording `entity_mentions` edges, and the
- * manual contact-link operations (link/unlink/convert/edit, JJ-63). At ingest
+ * manual contact-link operations (link/unlink/convert, JJ-63). At ingest
  * only an exact (diacritic-folded) name match links a `person` to the contact
  * book — everything fuzzier is the EntityContactResolverService's job, which
  * weighs recordings and the knowledge graph. Also serves the read models
  * (list, detail) — restricting mention aggregates to each item's LATEST
  * succeeded `entities` extraction so append-only reprocessing supersedes old
  * links, exactly like the diarization contact book.
+ *
+ * The upsert path consults the JJ-63 correction tables so manual corrections
+ * survive re-extraction: suppressed (deleted) names are skipped entirely, and
+ * merged-away/renamed names resolve — via `entity_aliases` — onto their
+ * surviving entity instead of resurrecting a duplicate. Rename/retype, merge,
+ * and delete themselves live in EntitiesCorrectionService (transactional).
  */
 @Injectable()
 export class EntitiesRegistryService {
@@ -43,6 +45,10 @@ export class EntitiesRegistryService {
     private readonly extractions: Repository<ExtractedPayloadEntity>,
     @InjectRepository(VoiceProfileEntity)
     private readonly profiles: Repository<VoiceProfileEntity>,
+    @InjectRepository(EntityAliasEntity)
+    private readonly aliasRecords: Repository<EntityAliasEntity>,
+    @InjectRepository(EntitySuppressionEntity)
+    private readonly suppressions: Repository<EntitySuppressionEntity>,
   ) {}
 
   /**
@@ -94,6 +100,9 @@ export class EntitiesRegistryService {
         [...surfaceForms],
         contacts,
       );
+      // Suppressed (deleted) names resolve to null — no entity, no mention, so
+      // the correction stays durable across re-extraction and backfills.
+      if (!registryEntity) continue;
       await this.upsertMention(
         userId,
         inboxItemId,
@@ -145,43 +154,6 @@ export class EntitiesRegistryService {
           createdAt: m.createdAt.toISOString(),
         })),
     };
-  }
-
-  /**
-   * Correct a registry entity (JJ-63): rename and/or re-type it. A rename
-   * moves the dedupe key, so the old canonical name is kept as an alias;
-   * re-typing away from `person` drops any contact link. Colliding with an
-   * existing (type, name) row is rejected — merging is separate tooling.
-   */
-  async update(userId: string, id: string, req: UpdateEntityRequest): Promise<EntityDetailDto> {
-    const row = await this.getOwned(userId, id);
-    if (req.canonicalName !== undefined) {
-      const name = req.canonicalName.trim();
-      const normalizedName = normalize(name);
-      if (normalizedName !== row.normalizedName) {
-        const aliases = new Set(row.aliases ?? []);
-        aliases.add(row.canonicalName);
-        row.aliases = [...aliases];
-      }
-      row.canonicalName = name;
-      row.normalizedName = normalizedName;
-    }
-    if (req.type !== undefined && req.type !== row.type) {
-      row.type = req.type;
-      if (req.type !== 'person') {
-        row.voiceProfileId = null;
-        row.voiceProfileLinkOrigin = null;
-      }
-    }
-    try {
-      await this.entities.save(row);
-    } catch (err) {
-      if (!isUniqueViolation(err)) throw err;
-      throw new ConflictException(
-        'another entity with this type and name already exists',
-      );
-    }
-    return this.detail(userId, id);
   }
 
   /** Manually link a `person` entity to a contact-book voice profile. */
@@ -262,7 +234,12 @@ export class EntitiesRegistryService {
   /**
    * Find or create the registry row for (userId, type, normalizedName),
    * accreting any new surface forms as aliases and linking a `person` to an
-   * exactly-matching named voice profile.
+   * exactly-matching named voice profile (respecting a `suppressed` origin).
+   *
+   * Consults the JJ-63 correction tables so manual edits survive re-extraction:
+   * a suppressed (deleted) name returns null (skip it entirely); a merged-away
+   * or renamed name resolves — via `entity_aliases` — onto the surviving entity
+   * instead of resurrecting a duplicate.
    */
   private async upsertEntity(
     userId: string,
@@ -270,9 +247,31 @@ export class EntitiesRegistryService {
     name: string,
     surfaceForms: string[],
     contacts: VoiceProfileEntity[],
-  ): Promise<EntityRegistryEntity> {
+  ): Promise<EntityRegistryEntity | null> {
     const normalizedName = normalize(name);
+    // Deleted/suppressed names must never come back.
+    const suppressed = await this.suppressions.findOne({
+      where: { userId, type, normalizedName },
+    });
+    if (suppressed) return null;
+
     let row = await this.entities.findOne({ where: { userId, type, normalizedName } });
+    // Not a live entity under this exact name — but it may be a merged-away or
+    // renamed spelling that must resolve onto its surviving entity.
+    if (!row) {
+      const alias = await this.aliasRecords.findOne({
+        where: { userId, type, normalizedName },
+      });
+      if (alias) {
+        const target = await this.entities.findOne({ where: { id: alias.entityId, userId } });
+        // Cross-type redirect: the name was merged/renamed into an entity that
+        // was later retyped. Record the mention against the survivor (no
+        // resurrected duplicate) but do NOT mutate it — a person-extraction
+        // must never rename, alias-accrete, or voice-link an organization.
+        if (target && target.type !== type) return target;
+        row = target;
+      }
+    }
     if (!row) {
       row = this.entities.create({
         userId,
@@ -291,8 +290,10 @@ export class EntitiesRegistryService {
     // Adopt the longer spelling as canonical (e.g. "Angela Merkel" over "Angela").
     if (name.length > row.canonicalName.length) row.canonicalName = name;
 
+    // Guarded on the ROW's type (not the requested one) so a voice link can
+    // never be written onto a non-person, whatever path resolved the row.
     if (
-      type === 'person' &&
+      row.type === 'person' &&
       !row.voiceProfileId &&
       row.voiceProfileLinkOrigin !== 'suppressed'
     ) {

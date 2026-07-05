@@ -3,9 +3,11 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { InboxModule } from '@plaudern/inbox';
 import {
+  EntityAliasEntity,
   EntityMentionEntity,
   EntityRegistryEntity,
   EntityRelationEntity,
+  EntitySuppressionEntity,
   ExtractedPayloadEntity,
   SpeakerOccurrenceEntity,
   VoiceProfileEntity,
@@ -21,6 +23,7 @@ import { OpenAiContactResolutionProvider } from './providers/openai-contact-reso
 import { OpenAiRelationExtractionProvider } from './providers/openai-relations.provider';
 import { ContactResolutionStartupService } from './contact-resolution-startup.service';
 import { EntitiesRegistryService } from './entities-registry.service';
+import { EntitiesCorrectionService } from './entities-correction.service';
 import { EntityContactResolverService } from './entity-contact-resolver.service';
 import { EntityGraphService } from './entity-graph.service';
 import { EntitiesProcessor } from './entities.processor';
@@ -40,6 +43,8 @@ import { RelationsExtractor } from './relations.extractor';
       EntityRegistryEntity,
       EntityMentionEntity,
       EntityRelationEntity,
+      EntityAliasEntity,
+      EntitySuppressionEntity,
       ExtractedPayloadEntity,
       SpeakerOccurrenceEntity,
       VoiceProfileEntity,
@@ -67,6 +72,7 @@ import { RelationsExtractor } from './relations.extractor';
       useFactory: (openai: OpenAiContactResolutionProvider) => openai,
     },
     EntitiesRegistryService,
+    EntitiesCorrectionService,
     EntityContactResolverService,
     ContactResolutionStartupService,
     EntityGraphService,

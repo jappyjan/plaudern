@@ -2,14 +2,17 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { DataSource } from 'typeorm';
 import {
   ALL_ENTITIES,
+  EntityAliasEntity,
   EntityMentionEntity,
   EntityRegistryEntity,
+  EntitySuppressionEntity,
   ExtractedPayloadEntity,
   InboxItemEntity,
   VoiceProfileEntity,
 } from '@plaudern/persistence';
 import type { ExtractedEntity } from '@plaudern/contracts';
 import { normalize } from './contact-matching';
+import { EntitiesCorrectionService } from './entities-correction.service';
 import { EntitiesRegistryService, isUniqueViolation } from './entities-registry.service';
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
@@ -43,6 +46,7 @@ describe('isUniqueViolation', () => {
 describe('EntitiesRegistryService', () => {
   let dataSource: DataSource;
   let service: EntitiesRegistryService;
+  let corrections: EntitiesCorrectionService;
 
   beforeEach(async () => {
     dataSource = new DataSource({
@@ -57,7 +61,10 @@ describe('EntitiesRegistryService', () => {
       dataSource.getRepository(EntityMentionEntity),
       dataSource.getRepository(ExtractedPayloadEntity),
       dataSource.getRepository(VoiceProfileEntity),
+      dataSource.getRepository(EntityAliasEntity),
+      dataSource.getRepository(EntitySuppressionEntity),
     );
+    corrections = new EntitiesCorrectionService(dataSource);
   });
 
   afterEach(async () => {
@@ -328,6 +335,8 @@ describe('EntitiesRegistryService', () => {
     );
   });
 
+  // Rename/retype live in the transactional EntitiesCorrectionService (JJ-63);
+  // these cover the registry-visible outcome via its read model.
   it('renames an entity (keeping the old name as alias) and rejects collisions', async () => {
     const item = await createItem();
     const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
@@ -337,12 +346,13 @@ describe('EntitiesRegistryService', () => {
     ]);
     const detlef = (await service.list(USER)).find((e) => e.canonicalName === 'Detlef')!;
 
-    const renamed = await service.update(USER, detlef.id, { canonicalName: 'Detlef Müller' });
+    await corrections.update(USER, detlef.id, { canonicalName: 'Detlef Müller' });
+    const renamed = await service.detail(USER, detlef.id);
     expect(renamed.canonicalName).toBe('Detlef Müller');
     expect(renamed.aliases).toContain('Detlef');
 
     await expect(
-      service.update(USER, detlef.id, { canonicalName: 'Bob' }),
+      corrections.update(USER, detlef.id, { canonicalName: 'Bob' }),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
@@ -354,7 +364,8 @@ describe('EntitiesRegistryService', () => {
     const [entity] = await service.list(USER);
     expect(entity.voiceProfileId).not.toBeNull();
 
-    const retyped = await service.update(USER, entity.id, { type: 'organization' });
+    await corrections.update(USER, entity.id, { type: 'organization' });
+    const retyped = await service.detail(USER, entity.id);
     expect(retyped.type).toBe('organization');
     expect(retyped.voiceProfileId).toBeNull();
     expect(retyped.voiceProfileLinkOrigin).toBeNull();

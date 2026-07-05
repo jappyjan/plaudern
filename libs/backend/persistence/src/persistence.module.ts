@@ -8,9 +8,11 @@ import {
   ConsentSettingsEntity,
   EmailSettingsEntity,
   EmbeddingChunkEntity,
+  EntityAliasEntity,
   EntityMentionEntity,
   EntityRegistryEntity,
   EntityRelationEntity,
+  EntitySuppressionEntity,
   ExtractedPayloadEntity,
   ExtractionRunEntity,
   GeocodeCacheEntity,
@@ -59,6 +61,7 @@ import { CreateMcpTokens1720000000022 } from './migrations/1720000000022-CreateM
 import { CreateEntityRelations1720000000023 } from './migrations/1720000000023-CreateEntityRelations';
 import { EntityContactLinkOrigin1720000000024 } from './migrations/1720000000024-EntityContactLinkOrigin';
 import { AddFullTextSearch1720000000026 } from './migrations/1720000000026-AddFullTextSearch';
+import { CreateEntityCorrections1720000000027 } from './migrations/1720000000027-CreateEntityCorrections';
 import { ExtractionRunTrigger1720000000028 } from './migrations/1720000000028-ExtractionRunTrigger';
 
 export const ALL_ENTITIES = [
@@ -72,6 +75,8 @@ export const ALL_ENTITIES = [
   TopicEntity,
   ItemTopicEntity,
   EntityRelationEntity,
+  EntityAliasEntity,
+  EntitySuppressionEntity,
   InboxTombstoneEntity,
   PlaudSettingsEntity,
   EmailSettingsEntity,
@@ -123,6 +128,7 @@ export const ALL_MIGRATIONS = [
   CreateEntityRelations1720000000023,
   EntityContactLinkOrigin1720000000024,
   AddFullTextSearch1720000000026,
+  CreateEntityCorrections1720000000027,
   ExtractionRunTrigger1720000000028,
 ];
 

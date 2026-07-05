@@ -6,6 +6,7 @@ export * from './contact-resolution.provider';
 export * from './contact-resolution-startup.service';
 export * from './entity-contact-resolver.service';
 export * from './entities-registry.service';
+export * from './entities-correction.service';
 export * from './entity-graph.service';
 export * from './entities.processor';
 export * from './entities.service';
