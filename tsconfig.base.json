@@ -31,6 +31,7 @@
       "@plaudern/entities": ["libs/backend/entities/src/index.ts"],
       "@plaudern/topics": ["libs/backend/topics/src/index.ts"],
       "@plaudern/commitments": ["libs/backend/commitments/src/index.ts"],
+      "@plaudern/questions": ["libs/backend/questions/src/index.ts"],
       "@plaudern/tasks": ["libs/backend/tasks/src/index.ts"],
       "@plaudern/plaud-sync": ["libs/backend/plaud-sync/src/index.ts"],
       "@plaudern/email-ingest": ["libs/backend/email-ingest/src/index.ts"],

@@ -27,6 +27,7 @@
     "@plaudern/notifications": "workspace:*",
     "@plaudern/persistence": "workspace:*",
     "@plaudern/plaud-sync": "workspace:*",
+    "@plaudern/questions": "workspace:*",
     "@plaudern/search": "workspace:*",
     "@plaudern/speaker-id": "workspace:*",
     "@plaudern/storage": "workspace:*",

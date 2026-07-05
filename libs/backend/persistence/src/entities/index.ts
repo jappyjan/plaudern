@@ -31,5 +31,6 @@ export * from './extraction-run.entity';
 export * from './topic.entity';
 export * from './item-topic.entity';
 export * from './commitment.entity';
+export * from './question.entity';
 export * from './task.entity';
 export * from './task-citation.entity';
