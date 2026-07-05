@@ -134,14 +134,120 @@ export type EntityDetailDto = z.infer<typeof entityDetailSchema>;
  * POST /v1/entities/:id/merge — union the victim into the survivor addressed by
  * the URL, then delete the victim. The victim's names are recorded as aliases
  * of the survivor so future extraction resolves to it instead of resurrecting a
- * duplicate. Both entities must be the same type (retype first to fix a
- * mis-typed extraction, then merge).
+ * duplicate. The two entities may be of DIFFERENT types (e.g. an organization
+ * and a product the extractor split apart); the survivor's type is kept, and
+ * the victim's names are aliased under both types so a later extraction under
+ * either type folds onto the survivor.
  */
 export const mergeEntityRequestSchema = z.object({
   /** The entity merged INTO the survivor (:id), then deleted. */
   victimId: z.string().uuid(),
 });
 export type MergeEntityRequest = z.infer<typeof mergeEntityRequestSchema>;
+
+/**
+ * Duplicate detection (JJ-63). Why a candidate is a likely duplicate of the
+ * subject entity: `exact-cross-type` = identical (folded) name under a
+ * DIFFERENT type — the split-typed case; `fuzzy` = a similar name (possibly the
+ * same type), lexically close enough to be worth confirming.
+ */
+export const duplicateReasonSchema = z.enum(['exact-cross-type', 'fuzzy']);
+export type DuplicateReason = z.infer<typeof duplicateReasonSchema>;
+
+export const duplicateCandidateSchema = z.object({
+  candidate: registryEntitySchema,
+  reason: duplicateReasonSchema,
+  /** Match strength in [0,1]: 1 for exact, name affinity for fuzzy. */
+  score: z.number().min(0).max(1),
+});
+export type DuplicateCandidateDto = z.infer<typeof duplicateCandidateSchema>;
+
+/** GET /v1/entities/:id/duplicate-candidates — include fuzzy/similar names too. */
+export const duplicateCandidatesQuerySchema = z.object({
+  fuzzy: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+});
+export type DuplicateCandidatesQuery = z.infer<typeof duplicateCandidatesQuerySchema>;
+
+export const duplicateCandidatesResponseSchema = z.object({
+  candidates: z.array(duplicateCandidateSchema),
+});
+export type DuplicateCandidatesResponse = z.infer<typeof duplicateCandidatesResponseSchema>;
+
+/** How a merge suggestion arose: automatic post-extraction detection vs a manual reconcile. */
+export const mergeSuggestionSourceSchema = z.enum(['auto', 'manual']);
+export type MergeSuggestionSource = z.infer<typeof mergeSuggestionSourceSchema>;
+
+/** Suggestion lifecycle: pending until the user merges (applied) or dismisses it. */
+export const mergeSuggestionStatusSchema = z.enum(['pending', 'dismissed', 'applied']);
+export type MergeSuggestionStatus = z.infer<typeof mergeSuggestionStatusSchema>;
+
+/**
+ * A recorded likely-duplicate pair for the "possible duplicates" surface. Both
+ * sides are inlined as registry entities so the list renders names/types
+ * without a second fetch. Judge fields (`recommendedType`, `sameThing`,
+ * `confidence`, `rationale`) are null until a reconcile has judged the pair.
+ */
+export const mergeSuggestionSchema = z.object({
+  id: z.string().uuid(),
+  entity: registryEntitySchema,
+  candidate: registryEntitySchema,
+  recommendedSurvivorId: z.string().uuid().nullable(),
+  recommendedType: entityTypeSchema.nullable(),
+  sameThing: z.boolean().nullable(),
+  confidence: z.number().min(0).max(1).nullable(),
+  rationale: z.string().nullable(),
+  usedWeb: z.boolean(),
+  source: mergeSuggestionSourceSchema,
+  status: mergeSuggestionStatusSchema,
+  createdAt: z.string().datetime(),
+});
+export type MergeSuggestionDto = z.infer<typeof mergeSuggestionSchema>;
+
+/** GET /v1/entities/suggestions — optionally filter by lifecycle status. */
+export const mergeSuggestionsQuerySchema = z.object({
+  status: mergeSuggestionStatusSchema.optional(),
+});
+export type MergeSuggestionsQuery = z.infer<typeof mergeSuggestionsQuerySchema>;
+
+export const mergeSuggestionsResponseSchema = z.object({
+  suggestions: z.array(mergeSuggestionSchema),
+});
+export type MergeSuggestionsResponse = z.infer<typeof mergeSuggestionsResponseSchema>;
+
+/**
+ * POST /v1/entities/:id/reconcile — ask the LLM judge whether the subject (:id)
+ * and `candidateId` are the same real-world thing. `web=true` additionally
+ * consults opt-in web research (a no-op when web research is disabled). Purely
+ * advisory: the caller still applies the merge through the merge endpoint.
+ */
+export const reconcileRequestSchema = z.object({
+  candidateId: z.string().uuid(),
+  web: z.boolean().default(false),
+});
+export type ReconcileRequest = z.infer<typeof reconcileRequestSchema>;
+
+export const reconcileRecommendationSchema = z.object({
+  /** Whether the judge decided the two denote the same real-world thing. */
+  sameThing: z.boolean(),
+  /** The type the judge recommends for the survivor. */
+  recommendedType: entityTypeSchema,
+  /** Which of the two entities the judge recommends keeping. */
+  survivorId: z.string().uuid(),
+  confidence: z.number().min(0).max(1),
+  rationale: z.string(),
+  /** True when web research contributed to the recommendation. */
+  usedWeb: z.boolean(),
+});
+export type ReconcileRecommendation = z.infer<typeof reconcileRecommendationSchema>;
+
+/** `recommendation` is null when no judge is configured, so the UI can degrade. */
+export const reconcileResponseSchema = z.object({
+  recommendation: reconcileRecommendationSchema.nullable(),
+});
+export type ReconcileResponse = z.infer<typeof reconcileResponseSchema>;
 
 /**
  * PATCH /v1/entities/:id — correct a registry entity: rename it and/or change

@@ -7,6 +7,7 @@ import {
 } from './entities.provider';
 import { EntitiesRegistryService } from './entities-registry.service';
 import { EntityContactResolverService } from './entity-contact-resolver.service';
+import { EntityReconciliationService } from './entity-reconciliation.service';
 import { buildEntityExtractionInput } from './entity-context';
 import type { EntityExtractionJob } from './entities.job';
 
@@ -25,6 +26,7 @@ export class EntitiesProcessor {
     private readonly inbox: InboxService,
     private readonly registry: EntitiesRegistryService,
     private readonly resolver: EntityContactResolverService,
+    private readonly reconciliation: EntityReconciliationService,
     @Inject(ENTITY_EXTRACTION_PROVIDER)
     private readonly provider: EntityExtractionProvider,
   ) {}
@@ -66,6 +68,16 @@ export class EntitiesProcessor {
         .autoLinkForItem(item.userId, item.id)
         .catch((err) =>
           this.logger.warn(`contact resolution after extraction failed: ${(err as Error).message}`),
+        );
+
+      // Flag same-name/different-type duplicates this extraction may have
+      // created (e.g. "Foo" the product vs "Foo" the organization) as pending
+      // merge suggestions. Cheap exact-only detection; enrichment only, never
+      // fails the extraction and never merges on its own.
+      await this.reconciliation
+        .detectExactForItem(item.userId, item.id)
+        .catch((err) =>
+          this.logger.warn(`duplicate detection after extraction failed: ${(err as Error).message}`),
         );
     } catch (err) {
       const message = (err as Error).message;

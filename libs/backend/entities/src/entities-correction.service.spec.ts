@@ -317,18 +317,89 @@ describe('EntitiesCorrectionService', () => {
     expect(mergedCommitment!.counterpartyEntityId).toBe(survivor.id);
   });
 
-  it('rejects merging different types and self-merge', async () => {
+  it('rejects self-merge', async () => {
     const item = await createItem();
     const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
-    await ingest(item, ext, [
-      { type: 'person', name: 'Bob', mentions: [] },
-      { type: 'organization', name: 'Bobco', mentions: [] },
-    ]);
+    await ingest(item, ext, [{ type: 'person', name: 'Bob', mentions: [] }]);
     const person = (await entityByName('Bob'))!;
-    const org = (await entityByName('Bobco'))!;
 
-    await expect(corrections.merge(USER, person.id, org.id)).rejects.toBeInstanceOf(BadRequestException);
-    await expect(corrections.merge(USER, person.id, person.id)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(corrections.merge(USER, person.id, person.id)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('merges across types: survivor keeps its type, victim name aliased under BOTH types', async () => {
+    const entities = dataSource.getRepository(EntityRegistryEntity);
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+    // Same name, split into two types by the extractor across recordings.
+    await ingest(item, ext, [
+      { type: 'organization', name: 'Foo', mentions: ['Foo'] },
+      { type: 'product', name: 'Foo', mentions: ['Foo'] },
+    ]);
+    const org = (await entities.findOne({ where: { userId: USER, type: 'organization' } }))!;
+    const product = (await entities.findOne({ where: { userId: USER, type: 'product' } }))!;
+
+    // Merge the organization INTO the product — the real thing is the product.
+    await corrections.merge(USER, product.id, org.id);
+
+    // Survivor stays a product; the organization row is gone.
+    const survivor = (await entities.findOne({ where: { id: product.id } }))!;
+    expect(survivor.type).toBe('product');
+    expect(await entities.findOne({ where: { id: org.id } })).toBeNull();
+
+    // The victim's name is aliased under BOTH the survivor's and the victim's
+    // type, so re-extraction under EITHER type folds onto the survivor.
+    const aliasRepo = dataSource.getRepository(EntityAliasEntity);
+    const orgAlias = await aliasRepo.findOne({
+      where: { userId: USER, type: 'organization', normalizedName: 'foo' },
+    });
+    expect(orgAlias?.entityId).toBe(product.id);
+
+    // A later recording still tagging "Foo" as an organization must NOT
+    // resurrect the duplicate — it folds onto the surviving product.
+    const item2 = await createItem('2026-07-02T10:00:00Z');
+    const ext2 = await createEntitiesExtraction(item2, new Date('2026-07-02T10:00:00Z'));
+    await ingest(item2, ext2, [{ type: 'organization', name: 'Foo', mentions: ['Foo'] }]);
+
+    const list = await registry.list(USER);
+    expect(list).toHaveLength(1);
+    expect(list[0].id).toBe(product.id);
+    expect(list[0].mentionCount).toBe(2);
+  });
+
+  it('cross-type merge into a non-person survivor drops the person victim voice link', async () => {
+    const entities = dataSource.getRepository(EntityRegistryEntity);
+    const voice = await dataSource.getRepository(VoiceProfileEntity).save({
+      userId: USER,
+      name: 'Foo the person',
+      voiceprint: null,
+    });
+    const product = await entities.save({
+      userId: USER,
+      type: 'product',
+      canonicalName: 'Foo',
+      normalizedName: 'foo',
+      aliases: [],
+    });
+    const person = await entities.save({
+      userId: USER,
+      type: 'person',
+      canonicalName: 'Foo',
+      normalizedName: 'foo',
+      aliases: [],
+      voiceProfileId: voice.id,
+      voiceProfileLinkOrigin: 'manual',
+    });
+
+    await corrections.merge(USER, product.id, person.id);
+
+    const survivor = (await entities.findOne({ where: { id: product.id } }))!;
+    expect(survivor.type).toBe('product');
+    // A non-person survivor must never carry a voice link.
+    expect(survivor.voiceProfileId).toBeNull();
+    expect(survivor.voiceProfileLinkOrigin).toBeNull();
+    expect(await entities.findOne({ where: { id: person.id } })).toBeNull();
   });
 
   it('rename keeps the old name as a durable alias', async () => {
