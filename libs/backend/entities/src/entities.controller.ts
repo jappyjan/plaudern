@@ -12,6 +12,7 @@ import {
   Query,
 } from '@nestjs/common';
 import {
+  duplicateCandidatesQuerySchema,
   entityConnectQuerySchema,
   entityListQuerySchema,
   entityNeighborhoodQuerySchema,
@@ -19,6 +20,7 @@ import {
   mergeEntityRequestSchema,
   updateEntityRequestSchema,
   type AutoLinkEntitiesResponse,
+  type DuplicateCandidatesResponse,
   type EntityConnectResponse,
   type EntityContactSuggestionsResponse,
   type EntityDetailWithRelationsDto,
@@ -28,6 +30,7 @@ import {
 import { CurrentUser, type AuthenticatedUser } from '@plaudern/auth';
 import { EntitiesRegistryService } from './entities-registry.service';
 import { EntitiesCorrectionService } from './entities-correction.service';
+import { EntityReconciliationService } from './entity-reconciliation.service';
 import { EntityContactResolverService } from './entity-contact-resolver.service';
 import { EntityGraphService } from './entity-graph.service';
 
@@ -46,6 +49,7 @@ export class EntitiesController {
     private readonly graph: EntityGraphService,
     private readonly resolver: EntityContactResolverService,
     private readonly corrections: EntitiesCorrectionService,
+    private readonly reconciliation: EntityReconciliationService,
   ) {}
 
   @Get()
@@ -111,6 +115,29 @@ export class EntitiesController {
     @Param('id') id: string,
   ): Promise<EntityContactSuggestionsResponse> {
     return { suggestions: await this.resolver.suggest(user.id, id) };
+  }
+
+  /**
+   * Likely-duplicate entities for this one: another entity with the same name
+   * under a different type (the split-typed case), plus — when `fuzzy=true` —
+   * similar names worth confirming. Read-only; the user merges through the
+   * existing merge endpoint.
+   */
+  @Get(':id/duplicate-candidates')
+  async duplicateCandidates(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Query() query: unknown,
+  ): Promise<DuplicateCandidatesResponse> {
+    const parsed = duplicateCandidatesQuerySchema.safeParse(query);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues[0]?.message ?? 'invalid query');
+    }
+    return {
+      candidates: await this.reconciliation.findCandidates(user.id, id, {
+        fuzzy: parsed.data.fuzzy,
+      }),
+    };
   }
 
   /**

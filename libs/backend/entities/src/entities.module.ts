@@ -28,6 +28,7 @@ import { OpenAiRelationExtractionProvider } from './providers/openai-relations.p
 import { ContactResolutionStartupService } from './contact-resolution-startup.service';
 import { EntitiesRegistryService } from './entities-registry.service';
 import { EntitiesCorrectionService } from './entities-correction.service';
+import { EntityReconciliationService } from './entity-reconciliation.service';
 import { EntityContactResolverService } from './entity-contact-resolver.service';
 import { EntityGraphService } from './entity-graph.service';
 import { DossierService } from './dossier.service';
@@ -85,6 +86,7 @@ import { RelationsExtractor } from './relations.extractor';
     },
     EntitiesRegistryService,
     EntitiesCorrectionService,
+    EntityReconciliationService,
     EntityContactResolverService,
     ContactResolutionStartupService,
     EntityGraphService,

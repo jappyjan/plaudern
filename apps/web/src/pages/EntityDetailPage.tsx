@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, CardBody, CardHeader, Chip, Input, Spinner } from '@heroui/react';
 import type {
+  DuplicateCandidateDto,
   EntityContactSuggestionDto,
   EntityDetailWithRelationsDto,
   EntityRelationEdgeDto,
@@ -13,6 +14,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   convertEntityToContact,
   deleteEntity,
+  duplicateCandidates,
   getEntity,
   getEntityContactSuggestions,
   getEntityNeighborhood,
@@ -374,7 +376,7 @@ export function EntityDetailPage() {
   );
 }
 
-type Panel = 'merge' | 'delete';
+type Panel = 'merge' | 'duplicates' | 'delete';
 
 /**
  * Merge & delete tooling (JJ-63) as inline panels (one open at a time), kept
@@ -399,6 +401,22 @@ function ManageCard({
     setOpen((cur) => (cur === panel ? null : panel));
   }
 
+  // Merge `victimId` INTO this entity (the survivor is the one being viewed, so
+  // it keeps its type). Shared by the manual picker and the duplicate finder.
+  function runMerge(victimId: string) {
+    setBusy(true);
+    setError(null);
+    void mergeEntities(entity.id, victimId)
+      .then((fresh) => {
+        setOpen(null);
+        onMerged(fresh);
+      })
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => setBusy(false));
+  }
+
   return (
     <Card>
       <CardHeader className="pb-0">
@@ -406,6 +424,9 @@ function ManageCard({
       </CardHeader>
       <CardBody className="gap-3">
         <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="flat" onPress={() => toggle('duplicates')}>
+            Find duplicates
+          </Button>
           <Button size="sm" variant="flat" onPress={() => toggle('merge')}>
             Merge duplicate
           </Button>
@@ -418,25 +439,11 @@ function ManageCard({
           <div className="rounded-medium bg-danger-50 p-2 text-xs text-danger">{error}</div>
         )}
 
-        {open === 'merge' && (
-          <MergePanel
-            entity={entity}
-            busy={busy}
-            onMerge={(victimId) => {
-              setBusy(true);
-              setError(null);
-              void mergeEntities(entity.id, victimId)
-                .then((fresh) => {
-                  setOpen(null);
-                  onMerged(fresh);
-                })
-                .catch((cause: unknown) => {
-                  setError(cause instanceof Error ? cause.message : String(cause));
-                })
-                .finally(() => setBusy(false));
-            }}
-          />
+        {open === 'duplicates' && (
+          <DuplicatesPanel entity={entity} busy={busy} onMerge={runMerge} />
         )}
+
+        {open === 'merge' && <MergePanel entity={entity} busy={busy} onMerge={runMerge} />}
 
         {open === 'delete' && (
           <div className="flex flex-col gap-2 rounded-medium bg-default-100 p-3">
@@ -570,6 +577,105 @@ function MergePanel({
                   <p className="text-xs text-default-500">
                     {c.mentionCount} recording{c.mentionCount === 1 ? '' : 's'}
                   </p>
+                </div>
+                <Chip size="sm" variant="flat" color={ENTITY_TYPE_COLOR[c.type]}>
+                  {ENTITY_TYPE_LABEL[c.type]}
+                </Chip>
+              </button>
+            ),
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function reasonLabel(reason: DuplicateCandidateDto['reason']): string {
+  return reason === 'exact-cross-type' ? 'Same name, different type' : 'Similar name';
+}
+
+/**
+ * Finds likely duplicates of this entity — an entity with the same name under a
+ * different type (the extractor's split-typed case), plus, when "Include similar
+ * names" is on, fuzzy matches worth confirming. Merging keeps THIS entity (the
+ * survivor); the picked candidate is folded in and deleted.
+ */
+function DuplicatesPanel({
+  entity,
+  busy,
+  onMerge,
+}: {
+  entity: EntityDetailWithRelationsDto;
+  busy: boolean;
+  onMerge: (victimId: string) => void;
+}) {
+  const [fuzzy, setFuzzy] = useState(false);
+  const [candidates, setCandidates] = useState<DuplicateCandidateDto[] | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setCandidates(null);
+    setError(null);
+    void duplicateCandidates(entity.id, fuzzy)
+      .then((res) => {
+        if (!cancelled) setCandidates(res.candidates);
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [entity.id, fuzzy]);
+
+  return (
+    <div className="flex flex-col gap-2 rounded-medium bg-default-100 p-3">
+      <p className="text-xs text-default-500">
+        Possible duplicates of <span className="font-semibold">{entity.canonicalName}</span>. Merging
+        keeps this entity and its type; the other is folded in and deleted.
+      </p>
+      <label className="flex items-center gap-2 text-xs text-default-600">
+        <input type="checkbox" checked={fuzzy} onChange={(e) => setFuzzy(e.target.checked)} />
+        Include similar names
+      </label>
+      {error && <p className="text-xs text-danger">{error}</p>}
+      {candidates === null ? (
+        <Spinner size="sm" />
+      ) : candidates.length === 0 ? (
+        <p className="text-xs text-default-500">No likely duplicates found.</p>
+      ) : (
+        <div className="flex flex-col gap-1">
+          {candidates.map(({ candidate: c, reason }) =>
+            confirmId === c.id ? (
+              <div
+                key={c.id}
+                className="flex items-center justify-between gap-2 rounded-medium bg-warning-50 p-2"
+              >
+                <span className="text-sm">
+                  Merge &ldquo;{c.canonicalName}&rdquo;
+                  {c.type !== entity.type ? ` (${ENTITY_TYPE_LABEL[c.type].toLowerCase()})` : ''} in?
+                </span>
+                <div className="flex gap-1">
+                  <Button size="sm" color="primary" isLoading={busy} onPress={() => onMerge(c.id)}>
+                    Confirm
+                  </Button>
+                  <Button size="sm" variant="light" onPress={() => setConfirmId(null)}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <button
+                key={c.id}
+                type="button"
+                className="flex items-center justify-between gap-2 rounded-medium p-2 text-left hover:bg-default-200"
+                onClick={() => setConfirmId(c.id)}
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{c.canonicalName}</p>
+                  <p className="text-xs text-default-500">{reasonLabel(reason)}</p>
                 </div>
                 <Chip size="sm" variant="flat" color={ENTITY_TYPE_COLOR[c.type]}>
                   {ENTITY_TYPE_LABEL[c.type]}

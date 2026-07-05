@@ -110,8 +110,10 @@ import {
   entityDossierSchema,
   autoLinkEntitiesResponseSchema,
   entityContactSuggestionsResponseSchema,
+  duplicateCandidatesResponseSchema,
   type AutoLinkEntitiesResponse,
   type EntityContactSuggestionsResponse,
+  type DuplicateCandidatesResponse,
   type EntityListResponse,
   type EntityDetailWithRelationsDto,
   type EntityDossierDto,
@@ -647,6 +649,21 @@ export async function mergeEntities(
       method: 'POST',
       body: JSON.stringify({ victimId }),
     }),
+  );
+}
+
+/**
+ * Likely-duplicate entities for this one — an entity with the same name under a
+ * different type, plus (with `fuzzy`) similar names worth confirming. Read-only;
+ * apply via `mergeEntities`.
+ */
+export async function duplicateCandidates(
+  id: string,
+  fuzzy = false,
+): Promise<DuplicateCandidatesResponse> {
+  const suffix = fuzzy ? '?fuzzy=true' : '';
+  return duplicateCandidatesResponseSchema.parse(
+    await requestJson(`/entities/${id}/duplicate-candidates${suffix}`),
   );
 }
 

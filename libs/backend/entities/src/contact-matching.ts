@@ -133,6 +133,21 @@ export function nameAffinity(entityNames: string[], contactName: string): number
   return best;
 }
 
+/**
+ * Best lexical affinity in [0, 1] between two entities' full name sets
+ * (canonical + aliases each). Symmetric-ish: the max `nameAffinity` over every
+ * name on the B side. Used to surface likely-duplicate entities (e.g. "Foo
+ * GmbH" vs "Foo") regardless of type.
+ */
+export function bestNameAffinity(namesA: string[], namesB: string[]): number {
+  let best = 0;
+  for (const b of namesB) best = Math.max(best, nameAffinity(namesA, b));
+  return best;
+}
+
+/** Below this affinity a fuzzy entity pairing is noise, not a duplicate hint. */
+export const FUZZY_DUPLICATE_FLOOR = 0.6;
+
 /** Saturating count → [0, 1): 1 observation ≈ 0.67, 3 ≈ 0.86, 9 ≈ 0.95. */
 function saturate(count: number): number {
   return count <= 0 ? 0 : count / (count + 0.5);

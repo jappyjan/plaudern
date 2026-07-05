@@ -146,6 +146,37 @@ export const mergeEntityRequestSchema = z.object({
 export type MergeEntityRequest = z.infer<typeof mergeEntityRequestSchema>;
 
 /**
+ * Duplicate detection (JJ-63). Why a candidate is a likely duplicate of the
+ * subject entity: `exact-cross-type` = identical (folded) name under a
+ * DIFFERENT type — the split-typed case; `fuzzy` = a similar name (possibly the
+ * same type), lexically close enough to be worth confirming.
+ */
+export const duplicateReasonSchema = z.enum(['exact-cross-type', 'fuzzy']);
+export type DuplicateReason = z.infer<typeof duplicateReasonSchema>;
+
+export const duplicateCandidateSchema = z.object({
+  candidate: registryEntitySchema,
+  reason: duplicateReasonSchema,
+  /** Match strength in [0,1]: 1 for exact, name affinity for fuzzy. */
+  score: z.number().min(0).max(1),
+});
+export type DuplicateCandidateDto = z.infer<typeof duplicateCandidateSchema>;
+
+/** GET /v1/entities/:id/duplicate-candidates — include fuzzy/similar names too. */
+export const duplicateCandidatesQuerySchema = z.object({
+  fuzzy: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+});
+export type DuplicateCandidatesQuery = z.infer<typeof duplicateCandidatesQuerySchema>;
+
+export const duplicateCandidatesResponseSchema = z.object({
+  candidates: z.array(duplicateCandidateSchema),
+});
+export type DuplicateCandidatesResponse = z.infer<typeof duplicateCandidatesResponseSchema>;
+
+/**
  * PATCH /v1/entities/:id — correct a registry entity: rename it and/or change
  * its type. Renaming keeps the OLD normalized name as a durable alias (and, on
  * retype, the old (type, name) too) so re-extraction folds back in instead of
