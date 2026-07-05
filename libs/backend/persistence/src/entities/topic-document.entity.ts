@@ -15,7 +15,9 @@ import type { ExtractionStatus, TopicDocumentCitation } from '@plaudern/contract
  * with the next `version`, so the topic's evolution stays visible as a history.
  * The CURRENT document is the highest-`version` succeeded row for the topic; a
  * queued/processing/failed newer row lets the read model show "regenerating"
- * (or a failed attempt) while the last good version stays visible.
+ * (or a failed attempt) while the last good version stays visible. Bounded, not
+ * truly unbounded: `pruneTopicDocumentHistory` (JJ-73) keeps only the most
+ * recent succeeded versions per topic, run right after each successful write.
  *
  * Like topics themselves this is a generated artifact keyed to a mutable topic,
  * so it lives outside the immutable inbox aggregate. `topicId` is a plain

@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { LessThan, Repository } from 'typeorm';
 import type {
   TopicDocumentCitation,
   TopicDocumentResponse,
@@ -24,6 +24,50 @@ import { TOPIC_DOCUMENT_QUEUE, type TopicDocumentQueue } from './topic-document.
 
 /** How long to wait for a burst of classifications to settle before regenerating. */
 const DEFAULT_DEBOUNCE_MS = 5_000;
+
+/**
+ * How many succeeded document versions to retain per topic (JJ-73). The
+ * append-only history table (`topic_documents`) gets one new row per
+ * regeneration forever, so an actively-updating topic needs a retention
+ * policy or it grows unbounded. Generous on purpose — this is a "how did the
+ * write-up evolve" history for a person to browse, not hot data — and always
+ * covers the CURRENT version, since that's the newest of the kept set.
+ */
+export const DEFAULT_HISTORY_RETENTION = 10;
+
+/**
+ * Prune a topic's succeeded document history down to the most recent
+ * `retention` versions (JJ-73). Called from the write path right after a
+ * generation succeeds (`TopicDocumentProcessor`), so an actively-regenerating
+ * topic never accumulates unbounded history.
+ *
+ * NEVER deletes the current (highest-succeeded) version: the cutoff is the
+ * version of the `retention`-th newest succeeded row, which — when there are
+ * at least `retention` succeeded rows — is always at or below the current
+ * version, so only strictly-older rows are removed. When there are fewer than
+ * `retention` succeeded rows yet, this is a no-op.
+ *
+ * Race-safe: the delete is a plain `version < cutoff` predicate re-evaluated
+ * against the live table at execution time, so two overlapping prunes (or a
+ * prune racing a new succeeded version being written) can only ever agree or
+ * no-op — never delete a row the other call needed to keep.
+ */
+export async function pruneTopicDocumentHistory(
+  documents: Repository<TopicDocumentEntity>,
+  topicId: string,
+  retention: number = DEFAULT_HISTORY_RETENTION,
+): Promise<number> {
+  const keep = await documents.find({
+    where: { topicId, status: 'succeeded' },
+    order: { version: 'DESC' },
+    take: retention,
+    select: { version: true },
+  });
+  if (keep.length < retention) return 0;
+  const cutoff = keep[keep.length - 1].version;
+  const res = await documents.delete({ topicId, status: 'succeeded', version: LessThan(cutoff) });
+  return res.affected ?? 0;
+}
 
 /**
  * Owns living topic documents (JJ-12). WHEN a document regenerates is driven by
@@ -107,16 +151,34 @@ export class TopicDocumentService implements OnModuleDestroy {
 
   /**
    * Append a fresh `queued` document version for a topic and hand it to the
-   * queue. Idempotent/coalescing: if a generation is already queued (not yet
-   * started) for the topic, that one will pick up the latest items when it runs,
-   * so no second row is stacked. Returns the (new or pending) document id, or
-   * null when disabled or a version race was lost.
+   * queue. Idempotent/coalescing: if a generation is already IN FLIGHT for the
+   * topic — `queued` (not yet started) OR `processing` (running right now) — a
+   * fresh trigger defers to it instead of stacking a second row (JJ-76). This
+   * saves the redundant LLM call the old `queued`-only guard let slip whenever
+   * a queued row had already flipped to `processing`.
+   *
+   * Deferral is only SAFE because of who covers which items:
+   *  - a `queued` generation hasn't read its sources yet, so it will naturally
+   *    include whatever just arrived when it runs;
+   *  - a `processing` generation already read its sources, so an item that
+   *    lands mid-flight is NOT in this run — the processor closes that gap with
+   *    a completion-time freshness re-check that enqueues exactly one follow-up
+   *    when new assignments appeared during the run (see TopicDocumentProcessor).
+   *
+   * Returns the (new or in-flight) document id, or null when disabled or a
+   * version race was lost.
    */
   async enqueueRegeneration(userId: string, topicId: string): Promise<string | null> {
     if (!this.provider.enabled) return null;
 
-    const alreadyQueued = await this.documents.findOne({ where: { topicId, status: 'queued' } });
-    if (alreadyQueued) return alreadyQueued.id;
+    const inFlight = await this.documents.findOne({
+      where: [
+        { topicId, status: 'queued' },
+        { topicId, status: 'processing' },
+      ],
+      order: { version: 'DESC' },
+    });
+    if (inFlight) return inFlight.id;
 
     const nextVersion = (await this.maxVersion(topicId)) + 1;
     let row: TopicDocumentEntity;

@@ -71,3 +71,64 @@ jobs:
         run: pnpm nx run web:typecheck
       - name: Build web
         run: pnpm nx build web
+
+  evals:
+    name: AI extraction quality evals (JJ-1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Golden-set precision/recall for every extraction kind, run through the
+      # REAL post-LLM parse/normalize/dedup/date-resolution code (no live LLM —
+      # each fixture carries a recorded reply). A prompt/pipeline/model change
+      # that regresses parsing drops a score below threshold and fails here.
+      - name: Extraction quality evals
+        run: pnpm eval
+
+  migration-smoke:
+    name: Migration smoke on Postgres (JJ-74)
+    runs-on: ubuntu-latest
+    services:
+      # pgvector image: the embedding/tasks migrations require `CREATE EXTENSION
+      # vector`; stock postgres:17 would fail on that DDL.
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: plaudern
+          POSTGRES_PASSWORD: plaudern
+          POSTGRES_DB: plaudern
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U plaudern"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Runs the FULL ALL_MIGRATIONS chain up (then down for the reversible
+      # ones, then up again) against a real Postgres — the DDL correctness check
+      # the sqlite `synchronize:true` suites structurally cannot perform.
+      - name: Run migration chain on Postgres
+        env:
+          DATABASE_URL: postgres://plaudern:plaudern@localhost:5432/plaudern
+        run: pnpm migration:smoke
