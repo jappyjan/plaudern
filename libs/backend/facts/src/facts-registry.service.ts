@@ -110,64 +110,71 @@ export class FactsRegistryService {
       if (cleaned.length >= MAX_FACTS_PER_EXTRACTION) break;
     }
 
-    const touchedGroups = new Map<string, PersonalFactGroupKey>();
-    const touch = (subjectKey: string, normalizedAttribute: string) =>
-      touchedGroups.set(`${subjectKey}::${normalizedAttribute}`, {
-        userId,
-        subjectKey,
-        normalizedAttribute,
-      });
-
-    // Groups of facts this item's earlier extractions cited: a reprocess that
-    // drops a fact must let its group re-elect an active fact.
-    const priorCitations = await this.citations.find({
-      where: { inboxItemId },
-      select: { factId: true },
-    });
-    const priorFactIds = [...new Set(priorCitations.map((c) => c.factId))];
-    if (priorFactIds.length > 0) {
-      const priorFacts = await this.facts.find({ where: { id: In(priorFactIds) } });
-      for (const fact of priorFacts) touch(fact.subjectKey, fact.normalizedAttribute);
-    }
-
     const personByName = cleaned.length > 0 ? await this.personEntities(userId) : new Map<string, string>();
-    const cited = new Set<string>();
 
-    for (const candidate of cleaned) {
-      const normalizedPerson = normalize(candidate.person);
-      const personEntityId = personByName.get(normalizedPerson) ?? null;
-      const subjectKey = personEntityId ? `e:${personEntityId}` : `n:${normalizedPerson}`;
-      const normalizedAttribute = normalize(candidate.attribute);
-      const normalizedValue = normalize(candidate.value);
+    // One transaction for the whole batch — the fact/citation writes AND the
+    // supersession recompute commit atomically, so a concurrent list() never
+    // sees a group mid-flip (old winner stamped superseded before the new one
+    // is visible). Matches the delete/merge paths, which already pass their
+    // transaction manager to recomputePersonalFactSupersession.
+    return this.facts.manager.connection.transaction(async (em) => {
+      const factRepo = em.getRepository(PersonalFactEntity);
+      const citationRepo = em.getRepository(PersonalFactCitationEntity);
 
-      const factId = await this.resolveFact(userId, {
-        personEntityId,
-        personName: candidate.person,
-        subjectKey,
-        attribute: candidate.attribute,
-        normalizedAttribute,
-        value: candidate.value,
-        normalizedValue,
-        exclusive: candidate.exclusive,
-        occurredAt: occurredAt ?? null,
+      const touchedGroups = new Map<string, PersonalFactGroupKey>();
+      const touch = (subjectKey: string, normalizedAttribute: string) =>
+        touchedGroups.set(`${subjectKey}::${normalizedAttribute}`, {
+          userId,
+          subjectKey,
+          normalizedAttribute,
+        });
+
+      // Groups of facts this item's earlier extractions cited: a reprocess that
+      // drops a fact must let its group re-elect an active fact.
+      const priorCitations = await citationRepo.find({
+        where: { inboxItemId },
+        select: { factId: true },
       });
-      await this.upsertCitation(userId, inboxItemId, extractionId, factId, candidate);
-      cited.add(factId);
-      touch(subjectKey, normalizedAttribute);
-    }
+      const priorFactIds = [...new Set(priorCitations.map((c) => c.factId))];
+      if (priorFactIds.length > 0) {
+        const priorFacts = await factRepo.find({ where: { id: In(priorFactIds) } });
+        for (const fact of priorFacts) touch(fact.subjectKey, fact.normalizedAttribute);
+      }
 
-    // The in-flight extraction id is passed through so its citations count as
-    // the item's current truth even though its row isn't `succeeded` yet.
-    await recomputePersonalFactSupersession(
-      this.facts.manager,
-      [...touchedGroups.values()],
-      extractionId,
-    );
-    return cited.size;
+      const cited = new Set<string>();
+      for (const candidate of cleaned) {
+        const normalizedPerson = normalize(candidate.person);
+        const personEntityId = personByName.get(normalizedPerson) ?? null;
+        const subjectKey = personEntityId ? `e:${personEntityId}` : `n:${normalizedPerson}`;
+        const normalizedAttribute = normalize(candidate.attribute);
+        const normalizedValue = normalize(candidate.value);
+
+        const factId = await this.resolveFact(factRepo, userId, {
+          personEntityId,
+          personName: candidate.person,
+          subjectKey,
+          attribute: candidate.attribute,
+          normalizedAttribute,
+          value: candidate.value,
+          normalizedValue,
+          exclusive: candidate.exclusive,
+          occurredAt: occurredAt ?? null,
+        });
+        await this.upsertCitation(citationRepo, userId, inboxItemId, extractionId, factId, candidate);
+        cited.add(factId);
+        touch(subjectKey, normalizedAttribute);
+      }
+
+      // The in-flight extraction id is passed through so its citations count as
+      // the item's current truth even though its row isn't `succeeded` yet.
+      await recomputePersonalFactSupersession(em, [...touchedGroups.values()], extractionId);
+      return cited.size;
+    });
   }
 
   /** Find the existing fact row for this (subject, attribute, value) or create it. */
   private async resolveFact(
+    factRepo: Repository<PersonalFactEntity>,
     userId: string,
     fields: {
       personEntityId: string | null;
@@ -187,7 +194,7 @@ export class FactsRegistryService {
       normalizedAttribute: fields.normalizedAttribute,
       normalizedValue: fields.normalizedValue,
     };
-    const existing = await this.facts.findOne({ where });
+    const existing = await factRepo.findOne({ where });
     if (existing) {
       // Refresh mutable, non-identity fields: adopt a newer linkage / spelling /
       // classification and advance recency so supersession sees the latest
@@ -207,12 +214,12 @@ export class FactsRegistryService {
         existing.lastOccurredAt = fields.occurredAt;
         dirty = true;
       }
-      if (dirty) await this.facts.save(existing);
+      if (dirty) await factRepo.save(existing);
       return existing.id;
     }
     try {
-      const created = await this.facts.save(
-        this.facts.create({
+      const created = await factRepo.save(
+        factRepo.create({
           userId,
           personEntityId: fields.personEntityId,
           personName: fields.personName,
@@ -231,7 +238,7 @@ export class FactsRegistryService {
     } catch (err) {
       // Lost a race on the dedupe unique index — re-read and use the winner.
       if (!isUniqueViolation(err)) throw err;
-      const winner = await this.facts.findOne({ where });
+      const winner = await factRepo.findOne({ where });
       if (!winner) throw err;
       return winner.id;
     }
@@ -239,17 +246,18 @@ export class FactsRegistryService {
 
   /** One citation per (extraction, fact); idempotent on re-runs/backfills. */
   private async upsertCitation(
+    citationRepo: Repository<PersonalFactCitationEntity>,
     userId: string,
     inboxItemId: string,
     extractionId: string,
     factId: string,
     candidate: FactCandidate,
   ): Promise<void> {
-    const existing = await this.citations.findOne({ where: { extractionId, factId } });
+    const existing = await citationRepo.findOne({ where: { extractionId, factId } });
     if (existing) return;
     try {
-      await this.citations.save(
-        this.citations.create({
+      await citationRepo.save(
+        citationRepo.create({
           userId,
           inboxItemId,
           extractionId,
