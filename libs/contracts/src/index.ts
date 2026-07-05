@@ -27,3 +27,4 @@ export * from './extraction';
 export * from './mcp';
 export * from './search';
 export * from './chat';
+export * from './audit';

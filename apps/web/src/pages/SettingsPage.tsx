@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Checkbox, Input, Select, SelectItem, Spinner, Switch } from '@heroui/react';
+import { Link } from 'react-router-dom';
 import {
+  PANIC_DELETE_CONFIRMATION,
+  type DeadMansSwitchDto,
   NOTIFICATION_CATEGORY_DESCRIPTIONS,
   NOTIFICATION_CATEGORY_LABELS,
   NOTIFICATION_CHANNEL_LABELS,
@@ -34,9 +37,14 @@ import {
   getGooglePending,
   getPlaudSettings,
   getSummarizationSettings,
+  checkInDeadMansSwitch,
+  downloadExport,
+  getDeadMansSwitch,
   listCalendarFeeds,
   mintMcpToken,
+  panicDelete,
   purgeAllData,
+  updateDeadMansSwitch,
   reconnectGoogle,
   revokeMcpToken,
   rotateEmailToken,
@@ -312,6 +320,8 @@ export function SettingsPage({
       <CalendarFeedsSection />
 
       <McpAccessSection />
+
+      <DataSovereigntySection />
 
       <DangerZoneSection
         plaudEnabled={settings?.enabled ?? false}
@@ -927,6 +937,300 @@ function DangerZoneSection({
         onConfirm={() => void purge()}
         onClose={() => setConfirmOpen(false)}
       />
+    </div>
+  );
+}
+
+/**
+ * Data-sovereignty controls (JJ-42): view the AI-provider audit log, export the
+ * whole archive, configure the legacy/emergency-access dead-man's switch, and —
+ * fenced off — irreversibly panic-delete everything. The panic-delete confirm
+ * is a plain toggled overlay (not a HeroUI Modal) so it behaves on the iOS PWA.
+ */
+function DataSovereigntySection() {
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const runExport = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      await downloadExport();
+    } catch (cause) {
+      setExportError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4 border-t border-default-200 pt-6">
+      <div>
+        <h2 className="text-lg font-semibold">Data sovereignty</h2>
+        <p className="text-sm text-default-500">
+          It&apos;s your life archive. See exactly what has been sent to external AI providers, take
+          a full copy with you at any time, and keep an answer ready for incapacity.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-medium bg-default-50 p-4">
+        <p className="font-medium">AI-provider audit log</p>
+        <p className="text-sm text-default-500">
+          Every call this instance made to an external AI provider — metadata, size and a content
+          hash only, never the payload.
+        </p>
+        <Button as={Link} to="/settings/audit-log" size="sm" variant="flat" className="self-start">
+          View audit log
+        </Button>
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-medium bg-default-50 p-4">
+        <p className="font-medium">Export everything</p>
+        <p className="text-sm text-default-500">
+          Download your whole archive — items, transcripts and summaries, plus download links for
+          the original recordings — as a single JSON file with a Markdown rendering.
+        </p>
+        <Button
+          size="sm"
+          color="primary"
+          variant="flat"
+          className="self-start"
+          isLoading={exporting}
+          onPress={() => void runExport()}
+        >
+          Export my data
+        </Button>
+        {exportError && (
+          <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">{exportError}</div>
+        )}
+      </div>
+
+      <DeadMansSwitchSection />
+
+      <PanicDeleteSection />
+    </div>
+  );
+}
+
+/**
+ * Legacy / emergency-access (dead-man's switch) — MINIMAL scaffold (JJ-42). Lets
+ * the owner name a trusted contact and a check-in interval and record a
+ * check-in. The actual release mechanism is a deferred follow-up; nothing is
+ * sent yet.
+ */
+function DeadMansSwitchSection() {
+  const [dms, setDms] = useState<DeadMansSwitchDto | null>(null);
+  const [enabled, setEnabled] = useState(false);
+  const [contactEmail, setContactEmail] = useState('');
+  const [intervalDays, setIntervalDays] = useState('90');
+  const [saving, setSaving] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  const apply = useCallback((next: DeadMansSwitchDto) => {
+    setDms(next);
+    setEnabled(next.enabled);
+    setContactEmail(next.contactEmail ?? '');
+    setIntervalDays(String(next.checkInIntervalDays));
+  }, []);
+
+  useEffect(() => {
+    getDeadMansSwitch()
+      .then(apply)
+      .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+  }, [apply]);
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const parsedInterval = Math.max(1, Math.floor(Number(intervalDays) || 90));
+      apply(
+        await updateDeadMansSwitch({
+          enabled,
+          contactEmail: contactEmail.trim() === '' ? null : contactEmail.trim(),
+          checkInIntervalDays: parsedInterval,
+        }),
+      );
+      setSaved(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const checkIn = async () => {
+    setChecking(true);
+    setError(null);
+    try {
+      apply(await checkInDeadMansSwitch());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3 rounded-medium bg-default-50 p-4">
+      <div>
+        <p className="font-medium">Legacy &amp; emergency access</p>
+        <p className="text-sm text-default-500">
+          Name a trusted contact and a check-in interval so your archive has an answer if something
+          happens to you. This is an early scaffold — configuration and check-ins are saved, but no
+          access is granted automatically yet.
+        </p>
+      </div>
+
+      <Switch isSelected={enabled} onValueChange={setEnabled}>
+        Enable legacy access
+      </Switch>
+      <Input
+        type="email"
+        label="Trusted contact email"
+        value={contactEmail}
+        onValueChange={setContactEmail}
+        autoComplete="off"
+      />
+      <Input
+        type="number"
+        label="Check-in interval (days)"
+        min={1}
+        value={intervalDays}
+        onValueChange={setIntervalDays}
+      />
+
+      <div className="flex flex-wrap gap-3">
+        <Button size="sm" color="primary" isLoading={saving} onPress={() => void save()}>
+          Save
+        </Button>
+        <Button size="sm" variant="flat" isLoading={checking} onPress={() => void checkIn()}>
+          I&apos;m still here (check in)
+        </Button>
+      </div>
+
+      {dms?.lastCheckInAt && (
+        <p className="text-xs text-default-500">
+          Last check-in {formatDateTime(dms.lastCheckInAt)}
+          {dms.triggersAt ? ` · would trip after ${formatDateTime(dms.triggersAt)}` : ''}
+        </p>
+      )}
+      {error && <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">{error}</div>}
+      {saved && !error && <span className="text-sm text-success">Saved.</span>}
+    </div>
+  );
+}
+
+/**
+ * Panic-delete: an irreversible wipe of the whole archive. Guarded behind a
+ * typed confirmation phrase. The confirm dialog is a plain positioned/toggled
+ * overlay (iOS PWA), never a HeroUI Modal.
+ */
+function PanicDeleteSection() {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [phrase, setPhrase] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+
+  const close = () => {
+    if (deleting) return;
+    setConfirmOpen(false);
+    setPhrase('');
+    setError(null);
+  };
+
+  const run = async () => {
+    setDeleting(true);
+    setError(null);
+    try {
+      const { deletedItems, deletedAuditEntries } = await panicDelete(phrase);
+      setResult(
+        `Wiped ${deletedItems} recording${deletedItems === 1 ? '' : 's'} and ${deletedAuditEntries} audit entr${
+          deletedAuditEntries === 1 ? 'y' : 'ies'
+        }. Your archive is now empty.`,
+      );
+      setConfirmOpen(false);
+      setPhrase('');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3 rounded-medium border border-danger-200 bg-danger-50/40 p-4">
+      <div>
+        <p className="font-semibold text-danger">Panic delete</p>
+        <p className="text-sm text-default-500">
+          Permanently and irreversibly wipe your entire archive — every recording, transcript,
+          summary, contact, calendar link and audit record. There is no undo and no re-sync.
+        </p>
+      </div>
+
+      {result && (
+        <div className="rounded-medium bg-success-50 p-3 text-sm text-success">{result}</div>
+      )}
+
+      <Button
+        color="danger"
+        variant="flat"
+        className="self-start"
+        onPress={() => {
+          setResult(null);
+          setError(null);
+          setPhrase('');
+          setConfirmOpen(true);
+        }}
+      >
+        Delete everything
+      </Button>
+
+      {confirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="panic-delete-title"
+        >
+          <div className="w-full max-w-md rounded-large bg-content1 p-5 shadow-large">
+            <h3 id="panic-delete-title" className="text-lg font-semibold text-danger">
+              Delete everything?
+            </h3>
+            <p className="mt-2 text-sm text-default-600">
+              This cannot be undone. To confirm, type{' '}
+              <code className="rounded bg-default-200 px-1 py-0.5">{PANIC_DELETE_CONFIRMATION}</code>{' '}
+              below.
+            </p>
+            <Input
+              className="mt-3"
+              aria-label="Confirmation phrase"
+              value={phrase}
+              onValueChange={setPhrase}
+              placeholder={PANIC_DELETE_CONFIRMATION}
+              autoComplete="off"
+            />
+            {error && <p className="mt-2 text-sm text-danger">{error}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="flat" onPress={close} isDisabled={deleting}>
+                Cancel
+              </Button>
+              <Button
+                color="danger"
+                isLoading={deleting}
+                isDisabled={phrase !== PANIC_DELETE_CONFIRMATION}
+                onPress={() => void run()}
+              >
+                Permanently delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

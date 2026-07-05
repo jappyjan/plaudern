@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AiAuditRecorder } from '@plaudern/audit';
 import type {
   TranscriptionInput,
   TranscriptionProvider,
@@ -51,7 +52,10 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
   private readonly timeoutMs: number;
   private readonly downloadTimeoutMs: number;
 
-  constructor(config: ConfigService) {
+  constructor(
+    config: ConfigService,
+    private readonly audit: AiAuditRecorder,
+  ) {
     this.baseUrl = config.get<string>('ELEVENLABS_BASE_URL', 'https://api.elevenlabs.io/v1');
     this.apiKey = config.get<string>('ELEVENLABS_API_KEY', '');
     this.model = config.get<string>('ELEVENLABS_STT_MODEL', 'scribe_v2');
@@ -87,8 +91,11 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
       fields.push({ name: 'language_code', value: input.languageHint });
     }
 
+    const endpoint = `${this.baseUrl}/speech-to-text`;
+    // Audit the audio bytes leaving the box for the hosted provider (JJ-42).
+    await this.audit.record({ provider: this.id, endpoint, payload: bytes });
     const json = await postMultipartForJson<ScribeResponse>(
-      `${this.baseUrl}/speech-to-text`,
+      endpoint,
       fields,
       {
         name: 'file',

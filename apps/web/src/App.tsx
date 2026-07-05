@@ -6,6 +6,7 @@ import { InboxPage } from './pages/InboxPage';
 import { ItemDetailPage } from './pages/ItemDetailPage';
 import { LoginPage } from './pages/LoginPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { AuditLogPage } from './pages/AuditLogPage';
 import { CalendarPage } from './pages/CalendarPage';
 import { ContactsPage } from './pages/ContactsPage';
 import { ContactDetailPage } from './pages/ContactDetailPage';
@@ -200,6 +201,7 @@ export function App() {
                   />
                 }
               />
+              <Route path="/settings/audit-log" element={<AuditLogPage />} />
             </Routes>
           </main>
         </div>

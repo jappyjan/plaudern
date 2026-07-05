@@ -5,7 +5,11 @@ function providerWith(env: Record<string, string>): OpenAiEmbeddingProvider {
   const config = {
     get: (key: string, fallback?: string) => env[key] ?? fallback,
   } as unknown as ConfigService;
-  return new OpenAiEmbeddingProvider(config);
+  // Auditing is exercised in the audit lib's own spec; here it is a no-op stub.
+  const audit = { record: async () => undefined } as unknown as ConstructorParameters<
+    typeof OpenAiEmbeddingProvider
+  >[1];
+  return new OpenAiEmbeddingProvider(config, audit);
 }
 
 describe('OpenAiEmbeddingProvider', () => {

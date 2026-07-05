@@ -15,6 +15,11 @@ function fakeConfig(values: Record<string, string>): ConfigService {
   } as unknown as ConfigService;
 }
 
+// Auditing is exercised in the audit lib's own spec; here it is a no-op stub.
+const audit = { record: async () => undefined } as unknown as ConstructorParameters<
+  typeof OpenAiSummarizationProvider
+>[1];
+
 const minimalInput: SummarizationInput = {
   transcript: 'hello',
   speakers: [],
@@ -134,12 +139,13 @@ describe('parseSummaryResponse', () => {
 
 describe('OpenAiSummarizationProvider.enabled', () => {
   it('is disabled with neither an API key nor SUMMARIZATION_ENABLED', () => {
-    expect(new OpenAiSummarizationProvider(fakeConfig({})).enabled).toBe(false);
+    expect(new OpenAiSummarizationProvider(fakeConfig({}), audit).enabled).toBe(false);
   });
 
   it('is enabled when SUMMARIZATION_API_KEY is set (cloud default)', () => {
     const provider = new OpenAiSummarizationProvider(
       fakeConfig({ SUMMARIZATION_API_KEY: 'sk-test' }),
+      audit,
     );
     expect(provider.enabled).toBe(true);
   });
@@ -147,12 +153,13 @@ describe('OpenAiSummarizationProvider.enabled', () => {
   it('is enabled via SUMMARIZATION_ENABLED=true even without a key (keyless local servers e.g. Ollama)', () => {
     const provider = new OpenAiSummarizationProvider(
       fakeConfig({ SUMMARIZATION_ENABLED: 'true' }),
+      audit,
     );
     expect(provider.enabled).toBe(true);
   });
 
   it('throws a descriptive error from summarize() when disabled', async () => {
-    const provider = new OpenAiSummarizationProvider(fakeConfig({}));
+    const provider = new OpenAiSummarizationProvider(fakeConfig({}), audit);
     await expect(provider.summarize(minimalInput)).rejects.toThrow(/SUMMARIZATION_ENABLED/);
   });
 });
@@ -178,6 +185,7 @@ describe('OpenAiSummarizationProvider request behavior', () => {
         SUMMARIZATION_BASE_URL: 'http://localhost:11434/v1',
         SUMMARIZATION_MODEL: 'llama3.1',
       }),
+      audit,
     );
     const result = await provider.summarize(minimalInput);
 
@@ -202,6 +210,7 @@ describe('OpenAiSummarizationProvider request behavior', () => {
 
     const provider = new OpenAiSummarizationProvider(
       fakeConfig({ SUMMARIZATION_API_KEY: 'sk-test' }),
+      audit,
     );
     await provider.summarize(minimalInput);
 

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
+  AiProviderCallEntity,
   AuthSessionEntity,
   CalendarEventEntity,
   CalendarFeedEntity,
@@ -9,6 +10,7 @@ import {
   ChatMessageEntity,
   CommitmentEntity,
   ConsentSettingsEntity,
+  DeadMansSwitchEntity,
   DecisionEntity,
   EmailSettingsEntity,
   EmbeddingChunkEntity,
@@ -88,6 +90,7 @@ import { CreateTopicDocuments1720000000036 } from './migrations/1720000000036-Cr
 import { VoiceProfileSelf1720000000037 } from './migrations/1720000000037-VoiceProfileSelf';
 import { CreateReminders1720000000038 } from './migrations/1720000000038-CreateReminders';
 import { CreateJournalDocuments1720000000039 } from './migrations/1720000000039-CreateJournalDocuments';
+import { DataSovereignty1720000000041 } from './migrations/1720000000041-DataSovereignty';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -135,6 +138,8 @@ export const ALL_ENTITIES = [
   NotificationCategoryPreferenceEntity,
   PushSubscriptionEntity,
   NotificationDeliveryEntity,
+  AiProviderCallEntity,
+  DeadMansSwitchEntity,
 ];
 
 // Referenced as classes (not a glob) so migrations load identically under
@@ -180,6 +185,7 @@ export const ALL_MIGRATIONS = [
   VoiceProfileSelf1720000000037,
   CreateReminders1720000000038,
   CreateJournalDocuments1720000000039,
+  DataSovereignty1720000000041,
 ];
 
 /**

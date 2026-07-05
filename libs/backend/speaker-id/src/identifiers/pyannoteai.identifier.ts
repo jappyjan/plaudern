@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Not, IsNull, Repository } from 'typeorm';
+import { AiAuditRecorder } from '@plaudern/audit';
 import { StorageService } from '@plaudern/storage';
 import { VoiceProfileEntity } from '@plaudern/persistence';
 import type { PyannoteAiDiarization } from '../providers/pyannoteai-client';
@@ -32,6 +33,7 @@ export class PyannoteAiSpeakerIdentifier implements SpeakerIdentifier {
   readonly id = 'pyannoteai';
 
   private readonly threshold: number;
+  private readonly baseUrl: string;
 
   constructor(
     config: ConfigService,
@@ -40,7 +42,11 @@ export class PyannoteAiSpeakerIdentifier implements SpeakerIdentifier {
     private readonly matcher: VoiceprintMatcherService,
     @InjectRepository(VoiceProfileEntity)
     private readonly profiles: Repository<VoiceProfileEntity>,
+    private readonly audit: AiAuditRecorder,
   ) {
+    this.baseUrl = config
+      .get<string>('PYANNOTEAI_BASE_URL', 'https://api.pyannote.ai/v1')
+      .replace(/\/+$/, '');
     // pyannoteAI's confidence scale (0-100) differs from cosine, so it has its
     // own knob. It is passed to /identify as matching.threshold: the minimum
     // confidence to accept a voiceprint match. 0 means "always take the closest
@@ -56,6 +62,14 @@ export class PyannoteAiSpeakerIdentifier implements SpeakerIdentifier {
     // Push the bytes to pyannoteAI (private storage stays private) and work off
     // the returned media:// handle.
     const bytes = await this.readObject(job.storageKey);
+    // Audit the audio bytes uploaded to the hosted diarizer (JJ-42). The
+    // identifier carries the owner/item directly, so pass explicit attribution.
+    await this.audit.record({
+      provider: this.id,
+      endpoint: `${this.baseUrl}/media/input`,
+      payload: bytes,
+      context: { userId: job.userId, itemId: job.inboxItemId, kind: 'diarization' },
+    });
     const audioUrl = await this.client.upload(bytes, job.contentType, randomUUID());
 
     // Known profiles with a voiceprint become /identify candidates, keyed by id.

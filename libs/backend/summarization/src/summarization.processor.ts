@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { runWithAiAudit } from '@plaudern/audit';
 import { InboxService } from '@plaudern/inbox';
 import { SUMMARY_LANGUAGE_LABELS, type SummaryPayload } from '@plaudern/contracts';
 import {
@@ -45,7 +46,12 @@ export class SummarizationProcessor {
       const targetLanguage =
         language === 'auto' ? undefined : SUMMARY_LANGUAGE_LABELS[language];
 
-      const result = await this.provider.summarize({ ...input, targetLanguage });
+      // Attribute every external AI-provider call made below to this user/item
+      // so the provider adapter can audit it (JJ-42).
+      const result = await runWithAiAudit(
+        { userId: item.userId, itemId: item.id, kind: 'summary' },
+        () => this.provider.summarize({ ...input, targetLanguage }),
+      );
       const payload: SummaryPayload = {
         title: result.title,
         layout: result.layout,
