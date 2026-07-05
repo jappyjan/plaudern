@@ -15,6 +15,7 @@ import {
   VoiceProfileEntity,
 } from '@plaudern/persistence';
 import { FactsRegistryService } from '@plaudern/facts';
+import { SelfProfileService } from '@plaudern/inbox';
 import { CommitmentsService } from '@plaudern/commitments';
 import { QuestionsService } from '@plaudern/questions';
 import { EntitiesRegistryService } from './entities-registry.service';
@@ -62,6 +63,11 @@ describe('DossierService', () => {
     questions = dataSource.getRepository(QuestionEntity);
     facts = dataSource.getRepository(PersonalFactEntity);
     citations = dataSource.getRepository(PersonalFactCitationEntity);
+    // The dossier's viewer is the account owner; give them a self profile so the
+    // owner-gated commitments list is not empty.
+    const voiceProfiles = dataSource.getRepository(VoiceProfileEntity);
+    await voiceProfiles.save({ userId: USER, name: null, isSelf: true });
+    const selfProfile = new SelfProfileService(voiceProfiles);
 
     const registry = new EntitiesRegistryService(
       entities,
@@ -81,6 +87,7 @@ describe('DossierService', () => {
       undefined as never,
       commitments,
       items,
+      selfProfile,
     );
     const questionsService = new QuestionsService(
       undefined as never,
