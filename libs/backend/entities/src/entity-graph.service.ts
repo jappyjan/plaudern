@@ -143,17 +143,26 @@ export class EntityGraphService {
     return candidates.size;
   }
 
-  /** Aggregated edges touching one entity, optionally filtered by type. */
+  /**
+   * Aggregated edges touching one entity, optionally filtered by type. Weak
+   * implicit co-occurrence edges are included by default (the contact resolver
+   * relies on them as "named together = different people" counter-evidence);
+   * pass `includeCooccurrence: false` for user-facing surfaces that should show
+   * only relations the model actually asserted, not every same-recording pair.
+   */
   async edgesFor(
     userId: string,
     entityId: string,
     relationType?: RelationType,
+    includeCooccurrence = true,
   ): Promise<EntityRelationEdgeDto[]> {
     const filter = relationType ? { relationType } : {};
+    // Only two origins exist, so "no co-occurrence" is exactly "llm only".
+    const originFilter = includeCooccurrence ? {} : { origin: 'llm' as const };
     const rows = await this.relations.find({
       where: [
-        { userId, sourceEntityId: entityId, ...filter },
-        { userId, targetEntityId: entityId, ...filter },
+        { userId, sourceEntityId: entityId, ...filter, ...originFilter },
+        { userId, targetEntityId: entityId, ...filter, ...originFilter },
       ],
     });
     return this.toEdges(await this.currentRows(rows));

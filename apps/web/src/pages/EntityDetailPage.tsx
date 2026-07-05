@@ -38,9 +38,11 @@ import { BackIcon, EditIcon, LinkIcon, PeopleIcon, UnlinkIcon } from '../compone
 
 /**
  * One registry entity: its identity and aliases, the recordings it is mentioned
- * in, and its edges in the knowledge graph grouped by relation type. LLM-stated
- * edges render solid; weak co-occurrence edges are muted. Person entities also
- * carry their contact-book link, manageable here (link/unlink/convert, JJ-63).
+ * in, and its edges in the knowledge graph grouped by relation type. The list
+ * shows only relations the model actually asserted; weak same-recording
+ * co-occurrence edges are excluded server-side so it carries signal, not every
+ * pair mentioned together. Person entities also carry their contact-book link,
+ * manageable here (link/unlink/convert, JJ-63).
  * The Manage card hosts merge-duplicate and delete as inline panels — not
  * modals, which iOS PWAs can drop (heroui#3222).
  */
@@ -319,8 +321,8 @@ export function EntityDetailPage() {
         <CardBody className="gap-3">
           {relationGroups.length === 0 && (
             <p className="text-sm text-default-500">
-              No relations found yet. Edges appear as recordings mentioning this entity alongside
-              others are processed.
+              No relations found yet. Edges appear as recordings state a connection between this
+              entity and another.
             </p>
           )}
           {relationGroups.map(([relationType, edges]) => (
