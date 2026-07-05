@@ -34,6 +34,18 @@ describe('enforceCitations', () => {
     expect(result.uncitedClaimCount).toBe(1);
   });
 
+  it('flags short uncited clauses (JJ-68): "Anna is pregnant. …" is low confidence', () => {
+    // Previously this served at HIGH: three declarative clauses under 30 chars
+    // slipped past the sentence-length heuristic. Clause-level coverage counts
+    // each as an uncited claim, so the caller downgrades to low confidence.
+    const result = enforceCitations(
+      'Anna is pregnant. He quit his job. She moved to Berlin. Yes [1].',
+      valid,
+    );
+    expect(result.usedMarkers).toEqual([1]);
+    expect(result.uncitedClaimCount).toBe(3);
+  });
+
   it('returns empty markers for an entirely uncited answer', () => {
     const result = enforceCitations(
       'The doctor said to take the medication twice a day with food.',

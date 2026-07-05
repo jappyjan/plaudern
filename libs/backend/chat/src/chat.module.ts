@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ChatConversationEntity, ChatMessageEntity } from '@plaudern/persistence';
 import { SearchModule } from '@plaudern/search';
+import { VerificationModule } from '@plaudern/citations';
 import { CHAT_COMPLETION_PROVIDER } from './chat.provider';
 import { OpenAiChatCompletionProvider } from './providers/openai.provider';
 import { ChatService } from './chat.service';
@@ -19,6 +20,7 @@ import { ChatController } from './chat.controller';
   imports: [
     ConfigModule,
     SearchModule,
+    VerificationModule,
     TypeOrmModule.forFeature([ChatConversationEntity, ChatMessageEntity]),
   ],
   providers: [

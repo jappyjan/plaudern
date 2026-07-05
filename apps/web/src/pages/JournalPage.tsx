@@ -16,6 +16,7 @@ import {
   regenerateJournal,
 } from '../lib/api';
 import { Markdown } from '../components/Markdown';
+import { ConfidenceNote } from '../components/ConfidenceNote';
 import { BackIcon, BookIcon, LoopIcon, PlayIcon } from '../components/icons';
 import { formatDate, formatDateTime, formatDuration } from '../lib/format';
 
@@ -292,6 +293,7 @@ export function JournalEntryPage() {
 
       {doc?.markdown && (
         <>
+          <ConfidenceNote confidence={doc.confidence} />
           <Markdown>{doc.markdown}</Markdown>
 
           {doc.citations.length > 0 && (
@@ -421,6 +423,7 @@ function VersionBody({
   const [expanded, setExpanded] = useState(false);
   const [markdown, setMarkdown] = useState<string | null>(null);
   const [citations, setCitations] = useState<JournalCitation[]>([]);
+  const [confidence, setConfidence] = useState<'high' | 'low' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -431,6 +434,7 @@ function VersionBody({
         if (cancelled) return;
         setMarkdown(detail.markdown);
         setCitations(detail.citations);
+        setConfidence(detail.confidence);
       })
       .catch((cause) => {
         if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
@@ -454,6 +458,7 @@ function VersionBody({
         <div className="mt-2 flex flex-col gap-2">
           {error && <p className="text-sm text-danger">{error}</p>}
           {markdown === null && !error && <Spinner size="sm" />}
+          {markdown !== null && <ConfidenceNote confidence={confidence} />}
           {markdown !== null && <Markdown>{markdown}</Markdown>}
           {citations.length > 0 && (
             <div className="flex flex-wrap gap-1 border-t border-default-100 pt-2">
