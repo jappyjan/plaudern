@@ -11,11 +11,18 @@ import {
 } from '@heroui/react';
 import type { ConsentStatus, VoiceProfileDetailDto, VoiceProfileDto } from '@plaudern/contracts';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { autoLinkEntities, getSpeaker, listSpeakers, mergeSpeakers, updateSpeaker } from '../lib/api';
+import {
+  autoLinkEntities,
+  getSpeaker,
+  listEntities,
+  listSpeakers,
+  mergeSpeakers,
+  updateSpeaker,
+} from '../lib/api';
 import { speakerColor, speakerDisplayName } from '../lib/speakerColors';
 import { formatDateTime, formatDuration } from '../lib/format';
 import { DocumentList, DocumentRow } from '../components/DocumentRow';
-import { AudioIcon, BackIcon } from '../components/icons';
+import { AudioIcon, BackIcon, PeopleIcon } from '../components/icons';
 
 /** Chip colour per consent state — declined is a warning the user should see. */
 const CONSENT_COLOR: Record<ConsentStatus, 'default' | 'success' | 'danger'> = {
@@ -30,6 +37,7 @@ export function ContactDetailPage() {
   const navigate = useNavigate();
   const [profile, setProfile] = useState<VoiceProfileDetailDto | null>(null);
   const [others, setOthers] = useState<VoiceProfileDto[]>([]);
+  const [linkedEntityId, setLinkedEntityId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +57,27 @@ export function ContactDetailPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // This contact's knowledge-graph half, if any — the person entity linked to
+  // it exposes the dossier/relations. Fetched independently: a failure here
+  // just hides the "View dossier" button, it never blocks the page.
+  useEffect(() => {
+    let cancelled = false;
+    setLinkedEntityId(null);
+    if (!id) return;
+    void (async () => {
+      try {
+        const res = await listEntities('person');
+        const linked = res.entities.find((e) => e.voiceProfileId === id);
+        if (!cancelled) setLinkedEntityId(linked?.id ?? null);
+      } catch {
+        /* non-fatal */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   if (error) {
     return (
@@ -116,6 +145,21 @@ export function ContactDetailPage() {
               </div>
             </div>
           </div>
+
+          {linkedEntityId && (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                as={Link}
+                to={`/entities/${linkedEntityId}/dossier`}
+                size="sm"
+                variant="solid"
+                color="primary"
+                startContent={<PeopleIcon className="h-4 w-4" />}
+              >
+                View dossier
+              </Button>
+            </div>
+          )}
 
           <div className="flex flex-wrap items-end gap-2">
             <Input
@@ -270,7 +314,7 @@ function BackLink() {
       className="self-start"
       startContent={<BackIcon className="h-4 w-4" />}
     >
-      Contacts
+      People
     </Button>
   );
 }

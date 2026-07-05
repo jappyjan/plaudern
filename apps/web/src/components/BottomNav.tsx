@@ -26,7 +26,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     to: '/contacts',
-    label: 'Contacts',
+    label: 'People',
     Icon: PeopleIcon,
     isActive: (pathname) => pathname.startsWith('/contacts'),
   },

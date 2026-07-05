@@ -4,6 +4,7 @@ import type {
   EntityContactSuggestionDto,
   EntityDetailWithRelationsDto,
   EntityRelationEdgeDto,
+  EntityType,
   GraphEntityDto,
   RegistryEntityDto,
   RelationType,
@@ -148,7 +149,7 @@ export function EntityDetailPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <BackLink />
+      <BackLink type={entity.type} />
 
       <Card>
         <CardBody className="flex flex-col gap-3">
@@ -636,17 +637,22 @@ function RelationRow({
   );
 }
 
-function BackLink() {
+/**
+ * People are reached from the People hub, everything else from Entities — so a
+ * person entity's back link returns to the right list.
+ */
+function BackLink({ type }: { type?: EntityType }) {
+  const toPeople = type === 'person';
   return (
     <Button
       as={Link}
-      to="/entities"
+      to={toPeople ? '/contacts' : '/entities'}
       variant="light"
       size="sm"
       className="self-start"
       startContent={<BackIcon className="h-4 w-4" />}
     >
-      Entities
+      {toPeople ? 'People' : 'Entities'}
     </Button>
   );
 }

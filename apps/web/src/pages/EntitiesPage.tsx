@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, CardBody, Chip, Input, Select, SelectItem, Spinner } from '@heroui/react';
 import type { EntityType, RegistryEntityDto } from '@plaudern/contracts';
 import { Link } from 'react-router-dom';
-import { autoLinkEntities, listEntities } from '../lib/api';
+import { listEntities } from '../lib/api';
 import {
   ENTITY_TYPE_COLOR,
   ENTITY_TYPE_LABEL,
@@ -11,26 +11,31 @@ import {
 } from '../lib/entityLabels';
 
 /**
- * Entity registry browser: every named entity the LLM has pulled out of your
- * recordings — people, organizations, places, dates, amounts and more — the
- * seed of the knowledge graph. Searchable and filterable by type.
+ * Entity registry browser: the named things the LLM has pulled out of your
+ * recordings — organizations, places, products, dates, amounts and more — the
+ * seed of the knowledge graph. People live in the People hub (`/contacts`),
+ * where their heard voice and their mentions are unified, so `person` entities
+ * are deliberately excluded here. Searchable and filterable by type.
  */
+
+/** Every entity type except `person` — people are shown in the People hub. */
+const THING_TYPES: EntityType[] = ENTITY_TYPES.filter((t) => t !== 'person');
+
 export function EntitiesPage() {
   const [entities, setEntities] = useState<RegistryEntityDto[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<EntityType | 'all'>('all');
-  const [linking, setLinking] = useState(false);
-  const [linkResult, setLinkResult] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
         // Unreferenced ghosts stay hidden (the API default) — the list should
-        // reflect what the recordings actually say today.
+        // reflect what the recordings actually say today. People are surfaced
+        // in the People hub, so drop `person` rows here.
         const res = await listEntities();
-        if (!cancelled) setEntities(res.entities);
+        if (!cancelled) setEntities(res.entities.filter((e) => e.type !== 'person'));
       } catch (cause) {
         if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
       }
@@ -39,34 +44,6 @@ export function EntitiesPage() {
       cancelled = true;
     };
   }, []);
-
-  // People never linked to a contact (an explicit unlink is respected and
-  // doesn't count) — when any exist, offer the auto-link sweep.
-  const unlinkedPeople = useMemo(
-    () =>
-      (entities ?? []).filter(
-        (e) => e.type === 'person' && !e.voiceProfileId && e.voiceProfileLinkOrigin !== 'suppressed',
-      ).length,
-    [entities],
-  );
-
-  const runAutoLink = async () => {
-    setLinking(true);
-    setLinkResult(null);
-    try {
-      const { linked } = await autoLinkEntities();
-      if (linked > 0) setEntities((await listEntities()).entities);
-      setLinkResult(
-        linked > 0
-          ? `Linked ${linked} ${linked === 1 ? 'person' : 'people'} to contacts.`
-          : 'No new matches — name more contacts to link more people.',
-      );
-    } catch (cause) {
-      setLinkResult(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setLinking(false);
-    }
-  };
 
   const filtered = useMemo(() => {
     if (!entities) return [];
@@ -89,7 +66,7 @@ export function EntitiesPage() {
       bucket.push(entity);
       byType.set(entity.type, bucket);
     }
-    return ENTITY_TYPES.filter((t) => byType.has(t)).map((type) => ({
+    return THING_TYPES.filter((t) => byType.has(t)).map((type) => ({
       type,
       items: byType.get(type)!.sort((a, b) => a.canonicalName.localeCompare(b.canonicalName)),
     }));
@@ -130,11 +107,6 @@ export function EntitiesPage() {
               onClear={() => setQuery('')}
               className="max-w-64"
             />
-            {unlinkedPeople > 0 && (
-              <Button size="sm" variant="flat" isLoading={linking} onPress={() => void runAutoLink()}>
-                Auto-link contacts
-              </Button>
-            )}
             <Select
               size="sm"
               label="Type"
@@ -147,14 +119,12 @@ export function EntitiesPage() {
             >
               <>
                 <SelectItem key="all">All types</SelectItem>
-                {ENTITY_TYPES.map((type) => (
+                {THING_TYPES.map((type) => (
                   <SelectItem key={type}>{ENTITY_TYPE_LABEL_PLURAL[type]}</SelectItem>
                 ))}
               </>
             </Select>
           </div>
-
-          {linkResult && <p className="text-xs text-default-500">{linkResult}</p>}
 
           {groups.length === 0 ? (
             <p className="text-sm text-default-500">No entities match your search.</p>
@@ -189,8 +159,6 @@ function EntityRow({ entity }: { entity: RegistryEntityDto }) {
           <p className="truncate text-sm font-medium">{entity.canonicalName}</p>
           <p className="text-xs text-default-500">
             {entity.mentionCount} recording{entity.mentionCount === 1 ? '' : 's'}
-            {entity.voiceProfileId &&
-              ` · linked to ${entity.voiceProfileName ?? 'a contact'}`}
           </p>
         </div>
         <Chip size="sm" variant="flat" color={ENTITY_TYPE_COLOR[entity.type]} className="shrink-0">
@@ -207,9 +175,10 @@ function EmptyState() {
       <CardBody className="flex flex-col gap-2 py-8 text-center">
         <p className="text-sm font-medium">No entities yet</p>
         <p className="mx-auto max-w-md text-sm text-default-500">
-          As your recordings are processed, the people, organizations, places, dates and other
+          As your recordings are processed, the organizations, places, products, dates and other
           things mentioned in them are extracted and collected here — the seed of your knowledge
-          graph. Existing recordings are folded in as backfill runs, so this fills up over time.
+          graph. (People get their own hub under People.) Existing recordings are folded in as
+          backfill runs, so this fills up over time.
         </p>
       </CardBody>
     </Card>
