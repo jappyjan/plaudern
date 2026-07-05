@@ -17,6 +17,7 @@ import { InMemoryStorageService, StorageService } from '@plaudern/storage';
 import { InboxService } from '@plaudern/inbox';
 import { ExtractedPayloadEntity } from '@plaudern/persistence';
 import { createE2eApp } from '../testing/e2e-app';
+import { seedAiCapability } from '../testing/seed-ai-config';
 
 describe('Reprocess whole pipeline (e2e, Path A)', () => {
   let app: INestApplication;
@@ -26,6 +27,9 @@ describe('Reprocess whole pipeline (e2e, Path A)', () => {
 
   beforeAll(async () => {
     app = await createE2eApp();
+
+    // Diarization is gated on the speaker_id capability being configured.
+    await seedAiCapability(app, 'speaker_id');
 
     storage = app.get(StorageService) as InMemoryStorageService;
     inbox = app.get(InboxService);

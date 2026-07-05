@@ -14,6 +14,7 @@ import {
   FakePyannoteAiClient,
   FakeTranscriptionProvider,
 } from '../testing/fake-providers';
+import { seedAiCapability } from '../testing/seed-ai-config';
 
 /**
  * Full-stack integration test for the embeddings extraction (ATT-659) against
@@ -51,7 +52,6 @@ describe('Embeddings pipeline (integration, real Postgres + pgvector)', () => {
     process.env.REDIS_URL = infra.redisUrl;
     process.env.GEOCODER = 'stub';
     process.env.AUTH_DISABLED = 'true';
-    process.env.SUMMARIZATION_API_KEY = ''; // summarization off — embed transcript only
 
     const moduleRef = await Test.createTestingModule({
       imports: [(await import('./app.module')).AppModule],
@@ -69,6 +69,10 @@ describe('Embeddings pipeline (integration, real Postgres + pgvector)', () => {
     app.setGlobalPrefix('api');
     app.enableVersioning({ type: VersioningType.URI });
     await app.init();
+
+    // Enablement is DB-driven now. Turn on embeddings only; summarization is
+    // left unconfigured, so embeddings run transcript-only (no LLM needed).
+    await seedAiCapability(app, 'embeddings');
   });
 
   afterAll(async () => {

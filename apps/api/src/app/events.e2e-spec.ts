@@ -17,6 +17,7 @@ import { DEFAULT_USER_ID } from '@plaudern/persistence';
 import { InMemoryStorageService, StorageService } from '@plaudern/storage';
 import { InboxEventsService } from '@plaudern/inbox';
 import { createE2eApp } from '../testing/e2e-app';
+import { seedAiCapability } from '../testing/seed-ai-config';
 
 describe('Inbox events (e2e, Path A)', () => {
   let app: INestApplication;
@@ -25,6 +26,10 @@ describe('Inbox events (e2e, Path A)', () => {
 
   beforeAll(async () => {
     app = await createE2eApp();
+
+    // The audio-ingest test asserts a full diarization lifecycle alongside the
+    // transcription; diarization is gated on the speaker_id capability.
+    await seedAiCapability(app, 'speaker_id');
 
     storage = app.get(StorageService) as InMemoryStorageService;
     events = app.get(InboxEventsService);

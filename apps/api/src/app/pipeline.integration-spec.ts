@@ -11,6 +11,7 @@ import {
   FakePyannoteAiClient,
   FakeTranscriptionProvider,
 } from '../testing/fake-providers';
+import { seedAiCapability } from '../testing/seed-ai-config';
 
 /**
  * Full-stack integration test (plan §6). Unlike the fast Path A e2e (sqlite +
@@ -55,6 +56,10 @@ describe('Ingestion pipeline (integration, real Postgres + MinIO + Redis)', () =
     app.setGlobalPrefix('api');
     app.enableVersioning({ type: VersioningType.URI });
     await app.init();
+
+    // Diarization is DB-gated now; enable speaker_id for the test user so the
+    // async diarization queue runs against the real speaker tables.
+    await seedAiCapability(app, 'speaker_id');
   });
 
   afterAll(async () => {

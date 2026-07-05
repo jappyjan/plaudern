@@ -12,6 +12,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { InMemoryStorageService, StorageService } from '@plaudern/storage';
 import { createE2eApp } from '../testing/e2e-app';
+import { seedAiCapability } from '../testing/seed-ai-config';
 
 describe('Ingestion pipeline (e2e, Path A)', () => {
   let app: INestApplication;
@@ -19,6 +20,11 @@ describe('Ingestion pipeline (e2e, Path A)', () => {
 
   beforeAll(async () => {
     app = await createE2eApp();
+
+    // Diarization is gated on the speaker_id capability being configured; the
+    // audio-ingest test asserts a diarization row is produced alongside the
+    // transcription.
+    await seedAiCapability(app, 'speaker_id');
 
     storage = app.get(StorageService) as InMemoryStorageService;
   });
