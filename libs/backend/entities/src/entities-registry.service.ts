@@ -6,6 +6,7 @@ import {
   type EntityType,
   type ExtractedEntity,
   type RegistryEntityDto,
+  isRegistryEntityType,
   sanitizeAliases,
 } from '@plaudern/contracts';
 import {
@@ -72,6 +73,10 @@ export class EntitiesRegistryService {
     for (const raw of extracted) {
       const name = raw.name.trim();
       if (!name) continue;
+      // Transient values (dates, amounts) are not identities — never register
+      // them, so they can't become graph nodes, relation endpoints, or the
+      // co-occurrence noise that buries the meaningful edges.
+      if (!isRegistryEntityType(raw.type)) continue;
       const key = `${raw.type}:${normalize(name)}`;
       const existing = byKey.get(key);
       const surfaceForms = existing?.surfaceForms ?? new Set<string>();

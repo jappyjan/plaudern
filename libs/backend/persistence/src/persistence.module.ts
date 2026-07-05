@@ -12,10 +12,12 @@ import {
   ConsentSettingsEntity,
   DeadMansSwitchEntity,
   DecisionEntity,
+  DocumentMetadataEntity,
   EmailSettingsEntity,
   EmbeddingChunkEntity,
   EntityAliasEntity,
   EntityMentionEntity,
+  EntityMergeSuggestionEntity,
   EntityRegistryEntity,
   EntityRelationEntity,
   EntitySuppressionEntity,
@@ -24,6 +26,7 @@ import {
   GeocodeCacheEntity,
   InboxItemEntity,
   InboxTombstoneEntity,
+  ItemSensitivityEntity,
   ItemTopicEntity,
   JournalDocumentEntity,
   McpTokenEntity,
@@ -92,6 +95,9 @@ import { CreateReminders1720000000038 } from './migrations/1720000000038-CreateR
 import { CreateJournalDocuments1720000000039 } from './migrations/1720000000039-CreateJournalDocuments';
 import { SanitizeEntityAliases1720000000040 } from './migrations/1720000000040-SanitizeEntityAliases';
 import { DataSovereignty1720000000041 } from './migrations/1720000000041-DataSovereignty';
+import { CreateDocumentMetadata1720000000042 } from './migrations/1720000000042-CreateDocumentMetadata';
+import { CreateEntityMergeSuggestions1720000000043 } from './migrations/1720000000043-CreateEntityMergeSuggestions';
+import { CreateItemSensitivity1720000000044 } from './migrations/1720000000044-CreateItemSensitivity';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -110,6 +116,8 @@ export const ALL_ENTITIES = [
   QuestionEntity,
   DecisionEntity,
   ReminderEntity,
+  ItemSensitivityEntity,
+  DocumentMetadataEntity,
   TaskEntity,
   TaskCitationEntity,
   PersonalFactEntity,
@@ -119,6 +127,7 @@ export const ALL_ENTITIES = [
   EntityRelationEntity,
   EntityAliasEntity,
   EntitySuppressionEntity,
+  EntityMergeSuggestionEntity,
   InboxTombstoneEntity,
   PlaudSettingsEntity,
   EmailSettingsEntity,
@@ -188,6 +197,9 @@ export const ALL_MIGRATIONS = [
   CreateJournalDocuments1720000000039,
   SanitizeEntityAliases1720000000040,
   DataSovereignty1720000000041,
+  CreateDocumentMetadata1720000000042,
+  CreateEntityMergeSuggestions1720000000043,
+  CreateItemSensitivity1720000000044,
 ];
 
 /**

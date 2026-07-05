@@ -181,6 +181,22 @@ describe('EntitiesRegistryService', () => {
     expect(places.map((e) => e.canonicalName)).toEqual(['Berlin']);
   });
 
+  it('does not register transient date/amount entities', async () => {
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+    const linked = await service.ingest(USER, item, ext, [
+      { type: 'person', name: 'Bob', mentions: [] },
+      { type: 'date', name: 'Donnerstag', mentions: [] },
+      { type: 'amount', name: '600 mg', mentions: [] },
+    ]);
+
+    // Only the durable identity is registered; the transient values are dropped.
+    expect(linked).toBe(1);
+    expect((await service.list(USER, undefined, true)).map((e) => e.canonicalName)).toEqual([
+      'Bob',
+    ]);
+  });
+
   it('supersedes mentions from an older extraction on reprocessing', async () => {
     const item = await createItem();
     const older = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));

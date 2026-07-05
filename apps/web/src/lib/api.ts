@@ -12,6 +12,7 @@ import {
   googleAuthUrlResponseSchema,
   googlePendingResponseSchema,
   inboxItemSchema,
+  itemSensitivitySchema,
   inboxListResponseSchema,
   inboxPurgeResponseSchema,
   inboxSplitResponseSchema,
@@ -119,8 +120,15 @@ import {
   entityDossierSchema,
   autoLinkEntitiesResponseSchema,
   entityContactSuggestionsResponseSchema,
+  duplicateCandidatesResponseSchema,
+  mergeSuggestionsResponseSchema,
+  reconcileResponseSchema,
   type AutoLinkEntitiesResponse,
   type EntityContactSuggestionsResponse,
+  type DuplicateCandidatesResponse,
+  type MergeSuggestionStatus,
+  type MergeSuggestionsResponse,
+  type ReconcileResponse,
   type EntityListResponse,
   type EntityDetailWithRelationsDto,
   type EntityDossierDto,
@@ -159,6 +167,13 @@ import {
   type ReminderListResponse,
   type ReminderStatus,
   type ItemRemindersResponse,
+  documentListResponseSchema,
+  itemDocMetaResponseSchema,
+  itemOcrResponseSchema,
+  type DocumentListResponse,
+  type DocumentType,
+  type ItemDocMetaResponse,
+  type ItemOcrResponse,
   type UpdateEntityRequest,
   searchResponseSchema,
   similarResponseSchema,
@@ -430,6 +445,24 @@ export async function retrySummary(itemId: string): Promise<SummaryDto> {
   );
 }
 
+/** The item's sensitivity classification (tier, mask spans, held state) — JJ-21. */
+export async function getItemSensitivity(itemId: string) {
+  return itemSensitivitySchema.parse(await requestJson(`/inbox/${itemId}/sensitivity`));
+}
+
+/** Set (or clear, with null) a user's manual sensitivity-tier override — JJ-21. */
+export async function setItemSensitivity(
+  itemId: string,
+  manualTier: 'public' | 'normal' | 'sensitive' | 'secret' | null,
+) {
+  return itemSensitivitySchema.parse(
+    await requestJson(`/inbox/${itemId}/sensitivity`, {
+      method: 'PATCH',
+      body: JSON.stringify({ manualTier }),
+    }),
+  );
+}
+
 export async function getSummarizationSettings(): Promise<SummarizationSettingsDto> {
   return summarizationSettingsSchema.parse(await requestJson('/settings/summarization'));
 }
@@ -662,6 +695,55 @@ export async function mergeEntities(
     await requestJson(`/entities/${survivorId}/merge`, {
       method: 'POST',
       body: JSON.stringify({ victimId }),
+    }),
+  );
+}
+
+/**
+ * Likely-duplicate entities for this one — an entity with the same name under a
+ * different type, plus (with `fuzzy`) similar names worth confirming. Read-only;
+ * apply via `mergeEntities`.
+ */
+export async function duplicateCandidates(
+  id: string,
+  fuzzy = false,
+): Promise<DuplicateCandidatesResponse> {
+  const suffix = fuzzy ? '?fuzzy=true' : '';
+  return duplicateCandidatesResponseSchema.parse(
+    await requestJson(`/entities/${id}/duplicate-candidates${suffix}`),
+  );
+}
+
+/**
+ * Recorded merge suggestions (default: pending) — likely-duplicate pairs
+ * detected automatically after extraction.
+ */
+export async function listMergeSuggestions(
+  status?: MergeSuggestionStatus,
+): Promise<MergeSuggestionsResponse> {
+  const suffix = status ? `?status=${status}` : '';
+  return mergeSuggestionsResponseSchema.parse(await requestJson(`/entities/suggestions${suffix}`));
+}
+
+/** Dismiss a merge suggestion so it is not surfaced again. */
+export async function dismissMergeSuggestion(id: string): Promise<void> {
+  await requestVoid(`/entities/suggestions/${id}/dismiss`, { method: 'POST' });
+}
+
+/**
+ * Ask the LLM judge whether `id` and `candidateId` are the same real-world
+ * thing (and which type/survivor to keep). Pass `web` to also consult opt-in web
+ * research. `recommendation` is null when no judge is configured.
+ */
+export async function reconcileEntity(
+  id: string,
+  candidateId: string,
+  web = false,
+): Promise<ReconcileResponse> {
+  return reconcileResponseSchema.parse(
+    await requestJson(`/entities/${id}/reconcile`, {
+      method: 'POST',
+      body: JSON.stringify({ candidateId, web }),
     }),
   );
 }
@@ -1053,6 +1135,44 @@ export async function getItemReminders(itemId: string): Promise<ItemRemindersRes
 export async function retryItemReminders(itemId: string): Promise<ItemRemindersResponse> {
   return itemRemindersResponseSchema.parse(
     await requestJson(`/inbox/${itemId}/reminders/retry`, { method: 'POST' }),
+  );
+}
+
+// ---- Document vault: photo/scan OCR + docmeta (JJ-30 / JJ-16) ----
+
+/**
+ * The user's document vault: every scanned/uploaded document, newest first,
+ * optionally scoped to a single document type. The vault page groups them by
+ * type client-side and surfaces expiry / Kündigungsfrist dates.
+ */
+export async function listVaultDocuments(
+  documentType?: DocumentType,
+): Promise<DocumentListResponse> {
+  const suffix = documentType ? `?documentType=${encodeURIComponent(documentType)}` : '';
+  return documentListResponseSchema.parse(await requestJson(`/documents${suffix}`));
+}
+
+/** An item's structured document metadata plus the extraction pipeline status. */
+export async function getItemDocMeta(itemId: string): Promise<ItemDocMetaResponse> {
+  return itemDocMetaResponseSchema.parse(await requestJson(`/inbox/${itemId}/docmeta`));
+}
+
+/** Re-run document-metadata extraction for an item; returns the refreshed read model. */
+export async function retryItemDocMeta(itemId: string): Promise<ItemDocMetaResponse> {
+  return itemDocMetaResponseSchema.parse(
+    await requestJson(`/inbox/${itemId}/docmeta/retry`, { method: 'POST' }),
+  );
+}
+
+/** An item's recognized OCR text plus the extraction pipeline status. */
+export async function getItemOcr(itemId: string): Promise<ItemOcrResponse> {
+  return itemOcrResponseSchema.parse(await requestJson(`/inbox/${itemId}/ocr`));
+}
+
+/** Re-run OCR for an item; returns the refreshed read model. */
+export async function retryItemOcr(itemId: string): Promise<ItemOcrResponse> {
+  return itemOcrResponseSchema.parse(
+    await requestJson(`/inbox/${itemId}/ocr/retry`, { method: 'POST' }),
   );
 }
 

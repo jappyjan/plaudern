@@ -1,0 +1,21 @@
+{
+  "name": "ocr",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/backend/ocr/src",
+  "projectType": "library",
+  "tags": ["scope:backend", "type:feature"],
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc -p libs/backend/ocr/tsconfig.json --noEmit"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "jest --config libs/backend/ocr/jest.config.js"
+      }
+    }
+  }
+}

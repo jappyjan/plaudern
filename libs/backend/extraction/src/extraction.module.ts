@@ -14,6 +14,9 @@ import { TasksExtractor, TasksModule } from '@plaudern/tasks';
 import { FactsExtractor, FactsModule } from '@plaudern/facts';
 import { DecisionsExtractor, DecisionsModule } from '@plaudern/decisions';
 import { RemindersExtractor, RemindersModule } from '@plaudern/reminders';
+import { SentinelExtractor, SentinelModule } from '@plaudern/sensitivity';
+import { OcrExtractor, OcrModule } from '@plaudern/ocr';
+import { DocMetaExtractor, DocMetaModule } from '@plaudern/docmeta';
 import { ExtractorGraph } from './extractor-graph';
 import { ExtractionPipelineService } from './extraction-pipeline.service';
 import { ExtractionRunsService } from './extraction-runs.service';
@@ -42,6 +45,9 @@ import { ExtractionController } from './extraction.controller';
     FactsModule,
     DecisionsModule,
     RemindersModule,
+    SentinelModule,
+    OcrModule,
+    DocMetaModule,
     TypeOrmModule.forFeature([ExtractionRunEntity, InboxItemEntity]),
   ],
   providers: [
@@ -61,6 +67,9 @@ import { ExtractionController } from './extraction.controller';
         FactsExtractor,
         DecisionsExtractor,
         RemindersExtractor,
+        SentinelExtractor,
+        OcrExtractor,
+        DocMetaExtractor,
       ],
       useFactory: (
         transcription: TranscriptionExtractor,
@@ -76,6 +85,9 @@ import { ExtractionController } from './extraction.controller';
         facts: FactsExtractor,
         decisions: DecisionsExtractor,
         reminders: RemindersExtractor,
+        sentinel: SentinelExtractor,
+        ocr: OcrExtractor,
+        docmeta: DocMetaExtractor,
       ): Extractor[] => [
         transcription,
         diarization,
@@ -90,6 +102,9 @@ import { ExtractionController } from './extraction.controller';
         facts,
         decisions,
         reminders,
+        sentinel,
+        ocr,
+        docmeta,
       ],
     },
     {

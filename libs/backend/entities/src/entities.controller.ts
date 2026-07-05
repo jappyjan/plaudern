@@ -12,22 +12,29 @@ import {
   Query,
 } from '@nestjs/common';
 import {
+  duplicateCandidatesQuerySchema,
   entityConnectQuerySchema,
   entityListQuerySchema,
   entityNeighborhoodQuerySchema,
   linkEntityContactRequestSchema,
   mergeEntityRequestSchema,
+  mergeSuggestionsQuerySchema,
+  reconcileRequestSchema,
   updateEntityRequestSchema,
   type AutoLinkEntitiesResponse,
+  type DuplicateCandidatesResponse,
   type EntityConnectResponse,
   type EntityContactSuggestionsResponse,
   type EntityDetailWithRelationsDto,
   type EntityListResponse,
   type EntityNeighborhoodResponse,
+  type MergeSuggestionsResponse,
+  type ReconcileResponse,
 } from '@plaudern/contracts';
 import { CurrentUser, type AuthenticatedUser } from '@plaudern/auth';
 import { EntitiesRegistryService } from './entities-registry.service';
 import { EntitiesCorrectionService } from './entities-correction.service';
+import { EntityReconciliationService } from './entity-reconciliation.service';
 import { EntityContactResolverService } from './entity-contact-resolver.service';
 import { EntityGraphService } from './entity-graph.service';
 
@@ -46,6 +53,7 @@ export class EntitiesController {
     private readonly graph: EntityGraphService,
     private readonly resolver: EntityContactResolverService,
     private readonly corrections: EntitiesCorrectionService,
+    private readonly reconciliation: EntityReconciliationService,
   ) {}
 
   @Get()
@@ -96,6 +104,33 @@ export class EntitiesController {
     return { linked: await this.resolver.autoLinkAll(user.id) };
   }
 
+  /**
+   * Recorded merge suggestions (default: pending) — likely-duplicate pairs
+   * detected automatically after extraction. Declared before `:id` so the
+   * static path is not shadowed by the id route.
+   */
+  @Get('suggestions')
+  async suggestions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: unknown,
+  ): Promise<MergeSuggestionsResponse> {
+    const parsed = mergeSuggestionsQuerySchema.safeParse(query);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues[0]?.message ?? 'invalid query');
+    }
+    return { suggestions: await this.reconciliation.listSuggestions(user.id, parsed.data.status) };
+  }
+
+  /** Dismiss a merge suggestion so it is not surfaced again. */
+  @Post('suggestions/:sid/dismiss')
+  @HttpCode(204)
+  async dismissSuggestion(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('sid') sid: string,
+  ): Promise<void> {
+    await this.reconciliation.dismiss(user.id, sid);
+  }
+
   @Get(':id')
   async get(
     @CurrentUser() user: AuthenticatedUser,
@@ -111,6 +146,52 @@ export class EntitiesController {
     @Param('id') id: string,
   ): Promise<EntityContactSuggestionsResponse> {
     return { suggestions: await this.resolver.suggest(user.id, id) };
+  }
+
+  /**
+   * Likely-duplicate entities for this one: another entity with the same name
+   * under a different type (the split-typed case), plus — when `fuzzy=true` —
+   * similar names worth confirming. Read-only; the user merges through the
+   * existing merge endpoint.
+   */
+  @Get(':id/duplicate-candidates')
+  async duplicateCandidates(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Query() query: unknown,
+  ): Promise<DuplicateCandidatesResponse> {
+    const parsed = duplicateCandidatesQuerySchema.safeParse(query);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues[0]?.message ?? 'invalid query');
+    }
+    return {
+      candidates: await this.reconciliation.findCandidates(user.id, id, {
+        fuzzy: parsed.data.fuzzy,
+      }),
+    };
+  }
+
+  /**
+   * Ask the LLM judge whether this entity and `candidateId` are the same
+   * real-world thing (and which type/survivor to keep). Advisory only — apply
+   * via the merge endpoint. `recommendation` is null when no judge is
+   * configured, so the client can degrade.
+   */
+  @Post(':id/reconcile')
+  async reconcile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ): Promise<ReconcileResponse> {
+    const parsed = reconcileRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues[0]?.message ?? 'invalid request');
+    }
+    return {
+      recommendation: await this.reconciliation.recommend(user.id, id, parsed.data.candidateId, {
+        web: parsed.data.web,
+      }),
+    };
   }
 
   /**
@@ -210,12 +291,20 @@ export class EntitiesController {
     return this.graph.neighborhood(user.id, id, parsed.data.relationType);
   }
 
-  /** Detail + graph edges — the shape every mutation returns for UI refresh. */
+  /**
+   * Detail + graph edges — the shape every mutation returns for UI refresh.
+   * The detail page's Relations list shows only edges the model actually
+   * asserted; weak same-recording co-occurrence edges are excluded so the list
+   * carries signal, not every pair that happened to be mentioned together.
+   */
   private async detailWithRelations(
     userId: string,
     id: string,
   ): Promise<EntityDetailWithRelationsDto> {
     const detail = await this.registry.detail(userId, id);
-    return { ...detail, relations: await this.graph.edgesFor(userId, id) };
+    return {
+      ...detail,
+      relations: await this.graph.edgesFor(userId, id, undefined, false),
+    };
   }
 }

@@ -18,10 +18,13 @@ import {
   ChatMessageEntity,
   ConsentSettingsEntity,
   DeadMansSwitchEntity,
+  DocumentMetadataEntity,
   EmailSettingsEntity,
   EntityAliasEntity,
+  EntityMergeSuggestionEntity,
   EntitySuppressionEntity,
   ExtractionRunEntity,
+  ItemSensitivityEntity,
   ItemTopicEntity,
   JournalDocumentEntity,
   McpTokenEntity,
@@ -148,8 +151,13 @@ export class DataSovereigntyService {
       // the alias FK cascade is unreliable (sqlite FKs off; purge avoids
       // cascades), so delete them explicitly — the wipe must leave no name.
       await em.getRepository(EntityAliasEntity).delete({ userId });
+      await em.getRepository(EntityMergeSuggestionEntity).delete({ userId });
       await em.getRepository(EntitySuppressionEntity).delete({ userId });
       await em.getRepository(ExtractionRunEntity).delete({ userId });
+      // Per-item derived tables that cascade with inbox_items on Postgres but
+      // linger on sqlite (purge avoids relying on cascades); wipe explicitly.
+      await em.getRepository(DocumentMetadataEntity).delete({ userId });
+      await em.getRepository(ItemSensitivityEntity).delete({ userId });
       await em.getRepository(McpTokenEntity).delete({ userId });
       await em.getRepository(PlaudSettingsEntity).delete({ userId });
       await em.getRepository(EmailSettingsEntity).delete({ userId });

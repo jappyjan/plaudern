@@ -263,6 +263,22 @@ describe('EntityGraphService', () => {
       expect(related).toHaveLength(1);
       expect(related[0].origin).toBe('cooccurrence');
     });
+
+    it('excludes weak co-occurrence edges when includeCooccurrence=false', async () => {
+      const a = await createEntity('Alice');
+      const b = await createEntity('Bob');
+      const c = await createEntity('Carol');
+      // One asserted edge (Alice→Bob); Carol is only linked by co-occurrence.
+      await ingestBatch([{ type: 'promised_to', source: 'Alice', target: 'Bob' }], [a, b, c]);
+
+      const all = await service.edgesFor(USER, a.id);
+      expect(all.map((e) => e.origin).sort()).toEqual(['cooccurrence', 'llm']);
+
+      const asserted = await service.edgesFor(USER, a.id, undefined, false);
+      expect(asserted).toHaveLength(1);
+      expect(asserted[0].origin).toBe('llm');
+      expect(asserted[0].relationType).toBe('promised_to');
+    });
   });
 
   describe('neighborhood', () => {

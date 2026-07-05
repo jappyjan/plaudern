@@ -11,14 +11,24 @@ import {
   Tab,
   Tabs,
 } from '@heroui/react';
-import { hasAudioPayload, type CalendarEventDto, type InboxItemDto } from '@plaudern/contracts';
+import {
+  hasAudioPayload,
+  hasDocumentPayload,
+  type CalendarEventDto,
+  type InboxItemDto,
+  type ItemSensitivityDto,
+  type SensitivityTier,
+} from '@plaudern/contracts';
+import { DocumentSection } from '../components/DocumentSection';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   deleteCalendarLink,
   deleteInboxItem,
   getItem,
+  getItemSensitivity,
   getSourceUrl,
   listItemEvents,
+  setItemSensitivity,
   reprocessItem,
   retryDiarization,
   retryEmbeddings,
@@ -36,6 +46,7 @@ import { AudioPlayer } from '../components/AudioPlayer';
 import { latestTranscription, TranscriptionChip } from '../components/TranscriptionChip';
 import { LinkEventModal } from '../components/calendar/LinkEventModal';
 import { SpeakerTranscript } from '../components/SpeakerTranscript';
+import { SensitivityBanner, SensitivityGate } from '../components/SensitivityControls';
 import { SummaryView } from '../components/SummaryView';
 import { ItemTopicsCard } from '../components/ItemTopicsCard';
 import { ItemCommitmentsCard } from '../components/ItemCommitmentsCard';
@@ -182,6 +193,10 @@ export function ItemDetailPage() {
   // transcript. Null until the item loads so we can pick the default; a manual
   // switch afterwards sticks (SSE refetches never override it).
   const [tab, setTab] = useState<string | null>(null);
+  // Sensitivity (JJ-21): the item's tier/mask state + the reveal toggle.
+  const [sensitivity, setSensitivity] = useState<ItemSensitivityDto | null>(null);
+  const [revealed, setRevealed] = useState(false);
+  const [savingTier, setSavingTier] = useState(false);
 
   const refetch = useCallback(() => {
     if (!id) return;
@@ -189,6 +204,28 @@ export function ItemDetailPage() {
       .then(setItem)
       .catch(() => undefined);
   }, [id]);
+
+  const refetchSensitivity = useCallback(() => {
+    if (!id) return;
+    getItemSensitivity(id)
+      .then(setSensitivity)
+      .catch(() => undefined);
+  }, [id]);
+
+  const handleOverride = useCallback(
+    async (t: SensitivityTier | null) => {
+      if (!id) return;
+      setSavingTier(true);
+      try {
+        setSensitivity(await setItemSensitivity(id, t));
+      } catch {
+        // Non-fatal: the override just doesn't stick.
+      } finally {
+        setSavingTier(false);
+      }
+    },
+    [id],
+  );
 
   // Run one reprocess step. Actions that return the refreshed item update it in
   // place; the summary retry (which returns a summary) triggers a refetch. SSE
@@ -223,6 +260,12 @@ export function ItemDetailPage() {
   useEffect(() => {
     void refreshEvents();
   }, [refreshEvents]);
+
+  // Refetch the sensitivity classification as the item's extractions progress
+  // (the sentinel runs after transcription succeeds).
+  useEffect(() => {
+    refetchSensitivity();
+  }, [refetchSensitivity, item?.extractions.length]);
 
   // Pick the initial tab once the item is known: prefer the summary when it's
   // ready, otherwise start on the transcript.
@@ -315,6 +358,7 @@ export function ItemDetailPage() {
   // uploaded as a generic file) get the player + Transcript tab; everything
   // else (text notes, web clips, emails, ...) shows a plain "Note" tab.
   const audio = hasAudioPayload(item.sourceType, item.source?.contentType);
+  const isDocument = hasDocumentPayload(item.source?.contentType);
   const device = item.metadata?.device as Record<string, string> | undefined;
   const tags = item.metadata?.tags as Record<string, unknown> | undefined;
   const reprocessSteps = REPROCESS_STEPS.filter(
@@ -392,6 +436,22 @@ export function ItemDetailPage() {
         </Card>
       )}
 
+      {sensitivity && (
+        <SensitivityBanner
+          sensitivity={sensitivity}
+          onOverride={handleOverride}
+          saving={savingTier}
+        />
+      )}
+
+      {isDocument && id && (
+        <DocumentSection
+          itemId={id}
+          contentType={item.source?.contentType}
+          sourceUrl={sourceUrl}
+        />
+      )}
+
       <Card>
         <CardBody>
           <Tabs
@@ -451,12 +511,19 @@ export function ItemDetailPage() {
                     <Spinner size="sm" /> {audio ? 'Transcribing…' : 'Processing…'}
                   </div>
                 )}
-                {transcription?.status === 'succeeded' &&
-                  (audio ? (
-                    <SpeakerTranscript itemId={item.id} transcription={transcription} />
-                  ) : (
-                    <p className="whitespace-pre-wrap text-sm">{transcription.content}</p>
-                  ))}
+                {transcription?.status === 'succeeded' && (
+                  <SensitivityGate
+                    tier={sensitivity?.effectiveTier ?? 'normal'}
+                    revealed={revealed}
+                    onReveal={() => setRevealed(true)}
+                  >
+                    {audio ? (
+                      <SpeakerTranscript itemId={item.id} transcription={transcription} />
+                    ) : (
+                      <p className="whitespace-pre-wrap text-sm">{transcription.content}</p>
+                    )}
+                  </SensitivityGate>
+                )}
                 {transcription?.status === 'failed' && (
                   <div className="flex flex-col gap-2">
                     <p className="text-sm text-danger">

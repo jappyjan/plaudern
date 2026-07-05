@@ -7,6 +7,7 @@ import {
   EntityRegistryEntity,
   ExtractedPayloadEntity,
   InboxItemEntity,
+  ItemSensitivityEntity,
   ItemTopicEntity,
 } from '@plaudern/persistence';
 import type { EmbeddingSearchHit } from '@plaudern/embeddings';
@@ -57,6 +58,7 @@ describe('SearchService', () => {
     registry = dataSource.getRepository(EntityRegistryEntity);
     itemTopics = dataSource.getRepository(ItemTopicEntity);
     chunks = dataSource.getRepository(EmbeddingChunkEntity);
+    const sensitivity = dataSource.getRepository(ItemSensitivityEntity);
 
     embedding = { enabled: true, search: jest.fn(async () => []) };
     const keyword = new KeywordSearchService(payloads, items);
@@ -67,6 +69,7 @@ describe('SearchService', () => {
       mentions,
       itemTopics,
       chunks,
+      sensitivity,
     );
   });
 
