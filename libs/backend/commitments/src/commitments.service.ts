@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { InboxService } from '@plaudern/inbox';
 import type {
   CommitmentDto,
@@ -34,7 +34,7 @@ const ACTIVE_STATUSES: ExtractionStatus[] = ['queued', 'processing'];
  * appended row. Bump when the output meaningfully improves (better model or
  * prompt) so backfill runs can catch older items up.
  */
-export const COMMITMENTS_EXTRACTOR_VERSION = 1;
+export const COMMITMENTS_EXTRACTOR_VERSION = 2;
 
 /**
  * Owns the commitment-extraction pipeline step (JJ-36). WHEN it runs is decided
@@ -114,7 +114,11 @@ export class CommitmentsService {
     const item = await this.inbox.getItem(userId, inboxItemId);
     const latest = latestOfKind(item.extractions ?? [], 'commitments');
     const occurredAt = iso(item.occurredAt)!;
-    const rows = await this.commitments.find({ where: { userId, inboxItemId } });
+    // Hide commitments the dedupe collapsed into a task (duplicatesTaskId set) —
+    // the task carries the same intention, so we show it once, not twice.
+    const rows = await this.commitments.find({
+      where: { userId, inboxItemId, duplicatesTaskId: IsNull() },
+    });
     return {
       status: latest?.status ?? null,
       commitments: rows
@@ -132,6 +136,9 @@ export class CommitmentsService {
     const rows = await this.commitments.find({
       where: {
         userId,
+        // Exclude commitments the dedupe merged into a task, so the open-loops
+        // ledger raises the intention once (as the task) instead of twice.
+        duplicatesTaskId: IsNull(),
         ...(filters.direction ? { direction: filters.direction } : {}),
         ...(filters.status ? { status: filters.status } : {}),
       },

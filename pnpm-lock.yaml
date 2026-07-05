@@ -381,6 +381,9 @@ importers:
       '@plaudern/contracts':
         specifier: workspace:*
         version: link:../../contracts
+      '@plaudern/embeddings':
+        specifier: workspace:*
+        version: link:../embeddings
       '@plaudern/inbox':
         specifier: workspace:*
         version: link:../inbox

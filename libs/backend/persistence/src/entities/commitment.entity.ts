@@ -89,6 +89,20 @@ export class CommitmentEntity {
   @Column({ type: 'varchar', default: 'open' })
   status!: CommitmentStatus;
 
+  /**
+   * Set when this `owed_by_me` commitment was found to be the SAME actionable
+   * item as one of the user's tasks (the self-directed task and the promise are
+   * two extractions of one intention — "fill out the form"). Holds the winning
+   * `tasks.id`; the commitment is then hidden from the read models so the item
+   * detail and the open-loops ledger show the richer task once instead of twice.
+   * A loose reference (no FK) so the commitments module stays decoupled from the
+   * tasks tables — mirroring how `counterpartyEntityId` carries a bare id. Only
+   * ever set on OPEN `owed_by_me` rows; `owed_to_me` promises never match a
+   * self-directed task and are never suppressed.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  duplicatesTaskId!: string | null;
+
   /** Segment start (seconds into the recording) the commitment was heard at. */
   @Column({ type: 'float', nullable: true })
   sourceTimestamp!: number | null;

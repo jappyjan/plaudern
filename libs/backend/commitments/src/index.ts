@@ -3,6 +3,7 @@ export * from './commitment-context';
 export * from './commitments.job';
 export * from './date-resolver';
 export * from './commitments-persistence.service';
+export * from './commitment-task-dedupe.service';
 export * from './commitments.processor';
 export * from './commitments.service';
 export * from './commitments.controller';
