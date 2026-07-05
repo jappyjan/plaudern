@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { DataSource } from 'typeorm';
 import {
   ALL_ENTITIES,
+  CommitmentEntity,
   EntityAliasEntity,
   EntityMentionEntity,
   EntityRegistryEntity,
@@ -9,6 +10,9 @@ import {
   EntitySuppressionEntity,
   ExtractedPayloadEntity,
   InboxItemEntity,
+  PersonalFactCitationEntity,
+  PersonalFactEntity,
+  QuestionEntity,
   VoiceProfileEntity,
 } from '@plaudern/persistence';
 import type { ExtractedEntity } from '@plaudern/contracts';
@@ -116,6 +120,84 @@ describe('EntitiesCorrectionService', () => {
     expect(await dataSource.getRepository(EntityMentionEntity).count()).toBe(1);
   });
 
+  it('merge repoints personal facts and recomputes supersession to a SINGLE active (JJ-31)', async () => {
+    // Two person entities, each with one EXCLUSIVE "current city" fact backed by
+    // a live facts citation — both active in their own (pre-merge) groups.
+    const survivor = await dataSource.getRepository(EntityRegistryEntity).save({
+      userId: USER,
+      type: 'person',
+      canonicalName: 'Anna',
+      normalizedName: 'anna',
+      aliases: [],
+    });
+    const victim = await dataSource.getRepository(EntityRegistryEntity).save({
+      userId: USER,
+      type: 'person',
+      canonicalName: 'Ana',
+      normalizedName: 'ana',
+      aliases: [],
+    });
+    const facts = dataSource.getRepository(PersonalFactEntity);
+    const factCitations = dataSource.getRepository(PersonalFactCitationEntity);
+
+    async function seedFact(
+      entityId: string,
+      value: string,
+      occurredAt: string,
+    ): Promise<string> {
+      const item = await createItem(occurredAt);
+      const ext = await dataSource.getRepository(ExtractedPayloadEntity).save({
+        inboxItemId: item,
+        kind: 'facts',
+        version: 1,
+        provider: 'test',
+        status: 'succeeded',
+        createdAt: new Date(occurredAt),
+      });
+      const fact = await facts.save({
+        userId: USER,
+        personEntityId: entityId,
+        personName: 'Anna',
+        subjectKey: `e:${entityId}`,
+        attribute: 'current city',
+        normalizedAttribute: 'current city',
+        value,
+        normalizedValue: value.toLowerCase(),
+        exclusive: true,
+        supersededByFactId: null,
+        supersededAt: null,
+        lastOccurredAt: occurredAt,
+      });
+      await factCitations.save({
+        userId: USER,
+        factId: fact.id,
+        inboxItemId: item,
+        extractionId: ext.id,
+        quote: null,
+        startSeconds: null,
+      });
+      return fact.id;
+    }
+
+    const survivorFactId = await seedFact(survivor.id, 'Berlin', '2026-01-01T00:00:00.000Z');
+    const victimFactId = await seedFact(victim.id, 'Munich', '2026-03-01T00:00:00.000Z');
+
+    await corrections.merge(USER, survivor.id, victim.id);
+
+    // Both facts now belong to the survivor's subject; the merge recompute
+    // collapses the two once-active exclusive facts to exactly ONE active — the
+    // newest (Munich) — with Berlin superseded by it. Nothing hard-deleted.
+    const all = await facts.find({ where: { userId: USER } });
+    expect(all).toHaveLength(2);
+    expect(all.every((f) => f.subjectKey === `e:${survivor.id}`)).toBe(true);
+    const active = all.filter((f) => f.supersededByFactId === null);
+    expect(active).toHaveLength(1);
+    expect(active[0].id).toBe(victimFactId);
+    expect(active[0].value).toBe('Munich');
+    const superseded = all.find((f) => f.id === survivorFactId)!;
+    expect(superseded.supersededByFactId).toBe(victimFactId);
+  });
+
   it('merge is durable: re-extraction of the victim name resolves to the survivor', async () => {
     const item = await createItem();
     const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
@@ -165,6 +247,72 @@ describe('EntitiesCorrectionService', () => {
     // One works_at (deduped) survivor→ACME, zero self-edges.
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ sourceEntityId: survivor.id, targetEntityId: acme.id, relationType: 'works_at' });
+  });
+
+  it('merge repoints question/commitment counterpartyEntityId (JJ-70)', async () => {
+    const questions = dataSource.getRepository(QuestionEntity);
+    const commitments = dataSource.getRepository(CommitmentEntity);
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+    await ingest(item, ext, [
+      { type: 'person', name: 'Detlef Müller', mentions: [] },
+      { type: 'person', name: 'Detlef', mentions: [] },
+    ]);
+    const survivor = (await entityByName('Detlef Müller'))!;
+    const victim = (await entityByName('Detlef'))!;
+
+    const questionsExt = await dataSource.getRepository(ExtractedPayloadEntity).save({
+      inboxItemId: item,
+      kind: 'questions',
+      version: 1,
+      provider: 'test',
+      status: 'succeeded',
+      createdAt: new Date('2026-07-01T10:00:00Z'),
+    });
+    const commitmentsExt = await dataSource.getRepository(ExtractedPayloadEntity).save({
+      inboxItemId: item,
+      kind: 'commitments',
+      version: 1,
+      provider: 'test',
+      status: 'succeeded',
+      createdAt: new Date('2026-07-01T10:00:00Z'),
+    });
+
+    const question = await questions.save({
+      userId: USER,
+      inboxItemId: item,
+      extractionId: questionsExt.id,
+      direction: 'asked_of_me',
+      counterpartyName: 'Detlef',
+      counterpartyEntityId: victim.id,
+      question: 'When can you send the report?',
+      normalizedQuestion: 'when can you send the report?',
+      status: 'open',
+      sourceTimestamp: null,
+      sourceQuote: null,
+    });
+    const commitment = await commitments.save({
+      userId: USER,
+      inboxItemId: item,
+      extractionId: commitmentsExt.id,
+      direction: 'owed_to_me',
+      counterpartyName: 'Detlef',
+      counterpartyEntityId: victim.id,
+      description: 'send the report by Friday',
+      normalizedDescription: 'send the report by friday',
+      dueDate: null,
+      status: 'open',
+      duplicatesTaskId: null,
+      sourceTimestamp: null,
+      sourceQuote: null,
+    });
+
+    await corrections.merge(USER, survivor.id, victim.id);
+
+    const mergedQuestion = await questions.findOneBy({ id: question.id });
+    const mergedCommitment = await commitments.findOneBy({ id: commitment.id });
+    expect(mergedQuestion!.counterpartyEntityId).toBe(survivor.id);
+    expect(mergedCommitment!.counterpartyEntityId).toBe(survivor.id);
   });
 
   it('rejects merging different types and self-merge', async () => {

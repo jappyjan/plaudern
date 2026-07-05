@@ -74,12 +74,18 @@ importers:
       '@plaudern/calendar':
         specifier: workspace:*
         version: link:../../libs/backend/calendar
+      '@plaudern/chat':
+        specifier: workspace:*
+        version: link:../../libs/backend/chat
       '@plaudern/commitments':
         specifier: workspace:*
         version: link:../../libs/backend/commitments
       '@plaudern/contracts':
         specifier: workspace:*
         version: link:../../libs/contracts
+      '@plaudern/decisions':
+        specifier: workspace:*
+        version: link:../../libs/backend/decisions
       '@plaudern/email-ingest':
         specifier: workspace:*
         version: link:../../libs/backend/email-ingest
@@ -92,6 +98,9 @@ importers:
       '@plaudern/extraction':
         specifier: workspace:*
         version: link:../../libs/backend/extraction
+      '@plaudern/facts':
+        specifier: workspace:*
+        version: link:../../libs/backend/facts
       '@plaudern/geocoding':
         specifier: workspace:*
         version: link:../../libs/backend/geocoding
@@ -328,7 +337,73 @@ importers:
         specifier: 11.1.27
         version: 11.1.27(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(@nestjs/platform-express@11.1.27)
 
+  libs/backend/chat:
+    dependencies:
+      '@nestjs/common':
+        specifier: ^11.0.0
+        version: 11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/config':
+        specifier: ^4.0.0
+        version: 4.0.4(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(rxjs@7.8.2)
+      '@nestjs/typeorm':
+        specifier: ^11.0.0
+        version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@plaudern/contracts':
+        specifier: workspace:*
+        version: link:../../contracts
+      '@plaudern/persistence':
+        specifier: workspace:*
+        version: link:../persistence
+      '@plaudern/search':
+        specifier: workspace:*
+        version: link:../search
+      rxjs:
+        specifier: ^7.0.0
+        version: 7.8.2
+      typeorm:
+        specifier: ^1.0.0
+        version: 1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3))
+
   libs/backend/commitments:
+    dependencies:
+      '@nestjs/common':
+        specifier: ^11.0.0
+        version: 11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/config':
+        specifier: ^4.0.0
+        version: 4.0.4(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(rxjs@7.8.2)
+      '@nestjs/typeorm':
+        specifier: ^11.0.0
+        version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@plaudern/contracts':
+        specifier: workspace:*
+        version: link:../../contracts
+      '@plaudern/embeddings':
+        specifier: workspace:*
+        version: link:../embeddings
+      '@plaudern/inbox':
+        specifier: workspace:*
+        version: link:../inbox
+      '@plaudern/persistence':
+        specifier: workspace:*
+        version: link:../persistence
+      '@plaudern/queue':
+        specifier: workspace:*
+        version: link:../queue
+      rxjs:
+        specifier: ^7.0.0
+        version: 7.8.2
+      typeorm:
+        specifier: ^1.0.0
+        version: 1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3))
+
+  libs/backend/decisions:
     dependencies:
       '@nestjs/common':
         specifier: ^11.0.0
@@ -448,15 +523,24 @@ importers:
       '@plaudern/auth':
         specifier: workspace:*
         version: link:../auth
+      '@plaudern/commitments':
+        specifier: workspace:*
+        version: link:../commitments
       '@plaudern/contracts':
         specifier: workspace:*
         version: link:../../contracts
+      '@plaudern/facts':
+        specifier: workspace:*
+        version: link:../facts
       '@plaudern/inbox':
         specifier: workspace:*
         version: link:../inbox
       '@plaudern/persistence':
         specifier: workspace:*
         version: link:../persistence
+      '@plaudern/questions':
+        specifier: workspace:*
+        version: link:../questions
       '@plaudern/queue':
         specifier: workspace:*
         version: link:../queue
@@ -493,6 +577,9 @@ importers:
       '@plaudern/entities':
         specifier: workspace:*
         version: link:../entities
+      '@plaudern/facts':
+        specifier: workspace:*
+        version: link:../facts
       '@plaudern/inbox':
         specifier: workspace:*
         version: link:../inbox
@@ -511,6 +598,39 @@ importers:
       '@plaudern/transcription':
         specifier: workspace:*
         version: link:../transcription
+      rxjs:
+        specifier: ^7.0.0
+        version: 7.8.2
+      typeorm:
+        specifier: ^1.0.0
+        version: 1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3))
+
+  libs/backend/facts:
+    dependencies:
+      '@nestjs/common':
+        specifier: ^11.0.0
+        version: 11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/config':
+        specifier: ^4.0.0
+        version: 4.0.4(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(rxjs@7.8.2)
+      '@nestjs/typeorm':
+        specifier: ^11.0.0
+        version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@plaudern/contracts':
+        specifier: workspace:*
+        version: link:../../contracts
+      '@plaudern/inbox':
+        specifier: workspace:*
+        version: link:../inbox
+      '@plaudern/persistence':
+        specifier: workspace:*
+        version: link:../persistence
+      '@plaudern/queue':
+        specifier: workspace:*
+        version: link:../queue
       rxjs:
         specifier: ^7.0.0
         version: 7.8.2
@@ -711,6 +831,9 @@ importers:
       '@plaudern/persistence':
         specifier: workspace:*
         version: link:../persistence
+      '@plaudern/questions':
+        specifier: workspace:*
+        version: link:../questions
       '@plaudern/tasks':
         specifier: workspace:*
         version: link:../tasks

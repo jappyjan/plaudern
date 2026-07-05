@@ -13,6 +13,8 @@ import { TopicsModule } from '@plaudern/topics';
 import { CommitmentsModule } from '@plaudern/commitments';
 import { QuestionsModule } from '@plaudern/questions';
 import { TasksModule } from '@plaudern/tasks';
+import { FactsModule } from '@plaudern/facts';
+import { DecisionsModule } from '@plaudern/decisions';
 import { OpenLoopsModule } from '@plaudern/open-loops';
 import { IngestionModule } from '@plaudern/ingestion';
 import { PlaudSyncModule } from '@plaudern/plaud-sync';
@@ -23,6 +25,7 @@ import { EmailIngestModule } from '@plaudern/email-ingest';
 import { NotificationsModule } from '@plaudern/notifications';
 import { McpModule } from '@plaudern/mcp';
 import { SearchModule } from '@plaudern/search';
+import { ChatModule } from '@plaudern/chat';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -42,6 +45,8 @@ import { HealthController } from './health.controller';
     CommitmentsModule,
     QuestionsModule,
     TasksModule,
+    FactsModule,
+    DecisionsModule,
     OpenLoopsModule,
     ExtractionModule,
     IngestionModule,
@@ -53,6 +58,7 @@ import { HealthController } from './health.controller';
     NotificationsModule,
     McpModule,
     SearchModule,
+    ChatModule,
   ],
   controllers: [HealthController],
 })

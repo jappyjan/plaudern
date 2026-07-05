@@ -8,11 +8,17 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager } from 'typeorm';
 import type { EntityType, RelationType } from '@plaudern/contracts';
 import {
+  CommitmentEntity,
   EntityAliasEntity,
   EntityMentionEntity,
   EntityRegistryEntity,
   EntityRelationEntity,
   EntitySuppressionEntity,
+  PersonalFactCitationEntity,
+  PersonalFactEntity,
+  QuestionEntity,
+  recomputePersonalFactSupersession,
+  type PersonalFactGroupKey,
 } from '@plaudern/persistence';
 import { normalize } from './contact-matching';
 
@@ -82,6 +88,9 @@ export class EntitiesCorrectionService {
 
       await this.repointMentions(manager, victimId, survivorId);
       await this.repointRelations(manager, victimId, survivorId);
+      await this.repointFacts(manager, userId, victimId, survivorId);
+      await this.repointQuestions(manager, victimId, survivorId);
+      await this.repointCommitments(manager, victimId, survivorId);
 
       // Union the victim's known spellings onto the survivor. The user chose the
       // survivor, so its canonical name is kept; the victim's becomes an alias.
@@ -347,6 +356,112 @@ export class EntitiesCorrectionService {
       row.targetEntityId = target;
       await manager.save(row);
     }
+  }
+
+  /**
+   * Repoint the victim's personal facts (JJ-31) to the survivor so a merge never
+   * strands a person's dossier: each fact linked to the victim adopts the
+   * survivor's `personEntityId` + `subjectKey`. On a clash with an identical
+   * survivor fact (same attribute+value), the victim fact's citations are moved
+   * onto the survivor fact (deduping on the (extraction, fact) unique key) and
+   * the victim fact is dropped; any survivor this victim fact had superseded is
+   * un-pointed first so the append-only supersede graph never dangles. The
+   * merged (subject, attribute) groups are then RECOMPUTED — inside this same
+   * merge transaction — so two previously-active exclusive facts (one per
+   * pre-merge entity) collapse to exactly one active fact. Facts recorded under
+   * a raw name before the entity existed are not repointed here — they fold in
+   * on the next extraction, exactly as relations/mentions do.
+   */
+  private async repointFacts(
+    manager: EntityManager,
+    userId: string,
+    victimId: string,
+    survivorId: string,
+  ): Promise<void> {
+    const facts = manager.getRepository(PersonalFactEntity);
+    const citations = manager.getRepository(PersonalFactCitationEntity);
+    const survivorKey = `e:${survivorId}`;
+    const rows = await facts.find({ where: { userId, personEntityId: victimId } });
+    const touchedGroups = new Map<string, PersonalFactGroupKey>();
+    for (const row of rows) {
+      touchedGroups.set(row.normalizedAttribute, {
+        userId,
+        subjectKey: survivorKey,
+        normalizedAttribute: row.normalizedAttribute,
+      });
+      const clash = await facts.findOne({
+        where: {
+          userId,
+          subjectKey: survivorKey,
+          normalizedAttribute: row.normalizedAttribute,
+          normalizedValue: row.normalizedValue,
+        },
+      });
+      if (clash && clash.id !== row.id) {
+        const rowCitations = await citations.find({ where: { factId: row.id } });
+        for (const citation of rowCitations) {
+          const exists = await citations.findOne({
+            where: { extractionId: citation.extractionId, factId: clash.id },
+          });
+          if (exists) {
+            await citations.delete({ id: citation.id });
+            continue;
+          }
+          citation.factId = clash.id;
+          await citations.save(citation);
+        }
+        await facts.update(
+          { supersededByFactId: row.id },
+          { supersededByFactId: null, supersededAt: null },
+        );
+        await facts.delete({ id: row.id });
+        continue;
+      }
+      row.personEntityId = survivorId;
+      row.subjectKey = survivorKey;
+      await facts.save(row);
+    }
+    // Restore the supersession invariant for every group the merge disturbed,
+    // atomically with the merge itself.
+    await recomputePersonalFactSupersession(manager, [...touchedGroups.values()]);
+  }
+
+  /**
+   * Repoint the victim's `questions.counterpartyEntityId` (JJ-34) to the
+   * survivor, so a merge never strands an open/asked question's counterparty
+   * link. This is a loose (no-FK) reference and isn't part of the row's unique
+   * key (inboxItemId, direction, normalizedQuestion), so — unlike mentions and
+   * relations — no dedup/clash handling is needed: a plain bulk update
+   * suffices.
+   */
+  private async repointQuestions(
+    manager: EntityManager,
+    victimId: string,
+    survivorId: string,
+  ): Promise<void> {
+    await manager.update(
+      QuestionEntity,
+      { counterpartyEntityId: victimId },
+      { counterpartyEntityId: survivorId },
+    );
+  }
+
+  /**
+   * Repoint the victim's `commitments.counterpartyEntityId` (JJ-36) to the
+   * survivor, mirroring {@link repointQuestions}: the counterparty link is a
+   * loose reference outside the row's unique key (inboxItemId, direction,
+   * normalizedDescription), so a plain bulk update is safe.
+   */
+  private async repointCommitments(
+    manager: EntityManager,
+    victimId: string,
+    survivorId: string,
+  ): Promise<void> {
+    await manager.update(
+      CommitmentEntity,
+      { counterpartyEntityId: victimId },
+      { counterpartyEntityId: survivorId },
+    );
   }
 
   /**

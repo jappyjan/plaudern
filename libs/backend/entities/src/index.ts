@@ -8,6 +8,8 @@ export * from './entity-contact-resolver.service';
 export * from './entities-registry.service';
 export * from './entities-correction.service';
 export * from './entity-graph.service';
+export * from './dossier.service';
+export * from './dossier.controller';
 export * from './entities.processor';
 export * from './entities.service';
 export * from './entities.controller';

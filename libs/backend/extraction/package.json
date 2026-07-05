@@ -12,6 +12,7 @@
     "@plaudern/contracts": "workspace:*",
     "@plaudern/embeddings": "workspace:*",
     "@plaudern/entities": "workspace:*",
+    "@plaudern/facts": "workspace:*",
     "@plaudern/inbox": "workspace:*",
     "@plaudern/persistence": "workspace:*",
     "@plaudern/speaker-id": "workspace:*",

@@ -7,9 +7,12 @@
   "types": "./src/index.ts",
   "dependencies": {
     "@plaudern/auth": "workspace:*",
+    "@plaudern/commitments": "workspace:*",
     "@plaudern/contracts": "workspace:*",
+    "@plaudern/facts": "workspace:*",
     "@plaudern/inbox": "workspace:*",
     "@plaudern/persistence": "workspace:*",
+    "@plaudern/questions": "workspace:*",
     "@plaudern/queue": "workspace:*"
   },
   "peerDependencies": {

@@ -5,8 +5,11 @@ import {
   AuthSessionEntity,
   CalendarEventEntity,
   CalendarFeedEntity,
+  ChatConversationEntity,
+  ChatMessageEntity,
   CommitmentEntity,
   ConsentSettingsEntity,
+  DecisionEntity,
   EmailSettingsEntity,
   EmbeddingChunkEntity,
   EntityAliasEntity,
@@ -25,6 +28,8 @@ import {
   NotificationDeliveryEntity,
   NotificationSettingsEntity,
   PasskeyCredentialEntity,
+  PersonalFactCitationEntity,
+  PersonalFactEntity,
   PlaudSettingsEntity,
   PushSubscriptionEntity,
   QuestionEntity,
@@ -71,8 +76,12 @@ import { CreateEntityCorrections1720000000027 } from './migrations/1720000000027
 import { ExtractionRunTrigger1720000000028 } from './migrations/1720000000028-ExtractionRunTrigger';
 import { CreateTasks1720000000029 } from './migrations/1720000000029-CreateTasks';
 import { CreateQuestions1720000000030 } from './migrations/1720000000030-CreateQuestions';
+import { CreatePersonalFacts1720000000031 } from './migrations/1720000000031-CreatePersonalFacts';
 import { CreateTopicProposals1720000000032 } from './migrations/1720000000032-CreateTopicProposals';
-import { VoiceProfileSelf1720000000033 } from './migrations/1720000000033-VoiceProfileSelf';
+import { CreateChatTables1720000000033 } from './migrations/1720000000033-CreateChatTables';
+import { AddCommitmentDuplicatesTask1720000000034 } from './migrations/1720000000034-AddCommitmentDuplicatesTask';
+import { CreateDecisions1720000000035 } from './migrations/1720000000035-CreateDecisions';
+import { VoiceProfileSelf1720000000036 } from './migrations/1720000000036-VoiceProfileSelf';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -87,8 +96,13 @@ export const ALL_ENTITIES = [
   TopicProposalEntity,
   CommitmentEntity,
   QuestionEntity,
+  DecisionEntity,
   TaskEntity,
   TaskCitationEntity,
+  PersonalFactEntity,
+  PersonalFactCitationEntity,
+  ChatConversationEntity,
+  ChatMessageEntity,
   EntityRelationEntity,
   EntityAliasEntity,
   EntitySuppressionEntity,
@@ -148,8 +162,12 @@ export const ALL_MIGRATIONS = [
   ExtractionRunTrigger1720000000028,
   CreateTasks1720000000029,
   CreateQuestions1720000000030,
+  CreatePersonalFacts1720000000031,
   CreateTopicProposals1720000000032,
-  VoiceProfileSelf1720000000033,
+  CreateChatTables1720000000033,
+  AddCommitmentDuplicatesTask1720000000034,
+  CreateDecisions1720000000035,
+  VoiceProfileSelf1720000000036,
 ];
 
 /**

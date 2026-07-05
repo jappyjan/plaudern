@@ -39,11 +39,14 @@ export const openLoopSchema = z.object({
   /** Human-readable summary: the task title, the commitment description, the question. */
   title: z.string(),
   /**
-   * For commitments, which way the obligation points (owed_by_me / owed_to_me);
-   * null for kinds without a direction (tasks, questions).
+   * Which way the obligation points, for the directional kinds; null for tasks.
+   * Commitments carry it verbatim (owed_by_me / owed_to_me). Questions are
+   * NORMALIZED into the same who-owes-whom semantic so one filter spans both:
+   * asked_of_me (I owe an answer) → owed_by_me; asked_by_me (their answer is
+   * owed to me) → owed_to_me.
    */
   direction: commitmentDirectionSchema.nullable(),
-  /** The other party, when the source names one (commitments); else null. */
+  /** The other party, when the source names one (commitments, questions); else null. */
   counterpartyName: z.string().nullable(),
   /** Absolute due instant (ISO) when the source resolved one; else null. */
   dueDate: z.string().nullable(),

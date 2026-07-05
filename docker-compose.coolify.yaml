@@ -130,6 +130,27 @@ services:
       - TASKS_API_KEY=${SUMMARIZATION_API_KEY}
       - TASKS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
       - TASKS_MODEL=${TASKS_MODEL:-deepseek-chat}
+      # Personal-fact extraction (JJ-31) reuses the summarization key/endpoint; a
+      # non-empty key auto-enables it. Facts are scoped to registry people and
+      # accumulate append-only with supersession (newer facts replace older
+      # without deleting them).
+      - FACTS_API_KEY=${SUMMARIZATION_API_KEY}
+      - FACTS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
+      - FACTS_MODEL=${FACTS_MODEL:-deepseek-chat}
+      # Decision-log extraction (JJ-33) reuses the summarization key/endpoint; a
+      # non-empty key auto-enables it. Decisions ("we decided to go with the
+      # cheaper option") accumulate into a searchable log with context,
+      # participants, and reasoning. Only the model is independently overridable
+      # via DECISIONS_MODEL.
+      - DECISIONS_API_KEY=${SUMMARIZATION_API_KEY}
+      - DECISIONS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
+      - DECISIONS_MODEL=${DECISIONS_MODEL:-deepseek-chat}
+      # Memory chat (JJ-37) reuses the summarization key/endpoint; a non-empty
+      # key auto-enables it. Retrieval quality depends on the embeddings
+      # provider above (keyword search still works without it).
+      - CHAT_API_KEY=${SUMMARIZATION_API_KEY}
+      - CHAT_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
+      - CHAT_MODEL=${CHAT_MODEL:-deepseek-chat}
       # Transcription: the hosted ElevenLabs Scribe API — fill in
       # ELEVENLABS_API_KEY (get one at elevenlabs.io). Audio bytes are uploaded
       # to ElevenLabs directly (storage stays private).

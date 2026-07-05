@@ -13,8 +13,10 @@ import { TopicsPage } from './pages/TopicsPage';
 import { TopicDetailPage } from './pages/TopicDetailPage';
 import { EntitiesPage } from './pages/EntitiesPage';
 import { EntityDetailPage } from './pages/EntityDetailPage';
+import { DossierPage } from './pages/DossierPage';
 import { GraphViewPage } from './pages/GraphViewPage';
 import { SearchPage } from './pages/SearchPage';
+import { ChatPage } from './pages/ChatPage';
 import { SharePage } from './pages/SharePage';
 import { OpenLoopsPage } from './pages/OpenLoopsPage';
 import {
@@ -162,6 +164,7 @@ export function App() {
               <Route path="/" element={<InboxPage />} />
               <Route path="/open-loops" element={<OpenLoopsPage />} />
               <Route path="/search" element={<SearchPage />} />
+              <Route path="/chat" element={<ChatPage />} />
               <Route path="/items/:id" element={<ItemDetailPage />} />
               <Route path="/calendar" element={<CalendarPage />} />
               <Route path="/contacts" element={<ContactsPage />} />
@@ -171,6 +174,7 @@ export function App() {
               <Route path="/entities" element={<EntitiesPage />} />
               <Route path="/entities/graph" element={<GraphViewPage />} />
               <Route path="/entities/:id" element={<EntityDetailPage />} />
+              <Route path="/entities/:id/dossier" element={<DossierPage />} />
               {/* PWA share-target landing (manifest share_target → GET /share). */}
               <Route path="/share" element={<SharePage />} />
               <Route

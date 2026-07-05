@@ -17,7 +17,12 @@ import {
   InboxItemEntity,
   InboxTombstoneEntity,
   ItemTopicEntity,
+  PersonalFactCitationEntity,
+  PersonalFactEntity,
+  recomputePersonalFactSupersession,
+  type PersonalFactGroupKey,
   QuestionEntity,
+  DecisionEntity,
   RecordingEventLinkEntity,
   RecordingMergeEntity,
   SourcePayloadEntity,
@@ -296,6 +301,7 @@ export class InboxService {
       await em.getRepository(ItemTopicEntity).delete({ inboxItemId: item.id });
       await em.getRepository(CommitmentEntity).delete({ inboxItemId: item.id });
       await em.getRepository(QuestionEntity).delete({ inboxItemId: item.id });
+      await em.getRepository(DecisionEntity).delete({ inboxItemId: item.id });
       // Tasks: remember which tasks this item cited, drop the citations, then
       // hard-delete OPEN tasks left with no citations at all — an open task no
       // recording supports any more is a ghost. Completed/dismissed tasks are
@@ -315,6 +321,44 @@ export class InboxService {
         if (orphaned.length > 0) {
           await em.getRepository(TaskEntity).delete({ id: In(orphaned), status: 'open' });
         }
+      }
+      // Personal facts (JJ-31): remember which (subject, attribute) groups this
+      // item's facts belong to, drop the citations, hard-delete facts left with
+      // no citations at all (a fact no recording supports any more is a ghost),
+      // then RECOMPUTE supersession for the affected groups — so exactly one
+      // exclusive fact per group re-activates (the next-newest citation-live
+      // one) instead of the whole group un-pointing or staying stale.
+      const citedFacts = await em
+        .getRepository(PersonalFactCitationEntity)
+        .find({ where: { inboxItemId: item.id }, select: { factId: true } });
+      const citedFactIds = [...new Set(citedFacts.map((c) => c.factId))];
+      await em.getRepository(PersonalFactCitationEntity).delete({ inboxItemId: item.id });
+      if (citedFactIds.length > 0) {
+        const factRows = await em
+          .getRepository(PersonalFactEntity)
+          .find({ where: { id: In(citedFactIds) } });
+        const factGroups: PersonalFactGroupKey[] = factRows.map((f) => ({
+          userId: f.userId,
+          subjectKey: f.subjectKey,
+          normalizedAttribute: f.normalizedAttribute,
+        }));
+        const remaining = await em
+          .getRepository(PersonalFactCitationEntity)
+          .find({ where: { factId: In(citedFactIds) }, select: { factId: true } });
+        const stillCited = new Set(remaining.map((c) => c.factId));
+        const orphanedFacts = citedFactIds.filter((id) => !stillCited.has(id));
+        if (orphanedFacts.length > 0) {
+          // Un-point pointers at the ghosts before deleting them (no FK backs
+          // supersededByFactId); the recompute below re-elects the winner.
+          await em
+            .getRepository(PersonalFactEntity)
+            .update(
+              { supersededByFactId: In(orphanedFacts) },
+              { supersededByFactId: null, supersededAt: null },
+            );
+          await em.getRepository(PersonalFactEntity).delete({ id: In(orphanedFacts) });
+        }
+        await recomputePersonalFactSupersession(em, factGroups);
       }
       await em.getRepository(ExtractedPayloadEntity).delete({ inboxItemId: item.id });
       await em.getRepository(SourcePayloadEntity).delete({ inboxItemId: item.id });
@@ -375,13 +419,16 @@ export class InboxService {
         await em.getRepository(ItemTopicEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(CommitmentEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(QuestionEntity).delete({ inboxItemId: In(itemIds) });
+        await em.getRepository(DecisionEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(TaskCitationEntity).delete({ inboxItemId: In(itemIds) });
+        await em.getRepository(PersonalFactCitationEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(ExtractedPayloadEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(SourcePayloadEntity).delete({ inboxItemId: In(itemIds) });
       }
       await em.getRepository(VoiceProfileEntity).delete({ userId });
       await em.getRepository(EntityRegistryEntity).delete({ userId });
       await em.getRepository(TaskEntity).delete({ userId });
+      await em.getRepository(PersonalFactEntity).delete({ userId });
       await em.getRepository(InboxItemEntity).delete({ userId });
       await em.getRepository(InboxTombstoneEntity).delete({ userId });
     });

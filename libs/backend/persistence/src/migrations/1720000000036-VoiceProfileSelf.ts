@@ -6,8 +6,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * on existing installs; existing voices default to `false` (no owner set). A
  * partial unique index guarantees at most one self profile per user.
  */
-export class VoiceProfileSelf1720000000033 implements MigrationInterface {
-  name = 'VoiceProfileSelf1720000000033';
+export class VoiceProfileSelf1720000000036 implements MigrationInterface {
+  name = 'VoiceProfileSelf1720000000036';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
