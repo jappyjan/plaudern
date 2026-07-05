@@ -54,6 +54,12 @@ export const extractionKindSchema = z.enum([
   // date ("the results should be in by the 14th", a contract expiry, "let's
   // talk again next month") becomes a calendar-visible reminder (JJ-25).
   'reminders',
+  // Vision/LLM document-understanding of a scanned image or PDF (JJ-30/JJ-16):
+  // classifies the document type (invoice, contract, letter, prescription,
+  // business card, ...) and pulls key fields (amount, IBAN, due/expiry dates,
+  // Kündigungsfrist). Depends on `ocr`; feeds the vault view, deadline
+  // reminders, and business-card contact enrichment.
+  'docmeta',
 ]);
 export type ExtractionKind = z.infer<typeof extractionKindSchema>;
 

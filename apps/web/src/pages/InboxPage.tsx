@@ -8,6 +8,7 @@ import { InboxItemCard } from '../components/InboxItemCard';
 import { NoteModal } from '../components/NoteModal';
 import { RecordModal } from '../components/RecordModal';
 import { UploadFab } from '../components/UploadButton';
+import { ScanFab } from '../components/ScanButton';
 import { LoopIcon, MicIcon, SearchIcon, TextIcon } from '../components/icons';
 
 const PAGE_SIZE = 20;
@@ -241,6 +242,7 @@ export function InboxPage() {
       {/* Thumb-reachable floating actions, kept above the bottom tab bar. */}
       {!selectMode && (
         <div className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] right-4 z-30 flex flex-col items-end gap-3 md:bottom-8">
+          <ScanFab onSaved={() => void refresh()} />
           <UploadFab onSaved={() => void refresh()} />
           <Button
             isIconOnly

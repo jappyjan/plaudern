@@ -37,6 +37,7 @@ export * from './commitment.entity';
 export * from './question.entity';
 export * from './decision.entity';
 export * from './reminder.entity';
+export * from './document-metadata.entity';
 export * from './task.entity';
 export * from './task-citation.entity';
 export * from './personal-fact.entity';

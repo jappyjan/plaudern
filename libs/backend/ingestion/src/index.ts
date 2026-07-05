@@ -4,6 +4,7 @@ export * from './ingestion.service';
 export * from './ingestion.controller';
 export * from './ingestion.module';
 export * from './adapters/audio-source.adapter';
+export * from './adapters/image.adapter';
 export * from './adapters/generic-audio.adapter';
 export * from './adapters/plaud.adapter';
 export * from './adapters/text.adapter';

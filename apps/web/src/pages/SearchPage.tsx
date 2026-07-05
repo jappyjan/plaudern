@@ -19,6 +19,7 @@ const SOURCE_TYPES: { key: SourceType; label: string }[] = [
   { key: 'plaud', label: 'Plaud' },
   { key: 'web', label: 'Web clip' },
   { key: 'email', label: 'Email' },
+  { key: 'image', label: 'Scan' },
 ];
 
 const SOURCE_LABEL: Record<string, string> = Object.fromEntries(

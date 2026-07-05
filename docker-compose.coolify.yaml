@@ -153,6 +153,25 @@ services:
       - REMINDERS_API_KEY=${SUMMARIZATION_API_KEY}
       - REMINDERS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
       - REMINDERS_MODEL=${REMINDERS_MODEL:-deepseek-chat}
+      # Photo/scan OCR (JJ-30) — reads the full text of a scanned image or PDF.
+      # This is a NEW kind that needs a VISION-capable model, so it ships DISABLED
+      # and is NOT wired to the (text-only) summarization key: set OCR_API_KEY to a
+      # vision-capable provider key and point OCR_BASE_URL/OCR_MODEL at a vision
+      # model (e.g. an OpenAI gpt-4o-class model), or OCR_ENABLED=true for a
+      # keyless local vision gateway. Without it, OCR + docmeta stay disabled.
+      - OCR_API_KEY=${OCR_API_KEY:-}
+      - OCR_BASE_URL=${OCR_BASE_URL:-https://api.openai.com/v1}
+      - OCR_MODEL=${OCR_MODEL:-gpt-4o-mini}
+      - OCR_ENABLED=${OCR_ENABLED:-false}
+      # Document understanding / vault (JJ-30/JJ-16) — classifies a scanned
+      # document from its OCR TEXT and pulls key fields (amount, IBAN, expiry,
+      # Kündigungsfrist), which become vault entries + deadline reminders. Reads
+      # text only, so it reuses the summarization key/endpoint like the other LLM
+      # kinds; it only runs after OCR succeeds (which requires the vision key
+      # above). Only the model is independently overridable via DOCMETA_MODEL.
+      - DOCMETA_API_KEY=${SUMMARIZATION_API_KEY}
+      - DOCMETA_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
+      - DOCMETA_MODEL=${DOCMETA_MODEL:-deepseek-chat}
       # Memory chat (JJ-37) reuses the summarization key/endpoint; a non-empty
       # key auto-enables it. Retrieval quality depends on the embeddings
       # provider above (keyword search still works without it).
