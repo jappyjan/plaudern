@@ -8,7 +8,7 @@ import { InboxItemCard } from '../components/InboxItemCard';
 import { NoteModal } from '../components/NoteModal';
 import { RecordModal } from '../components/RecordModal';
 import { UploadFab } from '../components/UploadButton';
-import { MicIcon, SearchIcon, TextIcon } from '../components/icons';
+import { LoopIcon, MicIcon, SearchIcon, TextIcon } from '../components/icons';
 
 const PAGE_SIZE = 20;
 
@@ -141,16 +141,28 @@ export function InboxPage() {
       {!selectMode && (
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-lg font-semibold">Inbox</h1>
-          <Button
-            as={Link}
-            to="/search"
-            isIconOnly
-            variant="flat"
-            size="sm"
-            aria-label="Search your memory"
-          >
-            <SearchIcon className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              as={Link}
+              to="/open-loops"
+              isIconOnly
+              variant="flat"
+              size="sm"
+              aria-label="Open loops"
+            >
+              <LoopIcon className="h-5 w-5" />
+            </Button>
+            <Button
+              as={Link}
+              to="/search"
+              isIconOnly
+              variant="flat"
+              size="sm"
+              aria-label="Search your memory"
+            >
+              <SearchIcon className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
       )}
       {!selectMode && (
