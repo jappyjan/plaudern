@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import type { JournalPeriodType } from '@plaudern/contracts';
 import {
   CalendarEventEntity,
@@ -18,24 +19,31 @@ import {
   usedMarkers,
   type RawJournalSource,
 } from './journal-context';
-import { parentKeyOfDay, periodLabel, periodRange } from './journal-period';
+import { childTypeOf, periodLabel, periodRange, rollupKeyOfChild } from './journal-period';
+
+/** Default number of succeeded versions kept per period (older ones are reaped). */
+const DEFAULT_HISTORY_LIMIT = 5;
 
 /**
  * Executes one journal composition job. For a DAY it gathers that day's signals
  * (non-merged recordings with their summaries/transcripts, plus calendar
- * events) into a numbered, oldest-first source list; for a WEEK/MONTH/YEAR it
- * gathers the daily entries that fall inside it. The sources (plus the current
- * entry, so it UPDATES rather than rewrites) go to the provider, then the new
- * version is persisted. Every source referenced by an in-range `[n]` marker
- * becomes a structural citation; out-of-range markers are stripped so a
- * hallucinated number never renders as a chip. Shared by the inline and BullMQ
- * queues.
+ * events) into a numbered, oldest-first source list; a WEEK/MONTH rolls up from
+ * the DAILY entries and a YEAR from the MONTHLY entries (hierarchical, so every
+ * level stays within the source cap while covering the whole span). The sources
+ * (plus the current entry, so it UPDATES rather than rewrites) go to the
+ * provider, then the new version is persisted. Every source referenced by an
+ * in-range `[n]` marker becomes a structural citation; out-of-range markers are
+ * stripped so a hallucinated number never renders as a chip. After a successful
+ * version the append-only history is pruned to the retention limit. Shared by
+ * the inline and BullMQ queues.
  */
 @Injectable()
 export class JournalProcessor {
   private readonly logger = new Logger(JournalProcessor.name);
+  private readonly historyLimit: number;
 
   constructor(
+    config: ConfigService,
     @Inject(JOURNAL_PROVIDER)
     private readonly provider: JournalProvider,
     @InjectRepository(JournalDocumentEntity)
@@ -44,7 +52,10 @@ export class JournalProcessor {
     private readonly items: Repository<InboxItemEntity>,
     @InjectRepository(CalendarEventEntity)
     private readonly events: Repository<CalendarEventEntity>,
-  ) {}
+  ) {
+    const raw = Number(config.get<string>('JOURNAL_HISTORY_LIMIT', String(DEFAULT_HISTORY_LIMIT)));
+    this.historyLimit = Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : DEFAULT_HISTORY_LIMIT;
+  }
 
   async process(job: JournalJob): Promise<void> {
     const doc = await this.documents.findOne({ where: { id: job.documentId } });
@@ -107,6 +118,10 @@ export class JournalProcessor {
       this.logger.log(
         `composed ${job.periodType} journal ${job.periodKey} v${doc.version} ` +
           `(${sources.length} source(s), ${citations.length} cited)`,
+      );
+      // Best-effort retention prune — never let it fail the (already succeeded) job.
+      await this.pruneHistory(job).catch((err) =>
+        this.logger.warn(`journal history prune failed for ${job.periodKey}: ${(err as Error).message}`),
       );
     } catch (err) {
       const message = (err as Error).message;
@@ -177,34 +192,64 @@ export class JournalProcessor {
     return raw;
   }
 
-  /** A rollup's sources: the daily entries whose day falls inside the period. */
+  /**
+   * A rollup's sources: its CHILD entries — daily entries for a week/month, and
+   * monthly entries for a year — so a "Your 2026" composes from twelve months
+   * (covering the whole span) rather than truncating to the most-recent days.
+   */
   private async collectRollupSources(
     userId: string,
     periodType: JournalPeriodType,
     periodKey: string,
   ): Promise<RawJournalSource[]> {
-    const dailies = await this.documents.find({
-      where: { userId, periodType: 'day', status: 'succeeded' },
+    const rollupType = periodType as Exclude<JournalPeriodType, 'day'>;
+    const childType = childTypeOf(rollupType);
+    const children = await this.documents.find({
+      where: { userId, periodType: childType, status: 'succeeded' },
       order: { periodKey: 'ASC', version: 'DESC' },
     });
-    const parent = periodType as Exclude<JournalPeriodType, 'day'>;
     const seen = new Set<string>();
     const raw: RawJournalSource[] = [];
-    for (const d of dailies) {
-      if (parentKeyOfDay(d.periodKey, parent) !== periodKey) continue;
-      if (seen.has(d.periodKey)) continue; // keep only the highest succeeded version
-      seen.add(d.periodKey);
-      if (!d.markdown) continue;
+    for (const c of children) {
+      if (rollupKeyOfChild(rollupType, c.periodKey) !== periodKey) continue;
+      if (seen.has(c.periodKey)) continue; // keep only the highest succeeded version
+      seen.add(c.periodKey);
+      if (!c.markdown) continue;
       raw.push({
         kind: 'journal',
-        refId: d.periodKey,
-        title: periodLabel('day', d.periodKey),
-        occurredAt: `${d.periodKey}T00:00:00.000Z`,
-        text: d.markdown,
+        refId: c.periodKey,
+        title: periodLabel(childType, c.periodKey),
+        occurredAt: periodRange(childType, c.periodKey).startIso,
+        text: c.markdown,
         startSeconds: null,
       });
     }
     return raw;
+  }
+
+  /**
+   * Reap append-only history down to the retention limit: keep the newest
+   * `historyLimit` succeeded versions (the current entry is always among them),
+   * delete older succeeded rows. Never touches queued/processing/failed rows.
+   */
+  private async pruneHistory(job: JournalJob): Promise<void> {
+    const succeeded = await this.documents.find({
+      where: {
+        userId: job.userId,
+        periodType: job.periodType,
+        periodKey: job.periodKey,
+        status: 'succeeded',
+      },
+      order: { version: 'DESC' },
+      select: { id: true },
+    });
+    const stale = succeeded.slice(this.historyLimit).map((r) => r.id);
+    if (stale.length > 0) {
+      await this.documents.delete({ id: In(stale) });
+      this.logger.log(
+        `pruned ${stale.length} old ${job.periodType} journal version(s) for ${job.periodKey}`,
+      );
+    }
   }
 }
 

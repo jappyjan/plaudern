@@ -140,6 +140,29 @@ export function periodHasEnded(
 /** The coarser granularities a rollup can compose (day is the leaf). */
 export const ROLLUP_TYPES: Array<Exclude<JournalPeriodType, 'day'>> = ['week', 'month', 'year'];
 
+/**
+ * The granularity a rollup composes FROM. Weekly and monthly reviews compose
+ * from the daily entries; a yearly review composes from the MONTHLY reviews
+ * (hierarchical), so a "Your 2026" covers all twelve months instead of
+ * truncating to the ~60 most-recent days. This keeps every level's source count
+ * well under the generation cap while covering the whole span.
+ */
+export function childTypeOf(rollupType: Exclude<JournalPeriodType, 'day'>): JournalPeriodType {
+  return rollupType === 'year' ? 'month' : 'day';
+}
+
+/**
+ * The rollup key a child entry rolls up into. For a week/month the child is a
+ * day key (`YYYY-MM-DD`); for a year the child is a month key (`YYYY-MM`).
+ */
+export function rollupKeyOfChild(
+  rollupType: Exclude<JournalPeriodType, 'day'>,
+  childKey: string,
+): string {
+  if (rollupType === 'year') return childKey.slice(0, 4); // childKey is a month
+  return parentKeyOfDay(childKey, rollupType); // childKey is a day
+}
+
 const MONTH_NAMES = [
   'January',
   'February',

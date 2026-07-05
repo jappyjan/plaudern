@@ -210,7 +210,9 @@ export function JournalEntryPage() {
         citation.startSeconds !== null ? `?t=${Math.max(0, Math.floor(citation.startSeconds))}` : '';
       navigate(`/items/${citation.refId}${seek}`);
     } else if (citation.kind === 'journal') {
-      navigate(`/journal/day/${citation.refId}`);
+      // Rollups cite their children: a year cites months, a week/month cites days.
+      const childType = periodType === 'year' ? 'month' : 'day';
+      navigate(`/journal/${childType}/${citation.refId}`);
     } else {
       navigate('/calendar');
     }

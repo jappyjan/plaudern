@@ -103,6 +103,25 @@ describe('JournalService', () => {
     expect(await dataSource.getRepository(JournalDocumentEntity).count()).toBe(1);
   });
 
+  it('coalesces onto an in-flight (processing) generation — no duplicate job', async () => {
+    // The straddle a hourly sweep hits: a version is mid-flight (processing),
+    // there is no queued row, and latestSucceeded is stale. Must NOT spawn a
+    // second concurrent generation for the same period.
+    const docs = dataSource.getRepository(JournalDocumentEntity);
+    const processing = await docs.save({
+      userId: USER,
+      periodType: 'day',
+      periodKey: '2026-06-14',
+      version: 1,
+      status: 'processing',
+    });
+    const service = build();
+    const result = await service.enqueueGeneration(USER, 'day', '2026-06-14');
+    expect(result).toBe(processing.id);
+    expect(enqueued).toHaveLength(0);
+    expect(await docs.count()).toBe(1);
+  });
+
   it('increments the version past the latest succeeded entry', async () => {
     await seedSucceededDaily('2026-06-14');
     const service = build();

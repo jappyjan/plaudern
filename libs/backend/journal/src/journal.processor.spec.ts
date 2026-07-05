@@ -1,3 +1,4 @@
+import type { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import {
   ALL_ENTITIES,
@@ -15,6 +16,10 @@ import type {
 } from './journal.provider';
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
+
+function fakeConfig(overrides: Record<string, string> = {}): ConfigService {
+  return { get: (key: string, def?: string) => overrides[key] ?? def } as unknown as ConfigService;
+}
 
 function fakeProvider(
   respond: (input: JournalProviderInput) => JournalProviderResult,
@@ -48,8 +53,12 @@ describe('JournalProcessor', () => {
     await dataSource.destroy();
   });
 
-  function build(provider: JournalProvider): JournalProcessor {
+  function build(
+    provider: JournalProvider,
+    config: Record<string, string> = {},
+  ): JournalProcessor {
     return new JournalProcessor(
+      fakeConfig(config),
       provider,
       dataSource.getRepository(JournalDocumentEntity),
       dataSource.getRepository(InboxItemEntity),
@@ -181,6 +190,77 @@ describe('JournalProcessor', () => {
     expect(row.status).toBe('succeeded');
     expect(row.citations!.map((c) => c.refId)).toEqual(['2026-06-10', '2026-06-20']);
     expect(row.citations!.every((c) => c.kind === 'journal')).toBe(true);
+  });
+
+  it('composes a YEAR hierarchically from the monthly entries (not the raw days)', async () => {
+    const docs = dataSource.getRepository(JournalDocumentEntity);
+    // A year full of monthly reviews plus a stray daily that must NOT be pulled in.
+    for (const m of ['2026-01', '2026-06', '2026-12']) {
+      await docs.save({
+        userId: USER,
+        periodType: 'month',
+        periodKey: m,
+        version: 1,
+        status: 'succeeded',
+        markdown: `Month ${m} in review [1].`,
+        citations: [],
+        sourceItemCount: 3,
+      });
+    }
+    await docs.save({
+      userId: USER,
+      periodType: 'day',
+      periodKey: '2026-06-15',
+      version: 1,
+      status: 'succeeded',
+      markdown: 'A single day [1].',
+      citations: [],
+      sourceItemCount: 1,
+    });
+    const documentId = await queuedDoc('year', '2026');
+
+    const provider = fakeProvider(() => ({ markdown: 'A big year [1][2][3].' }));
+    await build(provider).process({ documentId, userId: USER, periodType: 'year', periodKey: '2026' });
+
+    const input = provider.calls[0];
+    // Sources are the three MONTHS, in order — the day is not a direct child of a year.
+    expect(input.sources.map((s) => s.kind)).toEqual(['journal', 'journal', 'journal']);
+    const row = await docs.findOneByOrFail({ id: documentId });
+    expect(row.citations!.map((c) => c.refId)).toEqual(['2026-01', '2026-06', '2026-12']);
+  });
+
+  it('prunes old succeeded versions past the retention limit after a success', async () => {
+    const docs = dataSource.getRepository(JournalDocumentEntity);
+    await seedRecording('2026-06-14T08:00:00.000Z', 'A', 'Something happened.');
+    // Three older succeeded versions already on record.
+    for (const v of [1, 2, 3]) {
+      await docs.save({
+        userId: USER,
+        periodType: 'day',
+        periodKey: '2026-06-14',
+        version: v,
+        status: 'succeeded',
+        markdown: `v${v}`,
+        citations: [],
+        sourceItemCount: 1,
+      });
+    }
+    const documentId = await queuedDoc('day', '2026-06-14', 4);
+    const provider = fakeProvider(() => ({ markdown: 'Newest [1].' }));
+    // Retain only the newest 2 succeeded versions.
+    await build(provider, { JOURNAL_HISTORY_LIMIT: '2' }).process({
+      documentId,
+      userId: USER,
+      periodType: 'day',
+      periodKey: '2026-06-14',
+    });
+
+    const remaining = await docs.find({
+      where: { periodType: 'day', periodKey: '2026-06-14', status: 'succeeded' },
+      order: { version: 'DESC' },
+    });
+    // Newest two kept (v4 current + v3); v1 and v2 reaped.
+    expect(remaining.map((r) => r.version)).toEqual([4, 3]);
   });
 
   it('passes the previous entry so composition updates rather than rewrites', async () => {

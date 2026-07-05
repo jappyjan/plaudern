@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import type {
   JournalDocumentResponse,
   JournalPeriodListResponse,
@@ -18,9 +18,10 @@ import { JOURNAL_QUEUE, type JournalQueue } from './journal.job';
 import { previewOf } from './journal-context';
 import {
   ROLLUP_TYPES,
+  childTypeOf,
   isValidPeriodKey,
-  parentKeyOfDay,
   periodHasEnded,
+  rollupKeyOfChild,
 } from './journal-period';
 
 /** One period the sweep should (re)compose. */
@@ -68,10 +69,14 @@ export class JournalService {
 
   /**
    * Append a fresh `queued` version for a period and hand it to the queue.
-   * Coalescing: if a generation is already queued (not yet started) for the
-   * period, that one will pick up the latest signals when it runs, so no second
-   * row is stacked. Returns the (new or pending) document id, or null when
-   * disabled or a version race was lost.
+   * Coalescing: if a generation is already queued OR in-flight (`processing`)
+   * for the period, do not stack a second row — a hourly sweep that fires while
+   * a worker is still running must NOT spawn a duplicate concurrent generation.
+   * Any signal that landed during that run is re-derived as stale on a later
+   * sweep (staleness is measured against the enqueue/`createdAt` time, which
+   * precedes the worker's source snapshot), so nothing is dropped. Returns the
+   * (new or pending) document id, or null when disabled or a version race was
+   * lost.
    */
   async enqueueGeneration(
     userId: string,
@@ -80,10 +85,11 @@ export class JournalService {
   ): Promise<string | null> {
     if (!this.provider.enabled) return null;
 
-    const alreadyQueued = await this.documents.findOne({
-      where: { userId, periodType, periodKey, status: 'queued' },
+    const inFlight = await this.documents.findOne({
+      where: { userId, periodType, periodKey, status: In(['queued', 'processing']) },
+      order: { version: 'DESC' },
     });
-    if (alreadyQueued) return alreadyQueued.id;
+    if (inFlight) return inFlight.id;
 
     const nextVersion = (await this.maxVersion(userId, periodType, periodKey)) + 1;
     let row: JournalDocumentEntity;
@@ -305,34 +311,38 @@ export class JournalService {
   }
 
   /**
-   * Ended weeks/months/years that have at least one succeeded daily entry and
-   * whose rollup is missing or stale (a daily was composed after the rollup).
-   * Only ended periods are swept — reviews are retrospective; a manual
-   * regenerate can still compose the current period on demand.
+   * Ended weeks/months/years whose rollup is missing or stale (a child entry was
+   * composed after the rollup). Composition is HIERARCHICAL: weeks and months
+   * roll up from the DAILY entries, years roll up from the MONTHLY entries — so
+   * a candidate only appears once its children exist, and staleness propagates
+   * upward as a regenerated child gets a newer `createdAt`. Only ended periods
+   * are swept — reviews are retrospective; a manual regenerate can still compose
+   * the current period on demand.
    */
   async rollupsNeedingComposition(now: Date = new Date()): Promise<JournalTarget[]> {
-    const dailies = await this.documents.find({
-      where: { periodType: 'day', status: 'succeeded' },
-      select: { userId: true, periodKey: true, createdAt: true },
-    });
-    // `${userId}|${type}|${parentKey}` -> newest child daily createdAt (ms)
+    // `${userId}|${rollupType}|${rollupKey}` -> newest child createdAt (ms)
     const childFreshness = new Map<string, number>();
-    for (const d of dailies) {
-      for (const type of ROLLUP_TYPES) {
-        const parentKey = parentKeyOfDay(d.periodKey, type);
-        const k = `${d.userId}|${type}|${parentKey}`;
-        childFreshness.set(k, Math.max(childFreshness.get(k) ?? 0, time(d.createdAt)));
+    for (const rollupType of ROLLUP_TYPES) {
+      const childType = childTypeOf(rollupType);
+      const children = await this.documents.find({
+        where: { periodType: childType, status: 'succeeded' },
+        select: { userId: true, periodKey: true, createdAt: true },
+      });
+      for (const c of children) {
+        const rollupKey = rollupKeyOfChild(rollupType, c.periodKey);
+        const k = `${c.userId}|${rollupType}|${rollupKey}`;
+        childFreshness.set(k, Math.max(childFreshness.get(k) ?? 0, time(c.createdAt)));
       }
     }
 
     const targets: JournalTarget[] = [];
     for (const [key, childAt] of childFreshness) {
-      const [userId, type, parentKey] = key.split('|');
+      const [userId, type, rollupKey] = key.split('|');
       const periodType = type as Exclude<JournalPeriodType, 'day'>;
-      if (!periodHasEnded(periodType, parentKey, now)) continue;
-      const doc = await this.latestSucceeded(userId, periodType, parentKey);
+      if (!periodHasEnded(periodType, rollupKey, now)) continue;
+      const doc = await this.latestSucceeded(userId, periodType, rollupKey);
       if (!doc || time(doc.createdAt) < childAt) {
-        targets.push({ userId, periodType, periodKey: parentKey });
+        targets.push({ userId, periodType, periodKey: rollupKey });
       }
     }
     return targets;
@@ -360,13 +370,12 @@ export class JournalService {
     periodType: JournalPeriodType,
     periodKey: string,
   ): Promise<boolean> {
-    const dailies = await this.documents.find({
-      where: { userId, periodType: 'day', status: 'succeeded' },
+    const rollupType = periodType as Exclude<JournalPeriodType, 'day'>;
+    const children = await this.documents.find({
+      where: { userId, periodType: childTypeOf(rollupType), status: 'succeeded' },
       select: { periodKey: true },
     });
-    return dailies.some(
-      (d) => parentKeyOfDay(d.periodKey, periodType as Exclude<JournalPeriodType, 'day'>) === periodKey,
-    );
+    return children.some((c) => rollupKeyOfChild(rollupType, c.periodKey) === periodKey);
   }
 
   private latestSucceeded(
