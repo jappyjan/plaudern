@@ -1,13 +1,25 @@
-import { useEffect, useState } from 'react';
-import { Button, Card, CardBody, CardHeader, Chip, Spinner } from '@heroui/react';
+import { useEffect, useMemo, useState } from 'react';
+import { Button, Card, CardBody, CardHeader, Chip, Input, Spinner } from '@heroui/react';
 import type {
+  EntityContactSuggestionDto,
   EntityDetailWithRelationsDto,
   EntityRelationEdgeDto,
   GraphEntityDto,
+  RegistryEntityDto,
   RelationType,
 } from '@plaudern/contracts';
-import { Link, useParams } from 'react-router-dom';
-import { getEntity, getEntityNeighborhood } from '../lib/api';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import {
+  convertEntityToContact,
+  deleteEntity,
+  getEntity,
+  getEntityContactSuggestions,
+  getEntityNeighborhood,
+  linkEntityContact,
+  listEntities,
+  mergeEntities,
+  unlinkEntityContact,
+} from '../lib/api';
 import {
   ENTITY_TYPE_COLOR,
   ENTITY_TYPE_LABEL,
@@ -15,12 +27,17 @@ import {
 } from '../lib/entityLabels';
 import { formatDateTime } from '../lib/format';
 import { DocumentList, DocumentRow } from '../components/DocumentRow';
-import { BackIcon } from '../components/icons';
+import { EntityEditModal } from '../components/EntityEditModal';
+import { EntityLinkContactModal } from '../components/EntityLinkContactModal';
+import { BackIcon, EditIcon, LinkIcon, PeopleIcon, UnlinkIcon } from '../components/icons';
 
 /**
  * One registry entity: its identity and aliases, the recordings it is mentioned
  * in, and its edges in the knowledge graph grouped by relation type. LLM-stated
- * edges render solid; weak co-occurrence edges are muted.
+ * edges render solid; weak co-occurrence edges are muted. Person entities also
+ * carry their contact-book link, manageable here (link/unlink/convert, JJ-63).
+ * The Manage card hosts merge-duplicate and delete as inline panels — not
+ * modals, which iOS PWAs can drop (heroui#3222).
  */
 export function EntityDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -29,6 +46,11 @@ export function EntityDetailPage() {
   // the connected entities' names/types so we can render them as links.
   const [neighbors, setNeighbors] = useState<Map<string, GraphEntityDto>>(new Map());
   const [error, setError] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [suggestion, setSuggestion] = useState<EntityContactSuggestionDto | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -37,6 +59,7 @@ export function EntityDetailPage() {
     setEntity(null);
     setNeighbors(new Map());
     setError(null);
+    setActionError(null);
     if (!id) return;
 
     void (async () => {
@@ -64,6 +87,26 @@ export function EntityDetailPage() {
     };
   }, [id]);
 
+  // The resolver's best candidate, offered inline for unlinked people. Purely
+  // an enrichment: failures leave the page fully functional.
+  const isUnlinkedPerson = entity?.type === 'person' && !entity.voiceProfileId;
+  useEffect(() => {
+    let cancelled = false;
+    setSuggestion(null);
+    if (!id || !isUnlinkedPerson) return;
+    void (async () => {
+      try {
+        const res = await getEntityContactSuggestions(id);
+        if (!cancelled) setSuggestion(res.suggestions[0] ?? null);
+      } catch {
+        /* non-fatal */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, isUnlinkedPerson]);
+
   if (error) {
     return (
       <div className="flex flex-col gap-4">
@@ -90,6 +133,19 @@ export function EntityDetailPage() {
   }
   const relationGroups = [...groups.entries()];
 
+  // Mutations return the fresh detail DTO, so the page updates in place.
+  const runAction = async (action: () => Promise<EntityDetailWithRelationsDto>) => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      setEntity(await action());
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <BackLink />
@@ -104,14 +160,21 @@ export function EntityDetailPage() {
                 {formatDateTime(entity.firstSeenAt)}
               </p>
             </div>
-            <Chip
-              size="sm"
-              variant="flat"
-              color={ENTITY_TYPE_COLOR[entity.type]}
-              className="shrink-0"
-            >
-              {ENTITY_TYPE_LABEL[entity.type]}
-            </Chip>
+            <div className="flex shrink-0 items-center gap-1">
+              <Chip size="sm" variant="flat" color={ENTITY_TYPE_COLOR[entity.type]}>
+                {ENTITY_TYPE_LABEL[entity.type]}
+              </Chip>
+              <Button
+                isIconOnly
+                size="sm"
+                variant="light"
+                aria-label="Edit entity"
+                isDisabled={busy}
+                onPress={() => setEditOpen(true)}
+              >
+                <EditIcon className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -124,17 +187,97 @@ export function EntityDetailPage() {
             >
               View in graph
             </Button>
-            {entity.voiceProfileId && (
-              <Button
-                as={Link}
-                to={`/contacts/${entity.voiceProfileId}`}
-                size="sm"
-                variant="flat"
-              >
-                View linked contact
-              </Button>
-            )}
           </div>
+
+          {entity.type === 'person' &&
+            (entity.voiceProfileId ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  as={Link}
+                  to={`/contacts/${entity.voiceProfileId}`}
+                  size="sm"
+                  variant="flat"
+                  startContent={<PeopleIcon className="h-4 w-4" />}
+                >
+                  {entity.voiceProfileName ?? 'View linked contact'}
+                </Button>
+                {entity.voiceProfileLinkOrigin === 'auto' && (
+                  <Chip size="sm" variant="flat" title="Linked automatically by name/recording match">
+                    auto-linked
+                  </Chip>
+                )}
+                <Button
+                  size="sm"
+                  variant="light"
+                  color="danger"
+                  isDisabled={busy}
+                  startContent={<UnlinkIcon className="h-4 w-4" />}
+                  onPress={() => void runAction(() => unlinkEntityContact(entity.id))}
+                >
+                  Unlink
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {suggestion && (
+                  <div className="flex flex-col gap-1 rounded-medium bg-default-50 p-3">
+                    <p className="text-sm">
+                      Is this{' '}
+                      <span className="font-medium">
+                        {suggestion.name ?? 'an unnamed contact'}
+                      </span>
+                      ?{' '}
+                      <span className="text-default-500">
+                        {Math.round(suggestion.confidence * 100)}% match
+                      </span>
+                    </p>
+                    {suggestion.reasons.length > 0 && (
+                      <p className="text-xs text-default-500">{suggestion.reasons.join(' · ')}</p>
+                    )}
+                    <Button
+                      size="sm"
+                      color="primary"
+                      variant="flat"
+                      className="self-start"
+                      isDisabled={busy}
+                      startContent={<LinkIcon className="h-4 w-4" />}
+                      onPress={() =>
+                        void runAction(() => linkEntityContact(entity.id, suggestion.voiceProfileId))
+                      }
+                    >
+                      Link to {suggestion.name ?? 'this contact'}
+                    </Button>
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    isDisabled={busy}
+                    startContent={<LinkIcon className="h-4 w-4" />}
+                    onPress={() => setLinkOpen(true)}
+                  >
+                    Link to contact
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    isDisabled={busy}
+                    startContent={<PeopleIcon className="h-4 w-4" />}
+                    onPress={() => void runAction(() => convertEntityToContact(entity.id))}
+                  >
+                    Add to contacts
+                  </Button>
+                  {entity.voiceProfileLinkOrigin === 'suppressed' && (
+                    <Chip size="sm" variant="flat" title="You unlinked this entity; it won't re-link automatically">
+                      auto-link off
+                    </Chip>
+                  )}
+                </div>
+              </div>
+            ))}
+
+          {actionError && <p className="text-sm text-danger">{actionError}</p>}
 
           {entity.aliases.length > 0 && (
             <div className="flex flex-col gap-1">
@@ -150,6 +293,8 @@ export function EntityDetailPage() {
           )}
         </CardBody>
       </Card>
+
+      <ManageCard entity={entity} onMerged={setEntity} />
 
       <Card>
         <CardHeader className="pb-0">
@@ -200,6 +345,220 @@ export function EntityDetailPage() {
           />
         ))}
       </DocumentList>
+
+      <EntityEditModal
+        isOpen={editOpen}
+        entity={entity}
+        onClose={() => setEditOpen(false)}
+        onSaved={setEntity}
+      />
+      <EntityLinkContactModal
+        isOpen={linkOpen}
+        entity={entity}
+        onClose={() => setLinkOpen(false)}
+        onLinked={setEntity}
+      />
+    </div>
+  );
+}
+
+type Panel = 'merge' | 'delete';
+
+/**
+ * Merge & delete tooling (JJ-63) as inline panels (one open at a time), kept
+ * out of modals on purpose: iOS PWAs can drop HeroUI modal opens
+ * (heroui#3222). Rename/retype lives in EntityEditModal, contact linking in
+ * the identity card — this card owns the destructive registry corrections.
+ */
+function ManageCard({
+  entity,
+  onMerged,
+}: {
+  entity: EntityDetailWithRelationsDto;
+  onMerged: (fresh: EntityDetailWithRelationsDto) => void;
+}) {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState<Panel | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function toggle(panel: Panel) {
+    setError(null);
+    setOpen((cur) => (cur === panel ? null : panel));
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-0">
+        <h2 className="text-sm font-semibold">Manage</h2>
+      </CardHeader>
+      <CardBody className="gap-3">
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="flat" onPress={() => toggle('merge')}>
+            Merge duplicate
+          </Button>
+          <Button size="sm" variant="flat" color="danger" onPress={() => toggle('delete')}>
+            Delete
+          </Button>
+        </div>
+
+        {error && (
+          <div className="rounded-medium bg-danger-50 p-2 text-xs text-danger">{error}</div>
+        )}
+
+        {open === 'merge' && (
+          <MergePanel
+            entity={entity}
+            busy={busy}
+            onMerge={(victimId) => {
+              setBusy(true);
+              setError(null);
+              void mergeEntities(entity.id, victimId)
+                .then((fresh) => {
+                  setOpen(null);
+                  onMerged(fresh);
+                })
+                .catch((cause: unknown) => {
+                  setError(cause instanceof Error ? cause.message : String(cause));
+                })
+                .finally(() => setBusy(false));
+            }}
+          />
+        )}
+
+        {open === 'delete' && (
+          <div className="flex flex-col gap-2 rounded-medium bg-default-100 p-3">
+            <p className="text-sm">
+              Delete <span className="font-semibold">{entity.canonicalName}</span>? Its mentions and
+              relations are removed and it will not be recreated by future processing.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                color="danger"
+                isLoading={busy}
+                onPress={() => {
+                  setBusy(true);
+                  setError(null);
+                  void deleteEntity(entity.id)
+                    .then(() => navigate('/entities'))
+                    .catch((cause: unknown) => {
+                      setError(cause instanceof Error ? cause.message : String(cause));
+                      setBusy(false);
+                    });
+                }}
+              >
+                Delete permanently
+              </Button>
+              <Button size="sm" variant="light" onPress={() => setOpen(null)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
+function MergePanel({
+  entity,
+  busy,
+  onMerge,
+}: {
+  entity: EntityDetailWithRelationsDto;
+  busy: boolean;
+  onMerge: (victimId: string) => void;
+}) {
+  const [all, setAll] = useState<RegistryEntityDto[] | null>(null);
+  const [query, setQuery] = useState('');
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      // Include unreferenced ghosts so any stray duplicate is mergeable.
+      const res = await listEntities(undefined, true).catch(() => null);
+      if (!cancelled && res) setAll(res.entities);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Only same-type entities can merge (retype first otherwise); never itself.
+  const candidates = useMemo(() => {
+    if (!all) return [];
+    const needle = query.trim().toLowerCase();
+    return all
+      .filter((e) => e.id !== entity.id && e.type === entity.type)
+      .filter(
+        (e) =>
+          !needle ||
+          e.canonicalName.toLowerCase().includes(needle) ||
+          e.aliases.some((a) => a.toLowerCase().includes(needle)),
+      )
+      .slice(0, 25);
+  }, [all, query, entity.id, entity.type]);
+
+  const typeLabel = ENTITY_TYPE_LABEL[entity.type].toLowerCase();
+
+  return (
+    <div className="flex flex-col gap-2 rounded-medium bg-default-100 p-3">
+      <p className="text-xs text-default-500">
+        Pick another {typeLabel} to merge INTO{' '}
+        <span className="font-semibold">{entity.canonicalName}</span>. Its aliases, mentions and
+        relations move here; it is then deleted and will not be recreated.
+      </p>
+      <Input
+        size="sm"
+        label="Search entities"
+        placeholder="Name or alias…"
+        value={query}
+        onValueChange={setQuery}
+        isClearable
+        onClear={() => setQuery('')}
+      />
+      {all === null ? (
+        <Spinner size="sm" />
+      ) : candidates.length === 0 ? (
+        <p className="text-xs text-default-500">No other {typeLabel} entities match.</p>
+      ) : (
+        <div className="flex flex-col gap-1">
+          {candidates.map((c) =>
+            confirmId === c.id ? (
+              <div
+                key={c.id}
+                className="flex items-center justify-between gap-2 rounded-medium bg-warning-50 p-2"
+              >
+                <span className="text-sm">Merge “{c.canonicalName}” in?</span>
+                <div className="flex gap-1">
+                  <Button size="sm" color="primary" isLoading={busy} onPress={() => onMerge(c.id)}>
+                    Confirm
+                  </Button>
+                  <Button size="sm" variant="light" onPress={() => setConfirmId(null)}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <button
+                key={c.id}
+                type="button"
+                className="flex items-center justify-between gap-2 rounded-medium p-2 text-left hover:bg-default-200"
+                onClick={() => setConfirmId(c.id)}
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{c.canonicalName}</p>
+                  <p className="text-xs text-default-500">
+                    {c.mentionCount} recording{c.mentionCount === 1 ? '' : 's'}
+                  </p>
+                </div>
+              </button>
+            ),
+          )}
+        </div>
+      )}
     </div>
   );
 }

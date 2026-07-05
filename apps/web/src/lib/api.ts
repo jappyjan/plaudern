@@ -88,10 +88,21 @@ import {
   type TopicItemsResponse,
   type TopicListResponse,
   type UpdateTopicRequest,
+  itemTasksResponseSchema,
+  taskListResponseSchema,
+  taskSchema,
+  type ItemTasksResponse,
+  type TaskDto,
+  type TaskListResponse,
+  type TaskStatus,
   entityListResponseSchema,
   entityDetailWithRelationsSchema,
   entityNeighborhoodResponseSchema,
   entityConnectResponseSchema,
+  autoLinkEntitiesResponseSchema,
+  entityContactSuggestionsResponseSchema,
+  type AutoLinkEntitiesResponse,
+  type EntityContactSuggestionsResponse,
   type EntityListResponse,
   type EntityDetailWithRelationsDto,
   type EntityNeighborhoodResponse,
@@ -107,6 +118,7 @@ import {
   type CommitmentStatus,
   type ItemCommitmentsResponse,
   type UpdateCommitmentStatusRequest,
+  type UpdateEntityRequest,
   searchResponseSchema,
   similarResponseSchema,
   type SearchRequest,
@@ -478,6 +490,66 @@ export async function getEntity(id: string): Promise<EntityDetailWithRelationsDt
   return entityDetailWithRelationsSchema.parse(await requestJson(`/entities/${id}`));
 }
 
+/** Correct a registry entity: rename it and/or change its type. */
+export async function updateEntity(
+  id: string,
+  req: UpdateEntityRequest,
+): Promise<EntityDetailWithRelationsDto> {
+  return entityDetailWithRelationsSchema.parse(
+    await requestJson(`/entities/${id}`, { method: 'PATCH', body: JSON.stringify(req) }),
+  );
+}
+
+/**
+ * Ranked contact candidates for a person entity, straight from the identity
+ * resolver: confidence plus human-readable evidence (name affinity, whose
+ * voice is in the recordings, shared knowledge-graph connections).
+ */
+export async function getEntityContactSuggestions(
+  id: string,
+): Promise<EntityContactSuggestionsResponse> {
+  return entityContactSuggestionsResponseSchema.parse(
+    await requestJson(`/entities/${id}/contact-suggestions`),
+  );
+}
+
+/** Manually link a person entity to a contact-book voice profile. */
+export async function linkEntityContact(
+  id: string,
+  voiceProfileId: string,
+): Promise<EntityDetailWithRelationsDto> {
+  return entityDetailWithRelationsSchema.parse(
+    await requestJson(`/entities/${id}/contact-link`, {
+      method: 'PUT',
+      body: JSON.stringify({ voiceProfileId }),
+    }),
+  );
+}
+
+/** Unlink an entity from the contact book; auto-linking won't re-link it. */
+export async function unlinkEntityContact(id: string): Promise<EntityDetailWithRelationsDto> {
+  return entityDetailWithRelationsSchema.parse(
+    await requestJson(`/entities/${id}/contact-link`, { method: 'DELETE' }),
+  );
+}
+
+/** Promote a person entity to a new confirmed contact and link it. */
+export async function convertEntityToContact(id: string): Promise<EntityDetailWithRelationsDto> {
+  return entityDetailWithRelationsSchema.parse(
+    await requestJson(`/entities/${id}/convert-to-contact`, { method: 'POST' }),
+  );
+}
+
+/**
+ * Re-run contact auto-linking over every unlinked person entity — e.g. after
+ * naming a speaker in the contact book. Returns how many entities linked up.
+ */
+export async function autoLinkEntities(): Promise<AutoLinkEntitiesResponse> {
+  return autoLinkEntitiesResponseSchema.parse(
+    await requestJson('/entities/auto-link', { method: 'POST' }),
+  );
+}
+
 /** One hop of the graph around an entity: its edges plus the connected entities. */
 export async function getEntityNeighborhood(
   id: string,
@@ -507,6 +579,30 @@ export async function connectEntities(
   if (opts?.maxDepth !== undefined) query.set('maxDepth', String(opts.maxDepth));
   if (opts?.includeCooccurrence === false) query.set('includeCooccurrence', 'false');
   return entityConnectResponseSchema.parse(await requestJson(`/entities/graph/connect?${query}`));
+}
+
+/**
+ * Merge & suppress tooling (JJ-63). Each mutation returns the refreshed entity
+ * detail (mentions + relations), so the detail page reloads from one call.
+ * Durability against re-extraction is enforced server-side.
+ */
+
+/** Merge `victimId` INTO `survivorId` (the survivor is kept). */
+export async function mergeEntities(
+  survivorId: string,
+  victimId: string,
+): Promise<EntityDetailWithRelationsDto> {
+  return entityDetailWithRelationsSchema.parse(
+    await requestJson(`/entities/${survivorId}/merge`, {
+      method: 'POST',
+      body: JSON.stringify({ victimId }),
+    }),
+  );
+}
+
+/** Delete/suppress an entity so re-extraction cannot recreate it. */
+export async function deleteEntity(id: string): Promise<void> {
+  await requestVoid(`/entities/${id}`, { method: 'DELETE' });
 }
 
 export async function listCalendarFeeds(): Promise<CalendarFeedsResponse> {
@@ -683,6 +779,31 @@ export async function updateCommitmentStatus(
 ): Promise<CommitmentDto> {
   return commitmentSchema.parse(
     await requestJson(`/commitments/${id}`, { method: 'PATCH', body: JSON.stringify(req) }),
+  );
+}
+
+/** The user's deduplicated tasks (JJ-35), optionally filtered by status. */
+export async function listTasks(status?: TaskStatus): Promise<TaskListResponse> {
+  const suffix = status ? `?status=${encodeURIComponent(status)}` : '';
+  return taskListResponseSchema.parse(await requestJson(`/tasks${suffix}`));
+}
+
+/** Change a task's lifecycle status (complete / dismiss / reopen). */
+export async function updateTaskStatus(id: string, status: TaskStatus): Promise<TaskDto> {
+  return taskSchema.parse(
+    await requestJson(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+  );
+}
+
+/** An item's extracted tasks plus the extraction pipeline status. */
+export async function getItemTasks(itemId: string): Promise<ItemTasksResponse> {
+  return itemTasksResponseSchema.parse(await requestJson(`/inbox/${itemId}/tasks`));
+}
+
+/** Re-run task extraction for an item; returns the refreshed read model. */
+export async function retryItemTasks(itemId: string): Promise<ItemTasksResponse> {
+  return itemTasksResponseSchema.parse(
+    await requestJson(`/inbox/${itemId}/tasks/retry`, { method: 'POST' }),
   );
 }
 

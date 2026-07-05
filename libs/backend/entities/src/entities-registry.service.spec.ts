@@ -1,19 +1,19 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import {
   ALL_ENTITIES,
+  EntityAliasEntity,
   EntityMentionEntity,
   EntityRegistryEntity,
+  EntitySuppressionEntity,
   ExtractedPayloadEntity,
   InboxItemEntity,
   VoiceProfileEntity,
 } from '@plaudern/persistence';
 import type { ExtractedEntity } from '@plaudern/contracts';
-import {
-  EntitiesRegistryService,
-  isUniqueViolation,
-  normalize,
-} from './entities-registry.service';
+import { normalize } from './contact-matching';
+import { EntitiesCorrectionService } from './entities-correction.service';
+import { EntitiesRegistryService, isUniqueViolation } from './entities-registry.service';
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
 
@@ -46,6 +46,7 @@ describe('isUniqueViolation', () => {
 describe('EntitiesRegistryService', () => {
   let dataSource: DataSource;
   let service: EntitiesRegistryService;
+  let corrections: EntitiesCorrectionService;
 
   beforeEach(async () => {
     dataSource = new DataSource({
@@ -60,7 +61,10 @@ describe('EntitiesRegistryService', () => {
       dataSource.getRepository(EntityMentionEntity),
       dataSource.getRepository(ExtractedPayloadEntity),
       dataSource.getRepository(VoiceProfileEntity),
+      dataSource.getRepository(EntityAliasEntity),
+      dataSource.getRepository(EntitySuppressionEntity),
     );
+    corrections = new EntitiesCorrectionService(dataSource);
   });
 
   afterEach(async () => {
@@ -231,5 +235,139 @@ describe('EntitiesRegistryService', () => {
     await expect(
       service.detail(USER, '11111111-1111-1111-1111-111111111111'),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('links a diacritic-transliterated exact name at ingest ("Mueller" ↔ "Müller")', async () => {
+    const profileId = await createProfile('Detlef Müller');
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+
+    await service.ingest(USER, item, ext, [
+      { type: 'person', name: 'Detlef Mueller', mentions: [] },
+    ]);
+
+    const [detlef] = await service.list(USER);
+    expect(detlef.voiceProfileId).toBe(profileId);
+    expect(detlef.voiceProfileLinkOrigin).toBe('auto');
+  });
+
+  it('leaves non-exact names unlinked at ingest (the resolver owns fuzzy matching)', async () => {
+    await createProfile('Detlef Müller');
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+
+    await service.ingest(USER, item, ext, [{ type: 'person', name: 'Detlef', mentions: [] }]);
+
+    const [detlef] = await service.list(USER);
+    expect(detlef.voiceProfileId).toBeNull();
+    expect(detlef.voiceProfileLinkOrigin).toBeNull();
+  });
+
+  it('links and unlinks manually; unlink suppresses auto-linking', async () => {
+    const profileId = await createProfile('Angela Merkel');
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+    await service.ingest(USER, item, ext, [{ type: 'person', name: 'Angela Merkel', mentions: [] }]);
+    const [entity] = await service.list(USER);
+    expect(entity.voiceProfileId).toBe(profileId);
+
+    const unlinked = await service.unlinkContact(USER, entity.id);
+    expect(unlinked.voiceProfileId).toBeNull();
+    expect(unlinked.voiceProfileLinkOrigin).toBe('suppressed');
+
+    // A re-ingest may not silently redo the user's unlink.
+    const ext2 = await createEntitiesExtraction(item, new Date('2026-07-01T11:00:00Z'));
+    await service.ingest(USER, item, ext2, [{ type: 'person', name: 'Angela Merkel', mentions: [] }]);
+    expect((await service.detail(USER, entity.id)).voiceProfileId).toBeNull();
+
+    // …but a manual link is always possible.
+    const relinked = await service.linkContact(USER, entity.id, profileId);
+    expect(relinked.voiceProfileId).toBe(profileId);
+    expect(relinked.voiceProfileLinkOrigin).toBe('manual');
+  });
+
+  it('rejects linking a non-person entity or a foreign profile', async () => {
+    const profileId = await createProfile('ACME');
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+    await service.ingest(USER, item, ext, [{ type: 'organization', name: 'ACME', mentions: [] }]);
+    const [org] = await service.list(USER);
+
+    await expect(service.linkContact(USER, org.id, profileId)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+
+    const foreign = await dataSource.getRepository(VoiceProfileEntity).save({
+      userId: '00000000-0000-0000-0000-0000000000bb',
+      name: 'Other Person',
+      status: 'confirmed',
+    });
+    const ext2 = await createEntitiesExtraction(item, new Date('2026-07-01T11:00:00Z'));
+    await service.ingest(USER, item, ext2, [
+      { type: 'organization', name: 'ACME', mentions: [] },
+      { type: 'person', name: 'Zoe', mentions: [] },
+    ]);
+    const zoe = (await service.list(USER)).find((e) => e.canonicalName === 'Zoe')!;
+    await expect(service.linkContact(USER, zoe.id, foreign.id)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('converts a person entity into a new confirmed contact', async () => {
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+    await service.ingest(USER, item, ext, [{ type: 'person', name: 'Detlef Müller', mentions: [] }]);
+    const [entity] = await service.list(USER);
+
+    const converted = await service.convertToContact(USER, entity.id);
+    expect(converted.voiceProfileId).not.toBeNull();
+    expect(converted.voiceProfileLinkOrigin).toBe('manual');
+    expect(converted.voiceProfileName).toBe('Detlef Müller');
+
+    const profile = await dataSource
+      .getRepository(VoiceProfileEntity)
+      .findOneByOrFail({ id: converted.voiceProfileId as string });
+    expect(profile).toMatchObject({ userId: USER, name: 'Detlef Müller', status: 'confirmed' });
+
+    // Converting twice (already linked) is rejected.
+    await expect(service.convertToContact(USER, entity.id)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  // Rename/retype live in the transactional EntitiesCorrectionService (JJ-63);
+  // these cover the registry-visible outcome via its read model.
+  it('renames an entity (keeping the old name as alias) and rejects collisions', async () => {
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+    await service.ingest(USER, item, ext, [
+      { type: 'person', name: 'Detlef', mentions: [] },
+      { type: 'person', name: 'Bob', mentions: [] },
+    ]);
+    const detlef = (await service.list(USER)).find((e) => e.canonicalName === 'Detlef')!;
+
+    await corrections.update(USER, detlef.id, { canonicalName: 'Detlef Müller' });
+    const renamed = await service.detail(USER, detlef.id);
+    expect(renamed.canonicalName).toBe('Detlef Müller');
+    expect(renamed.aliases).toContain('Detlef');
+
+    await expect(
+      corrections.update(USER, detlef.id, { canonicalName: 'Bob' }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('drops the contact link when an entity is re-typed away from person', async () => {
+    await createProfile('Angela Merkel');
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+    await service.ingest(USER, item, ext, [{ type: 'person', name: 'Angela Merkel', mentions: [] }]);
+    const [entity] = await service.list(USER);
+    expect(entity.voiceProfileId).not.toBeNull();
+
+    await corrections.update(USER, entity.id, { type: 'organization' });
+    const retyped = await service.detail(USER, entity.id);
+    expect(retyped.type).toBe('organization');
+    expect(retyped.voiceProfileId).toBeNull();
+    expect(retyped.voiceProfileLinkOrigin).toBeNull();
   });
 });

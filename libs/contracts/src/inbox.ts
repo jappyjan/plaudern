@@ -35,6 +35,9 @@ export const extractionKindSchema = z.enum([
   // LLM extraction of promissory commitments in both directions (what I owe ↔
   // what others owe me), resolved against the recording time (JJ-36).
   'commitments',
+  // LLM extraction of the user's own self-directed intentions ("book the
+  // dentist"), deduplicated semantically into a per-user task list (JJ-35).
+  'tasks',
 ]);
 export type ExtractionKind = z.infer<typeof extractionKindSchema>;
 

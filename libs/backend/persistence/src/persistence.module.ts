@@ -9,9 +9,11 @@ import {
   ConsentSettingsEntity,
   EmailSettingsEntity,
   EmbeddingChunkEntity,
+  EntityAliasEntity,
   EntityMentionEntity,
   EntityRegistryEntity,
   EntityRelationEntity,
+  EntitySuppressionEntity,
   ExtractedPayloadEntity,
   ExtractionRunEntity,
   GeocodeCacheEntity,
@@ -30,6 +32,8 @@ import {
   SourcePayloadEntity,
   SpeakerOccurrenceEntity,
   SummarizationSettingsEntity,
+  TaskCitationEntity,
+  TaskEntity,
   TopicEntity,
   UserEntity,
   VoiceProfileEntity,
@@ -58,9 +62,12 @@ import { CreateEntityRegistry1720000000020 } from './migrations/1720000000020-Cr
 import { CreateTopics1720000000021 } from './migrations/1720000000021-CreateTopics';
 import { CreateMcpTokens1720000000022 } from './migrations/1720000000022-CreateMcpTokens';
 import { CreateEntityRelations1720000000023 } from './migrations/1720000000023-CreateEntityRelations';
+import { EntityContactLinkOrigin1720000000024 } from './migrations/1720000000024-EntityContactLinkOrigin';
 import { CreateCommitments1720000000025 } from './migrations/1720000000025-CreateCommitments';
 import { AddFullTextSearch1720000000026 } from './migrations/1720000000026-AddFullTextSearch';
+import { CreateEntityCorrections1720000000027 } from './migrations/1720000000027-CreateEntityCorrections';
 import { ExtractionRunTrigger1720000000028 } from './migrations/1720000000028-ExtractionRunTrigger';
+import { CreateTasks1720000000029 } from './migrations/1720000000029-CreateTasks';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -73,7 +80,11 @@ export const ALL_ENTITIES = [
   TopicEntity,
   ItemTopicEntity,
   CommitmentEntity,
+  TaskEntity,
+  TaskCitationEntity,
   EntityRelationEntity,
+  EntityAliasEntity,
+  EntitySuppressionEntity,
   InboxTombstoneEntity,
   PlaudSettingsEntity,
   EmailSettingsEntity,
@@ -123,9 +134,12 @@ export const ALL_MIGRATIONS = [
   CreateTopics1720000000021,
   CreateMcpTokens1720000000022,
   CreateEntityRelations1720000000023,
+  EntityContactLinkOrigin1720000000024,
   CreateCommitments1720000000025,
   AddFullTextSearch1720000000026,
+  CreateEntityCorrections1720000000027,
   ExtractionRunTrigger1720000000028,
+  CreateTasks1720000000029,
 ];
 
 /**
