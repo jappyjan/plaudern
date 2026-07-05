@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { runWithAiAudit } from '@plaudern/audit';
 import { InboxService } from '@plaudern/inbox';
 import type { ReminderExtractionPayload } from '@plaudern/contracts';
 import {
@@ -42,7 +43,10 @@ export class RemindersProcessor {
         throw new Error('no succeeded transcription to extract reminders from');
       }
 
-      const result = await this.provider.extract(input);
+      const result = await runWithAiAudit(
+        { userId: item.userId, itemId: item.id, kind: 'reminders' },
+        () => this.provider.extract(input),
+      );
       const occurredAt = input.occurredAt ?? toIso(item.occurredAt);
       const reminderCount = await this.persistence.persist(
         item.userId,

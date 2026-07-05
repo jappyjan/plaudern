@@ -9,17 +9,19 @@ import type { AiProviderCallDirection } from '@plaudern/contracts';
 
 /**
  * One audited call to an external AI provider (JJ-42). Written at the provider
- * call site for every request that leaves the box — ElevenLabs transcription,
- * pyannoteAI diarization, any OpenAI-compatible LLM (DeepSeek, …), the
- * embeddings provider — so a user can see exactly what was sent, when, and to
- * whom.
+ * adapter for calls that leave the box — transcription (ElevenLabs + self-hosted
+ * Whisper), pyannoteAI diarization, the OpenAI-compatible LLM
+ * extractors/generators, and the embeddings provider — so a user can see what
+ * was sent, when, and to whom. (See the audit contract for the precise list of
+ * wired vs. deferred call sites.)
  *
  * Privacy by design: the row stores METADATA + SIZE + a SHA-256 CONTENT HASH,
  * never the payload itself, so the audit log cannot become a second, unguarded
  * copy of the user's private data. `payloadRedacted` is populated ONLY when the
  * operator opts in (`AI_AUDIT_STORE_PAYLOAD=true`) and even then holds a
- * truncated copy. Append-only and user-scoped; purged with the user on
- * panic-delete.
+ * TRUNCATED (not PII-scrubbed) copy; binary payloads are stored as a size
+ * placeholder rather than mangled text. Append-only and user-scoped; purged
+ * with the user on panic-delete.
  */
 @Entity({ name: 'ai_provider_calls' })
 @Index(['userId', 'createdAt'])

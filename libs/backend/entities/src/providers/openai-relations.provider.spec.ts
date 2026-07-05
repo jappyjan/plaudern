@@ -15,6 +15,9 @@ function fakeConfig(values: Record<string, string>): ConfigService {
   } as unknown as ConfigService;
 }
 
+// Auditing is exercised in the audit lib's own spec; here it is a no-op stub.
+const audit = { record: async () => undefined } as any;
+
 const baseInput: RelationExtractionInput = {
   text: 'Angela works at CDU. She met Bob in Berlin.',
   entities: [
@@ -133,21 +136,23 @@ describe('parseRelationsResponse', () => {
 
 describe('OpenAiRelationExtractionProvider.enabled', () => {
   it('shares the entity-extraction gating (disabled without key or flag)', () => {
-    expect(new OpenAiRelationExtractionProvider(fakeConfig({})).enabled).toBe(false);
+    expect(new OpenAiRelationExtractionProvider(fakeConfig({}), audit).enabled).toBe(false);
     expect(
       new OpenAiRelationExtractionProvider(
         fakeConfig({ ENTITY_EXTRACTION_API_KEY: 'sk-test' }),
+        audit,
       ).enabled,
     ).toBe(true);
     expect(
       new OpenAiRelationExtractionProvider(
         fakeConfig({ ENTITY_EXTRACTION_ENABLED: 'true' }),
+        audit,
       ).enabled,
     ).toBe(true);
   });
 
   it('throws a descriptive error from extract() when disabled', async () => {
-    const provider = new OpenAiRelationExtractionProvider(fakeConfig({}));
+    const provider = new OpenAiRelationExtractionProvider(fakeConfig({}), audit);
     await expect(provider.extract(baseInput)).rejects.toThrow(/ENTITY_EXTRACTION_ENABLED/);
   });
 });

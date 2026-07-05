@@ -6,8 +6,14 @@ import {
   AiProviderCallEntity,
   ALL_ENTITIES,
   DeadMansSwitchEntity,
+  EntitySuppressionEntity,
 } from '@plaudern/persistence';
 import { DataSovereigntyService } from './data-sovereignty.service';
+
+async function seedSuppression(dataSource: DataSource, userId: string) {
+  const repo = dataSource.getRepository(EntitySuppressionEntity);
+  await repo.save(repo.create({ userId, type: 'person', normalizedName: `secret name ${userId}` }));
+}
 
 async function seedAudit(dataSource: DataSource, userId: string, provider: string) {
   await dataSource.getRepository(AiProviderCallEntity).save(
@@ -46,6 +52,9 @@ describe('DataSovereigntyService', () => {
     await seedAudit(dataSource, 'victim', 'p1');
     await seedAudit(dataSource, 'victim', 'p2');
     await seedAudit(dataSource, 'bystander', 'p3');
+    // Name-bearing residue that purge's registry delete leaves behind (FIX 1).
+    await seedSuppression(dataSource, 'victim');
+    await seedSuppression(dataSource, 'bystander');
     await dataSource
       .getRepository(DeadMansSwitchEntity)
       .save(dataSource.getRepository(DeadMansSwitchEntity).create({ userId: 'victim' }));
@@ -69,6 +78,11 @@ describe('DataSovereigntyService', () => {
     expect(
       await dataSource.getRepository(DeadMansSwitchEntity).countBy({ userId: 'victim' }),
     ).toBe(0);
+
+    // FIX 1: name-bearing residue is wiped for the victim, spared for others.
+    const suppressions = dataSource.getRepository(EntitySuppressionEntity);
+    expect(await suppressions.countBy({ userId: 'victim' })).toBe(0);
+    expect(await suppressions.countBy({ userId: 'bystander' })).toBe(1);
   });
 
   it('exports only the signed-in user’s items, with a markdown rendering', async () => {

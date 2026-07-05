@@ -7,8 +7,8 @@ import type { AiProviderCallDirection } from '@plaudern/contracts';
 import { AiProviderCallEntity } from '@plaudern/persistence';
 import { getAiAuditContext, type AiAuditContext } from './ai-audit.context';
 
-/** Longest redacted-payload copy kept under the opt-in (chars). */
-const MAX_REDACTED_PAYLOAD_CHARS = 20_000;
+/** Longest stored-payload copy kept under the opt-in (chars). */
+const MAX_STORED_PAYLOAD_CHARS = 20_000;
 
 export interface RecordAiCallParams {
   /** Provider id, e.g. `elevenlabs-scribe`, `pyannoteai`, `openai:deepseek-chat`. */
@@ -80,7 +80,9 @@ export class AiAuditRecorder {
           direction: params.direction ?? 'outbound',
           bytesSent: buffer.byteLength,
           contentHash,
-          payloadRedacted: this.storePayload ? redact(buffer) : null,
+          payloadRedacted: this.storePayload
+            ? truncateForStorage(params.payload, buffer.byteLength)
+            : null,
         }),
       );
     } catch (err) {
@@ -97,10 +99,15 @@ function sanitizeEndpoint(endpoint: string): string {
   return q >= 0 ? endpoint.slice(0, q) : endpoint;
 }
 
-/** UTF-8 view of the payload, truncated to the opt-in cap. */
-function redact(buffer: Buffer): string {
-  const text = buffer.toString('utf8');
-  return text.length > MAX_REDACTED_PAYLOAD_CHARS
-    ? `${text.slice(0, MAX_REDACTED_PAYLOAD_CHARS)}…[truncated]`
-    : text;
+/**
+ * Opt-in debugging copy of the payload. This TRUNCATES to a cap; it does NOT
+ * scrub PII — enabling `AI_AUDIT_STORE_PAYLOAD` accepts storing real content.
+ * Binary payloads (e.g. audio Buffers sent to transcription/diarization) are
+ * stored as a size placeholder rather than a lossy UTF-8 mangling.
+ */
+function truncateForStorage(payload: string | Buffer, byteLength: number): string {
+  if (Buffer.isBuffer(payload)) return `[binary payload, ${byteLength} bytes]`;
+  return payload.length > MAX_STORED_PAYLOAD_CHARS
+    ? `${payload.slice(0, MAX_STORED_PAYLOAD_CHARS)}…[truncated]`
+    : payload;
 }

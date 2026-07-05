@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { runWithAiAudit } from '@plaudern/audit';
 import { InboxService } from '@plaudern/inbox';
 import type { ExtractionSegment, FactExtractionPayload } from '@plaudern/contracts';
 import type { ExtractedPayloadEntity, InboxItemEntity } from '@plaudern/persistence';
@@ -47,7 +48,10 @@ export class FactsProcessor {
         throw new Error('no succeeded transcription or summary to extract facts from');
       }
 
-      const result = await this.provider.extract(input);
+      const result = await runWithAiAudit(
+        { userId: item.userId, itemId: item.id, kind: 'facts' },
+        () => this.provider.extract(input),
+      );
       const segments = transcriptionSegments(item);
       const candidates: FactCandidate[] = result.facts.map((fact) => {
         const located = fact.quote ? locateQuote(segments, fact.quote) : null;

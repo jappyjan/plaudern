@@ -4,15 +4,26 @@ import { z } from 'zod';
  * Contracts for the AI-provider audit log & data-sovereignty controls (JJ-42) —
  * the guardian layer over a life archive.
  *
- * The audit log records EVERY call this instance makes to an external AI
- * provider (ElevenLabs transcription, pyannoteAI diarization, DeepSeek / any
- * OpenAI-compatible LLM, the embeddings provider): which item it was for, which
- * extraction/generation kind drove it, which provider + endpoint, when, how many
- * bytes were sent, and a content hash of the payload. By default NO payload is
- * stored — only metadata + size + a SHA-256 hash — so the audit trail can prove
- * what left the box without itself becoming a second copy of the user's private
- * data. An operator opt-in (`AI_AUDIT_STORE_PAYLOAD=true`) additionally stores a
- * redacted/truncated copy of the request payload for debugging.
+ * The audit log records calls this instance makes to external AI providers:
+ * which item it was for, which extraction/generation kind drove it, which
+ * provider + endpoint, when, how many bytes were sent, and a content hash of the
+ * payload. By default NO payload is stored — only metadata + size + a SHA-256
+ * hash — so the audit trail can prove what left the box without itself becoming
+ * a second copy of the user's private data. An operator opt-in
+ * (`AI_AUDIT_STORE_PAYLOAD=true`) additionally stores a truncated (NOT
+ * PII-scrubbed) copy of the request payload for debugging.
+ *
+ * Coverage: recording is emitted from the shared recorder at each provider
+ * adapter. Wired today: transcription (ElevenLabs + self-hosted Whisper),
+ * pyannoteAI diarization, the embeddings provider, and the OpenAI-compatible LLM
+ * extractors/generators — summary, entities, relations, topics, topic-document,
+ * facts, tasks, questions, decisions, commitments, reminders, journal, and
+ * memory chat. Known deferred call sites (a follow-up ticket tracks full
+ * coverage): the secondary entity contact-resolution LLM call, the entity
+ * registry-correction LLM call, and the topic-proposals clustering call.
+ * Geocoding (Nominatim) is deliberately OUT of scope — it is a maps lookup that
+ * sends only coordinates, never transcript-derived content, and is not an AI
+ * provider.
  */
 
 /**

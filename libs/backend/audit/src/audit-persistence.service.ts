@@ -36,12 +36,6 @@ export class AuditPersistenceService {
       hasMore: page * pageSize < total,
     };
   }
-
-  /** Delete every audit row for a user (used by panic-delete). Returns count. */
-  async deleteAllForUser(userId: string): Promise<number> {
-    const result = await this.calls.delete({ userId });
-    return result.affected ?? 0;
-  }
 }
 
 /** Map a row to its DTO. `bytesSent` is a Postgres bigint (string) — coerce. */

@@ -15,6 +15,9 @@ function fakeConfig(values: Record<string, string>): ConfigService {
   } as unknown as ConfigService;
 }
 
+// Auditing is exercised in the audit lib's own spec; here it is a no-op stub.
+const audit = { record: async () => undefined } as any;
+
 const minimalInput: EntityExtractionInput = { text: 'hello' };
 
 const baseInput: EntityExtractionInput = {
@@ -107,12 +110,13 @@ describe('parseEntitiesResponse', () => {
 
 describe('OpenAiEntityExtractionProvider.enabled', () => {
   it('is disabled with neither an API key nor ENTITY_EXTRACTION_ENABLED', () => {
-    expect(new OpenAiEntityExtractionProvider(fakeConfig({})).enabled).toBe(false);
+    expect(new OpenAiEntityExtractionProvider(fakeConfig({}), audit).enabled).toBe(false);
   });
 
   it('is enabled when ENTITY_EXTRACTION_API_KEY is set (cloud default)', () => {
     const provider = new OpenAiEntityExtractionProvider(
       fakeConfig({ ENTITY_EXTRACTION_API_KEY: 'sk-test' }),
+      audit,
     );
     expect(provider.enabled).toBe(true);
   });
@@ -120,12 +124,13 @@ describe('OpenAiEntityExtractionProvider.enabled', () => {
   it('is enabled via ENTITY_EXTRACTION_ENABLED=true even without a key (keyless local servers e.g. Ollama)', () => {
     const provider = new OpenAiEntityExtractionProvider(
       fakeConfig({ ENTITY_EXTRACTION_ENABLED: 'true' }),
+      audit,
     );
     expect(provider.enabled).toBe(true);
   });
 
   it('throws a descriptive error from extract() when disabled', async () => {
-    const provider = new OpenAiEntityExtractionProvider(fakeConfig({}));
+    const provider = new OpenAiEntityExtractionProvider(fakeConfig({}), audit);
     await expect(provider.extract(minimalInput)).rejects.toThrow(/ENTITY_EXTRACTION_ENABLED/);
   });
 });
@@ -153,6 +158,7 @@ describe('OpenAiEntityExtractionProvider request behavior', () => {
         ENTITY_EXTRACTION_BASE_URL: 'http://localhost:11434/v1',
         ENTITY_EXTRACTION_MODEL: 'llama3.1',
       }),
+      audit,
     );
     const result = await provider.extract(minimalInput);
 
@@ -177,6 +183,7 @@ describe('OpenAiEntityExtractionProvider request behavior', () => {
 
     const provider = new OpenAiEntityExtractionProvider(
       fakeConfig({ ENTITY_EXTRACTION_API_KEY: 'sk-test' }),
+      audit,
     );
     await provider.extract(minimalInput);
 

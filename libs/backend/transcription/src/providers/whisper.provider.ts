@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AiAuditRecorder } from '@plaudern/audit';
 import type {
   TranscriptionInput,
   TranscriptionProvider,
@@ -44,7 +45,10 @@ export class WhisperTranscriptionProvider implements TranscriptionProvider {
   private readonly timeoutMs: number;
   private readonly downloadTimeoutMs: number;
 
-  constructor(config: ConfigService) {
+  constructor(
+    config: ConfigService,
+    private readonly audit: AiAuditRecorder,
+  ) {
     this.baseUrl = config
       .get<string>('WHISPER_BASE_URL', 'http://localhost:8000/v1')
       .replace(/\/+$/, '');
@@ -79,8 +83,11 @@ export class WhisperTranscriptionProvider implements TranscriptionProvider {
     const headers: Record<string, string> = {};
     if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
 
+    const endpoint = `${this.baseUrl}/audio/transcriptions`;
+    // Audit the audio bytes leaving the box for the configured server (JJ-42).
+    await this.audit.record({ provider: this.id, endpoint, payload: bytes });
     const json = await postMultipartForJson<WhisperResponse>(
-      `${this.baseUrl}/audio/transcriptions`,
+      endpoint,
       fields,
       {
         name: 'file',

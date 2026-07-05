@@ -6,6 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { runWithAiAudit } from '@plaudern/audit';
 import { Repository } from 'typeorm';
 import type {
   ChatAskRequest,
@@ -183,7 +184,7 @@ export class ChatService {
     );
 
     // 1. Retrieval — the exact hybrid pipeline the search page uses.
-    const queries = await this.buildRetrievalQueries(question, history);
+    const queries = await this.buildRetrievalQueries(userId, question, history);
     const sources = await this.retrieve(userId, queries);
 
     // 2. Generation + structural enforcement.
@@ -197,6 +198,7 @@ export class ChatService {
       confidence = null;
     } else {
       ({ content, citations, confidence } = await this.answerFromSources(
+        userId,
         question,
         history,
         sources,
@@ -233,6 +235,7 @@ export class ChatService {
    * to the raw question.
    */
   private async buildRetrievalQueries(
+    userId: string,
     question: string,
     history: ChatMessageEntity[],
   ): Promise<string[]> {
@@ -243,10 +246,19 @@ export class ChatService {
         .slice(-6)
         .map((m) => `${m.role}: ${truncate(m.content, 400)}`)
         .join('\n');
-      const { content } = await this.provider.complete([
-        { role: 'system', content: REWRITE_SYSTEM_PROMPT },
-        { role: 'user', content: `Conversation:\n${transcript}\n\nLatest question: ${question}` },
-      ]);
+      // Attribute the external AI-provider call to this user; chat is not
+      // scoped to a single inbox item (JJ-42).
+      const { content } = await runWithAiAudit(
+        { userId, itemId: null, kind: 'chat' },
+        () =>
+          this.provider.complete([
+            { role: 'system', content: REWRITE_SYSTEM_PROMPT },
+            {
+              role: 'user',
+              content: `Conversation:\n${transcript}\n\nLatest question: ${question}`,
+            },
+          ]),
+      );
       const json = extractJsonObject(content);
       const raw = Array.isArray(json.queries) ? json.queries : [];
       for (const entry of raw) {
@@ -294,6 +306,7 @@ export class ChatService {
   // ---- generation ----
 
   private async answerFromSources(
+    userId: string,
     question: string,
     history: ChatMessageEntity[],
     sources: ChatCitation[],
@@ -309,7 +322,12 @@ export class ChatService {
       { role: 'user', content: `${sourcesBlock(sources)}\n\nQuestion: ${question}` },
     ];
 
-    const { content: raw } = await this.provider.complete(messages);
+    // Attribute the external AI-provider call to this user; chat is not scoped
+    // to a single inbox item (JJ-42).
+    const { content: raw } = await runWithAiAudit(
+      { userId, itemId: null, kind: 'chat' },
+      () => this.provider.complete(messages),
+    );
     const json = extractJsonObject(raw);
     const answer = typeof json.answer === 'string' && json.answer.trim() ? json.answer : raw;
     const modelConfidence: ChatConfidence = json.confidence === 'low' ? 'low' : 'high';

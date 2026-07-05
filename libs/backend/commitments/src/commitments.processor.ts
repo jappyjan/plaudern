@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { runWithAiAudit } from '@plaudern/audit';
 import { InboxService } from '@plaudern/inbox';
 import type { CommitmentExtractionPayload } from '@plaudern/contracts';
 import {
@@ -52,7 +53,10 @@ export class CommitmentsProcessor {
       // any stale/previously mis-attributed ones) rather than guessing direction.
       const result =
         ctx.kind === 'ready'
-          ? await this.provider.extract(ctx.input)
+          ? await runWithAiAudit(
+              { userId: item.userId, itemId: item.id, kind: 'commitments' },
+              () => this.provider.extract(ctx.input),
+            )
           : { commitments: [], model: this.provider.id };
       const commitmentCount = await this.persistence.persist(
         item.userId,

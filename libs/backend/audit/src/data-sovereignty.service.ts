@@ -19,6 +19,9 @@ import {
   ConsentSettingsEntity,
   DeadMansSwitchEntity,
   EmailSettingsEntity,
+  EntityAliasEntity,
+  EntitySuppressionEntity,
+  ExtractionRunEntity,
   ItemTopicEntity,
   JournalDocumentEntity,
   McpTokenEntity,
@@ -139,6 +142,14 @@ export class DataSovereigntyService {
       await em.getRepository(TopicEntity).delete({ userId });
       await em.getRepository(ReminderEntity).delete({ userId });
       await em.getRepository(JournalDocumentEntity).delete({ userId });
+      // Entity-graph residue that purge's registry delete leaves behind: aliases
+      // and suppressions hold the normalized NAMES of the user's people/places,
+      // and extraction runs hold run history + error text. All user-scoped, and
+      // the alias FK cascade is unreliable (sqlite FKs off; purge avoids
+      // cascades), so delete them explicitly — the wipe must leave no name.
+      await em.getRepository(EntityAliasEntity).delete({ userId });
+      await em.getRepository(EntitySuppressionEntity).delete({ userId });
+      await em.getRepository(ExtractionRunEntity).delete({ userId });
       await em.getRepository(McpTokenEntity).delete({ userId });
       await em.getRepository(PlaudSettingsEntity).delete({ userId });
       await em.getRepository(EmailSettingsEntity).delete({ userId });
