@@ -134,8 +134,10 @@ export type EntityDetailDto = z.infer<typeof entityDetailSchema>;
  * POST /v1/entities/:id/merge — union the victim into the survivor addressed by
  * the URL, then delete the victim. The victim's names are recorded as aliases
  * of the survivor so future extraction resolves to it instead of resurrecting a
- * duplicate. Both entities must be the same type (retype first to fix a
- * mis-typed extraction, then merge).
+ * duplicate. The two entities may be of DIFFERENT types (e.g. an organization
+ * and a product the extractor split apart); the survivor's type is kept, and
+ * the victim's names are aliased under both types so a later extraction under
+ * either type folds onto the survivor.
  */
 export const mergeEntityRequestSchema = z.object({
   /** The entity merged INTO the survivor (:id), then deleted. */

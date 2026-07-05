@@ -498,12 +498,13 @@ function MergePanel({
     };
   }, []);
 
-  // Only same-type entities can merge (retype first otherwise); never itself.
+  // Any entity (including a different type) can merge INTO this one; the
+  // survivor keeps this entity's type. Never itself.
   const candidates = useMemo(() => {
     if (!all) return [];
     const needle = query.trim().toLowerCase();
     return all
-      .filter((e) => e.id !== entity.id && e.type === entity.type)
+      .filter((e) => e.id !== entity.id)
       .filter(
         (e) =>
           !needle ||
@@ -518,9 +519,10 @@ function MergePanel({
   return (
     <div className="flex flex-col gap-2 rounded-medium bg-default-100 p-3">
       <p className="text-xs text-default-500">
-        Pick another {typeLabel} to merge INTO{' '}
-        <span className="font-semibold">{entity.canonicalName}</span>. Its aliases, mentions and
-        relations move here; it is then deleted and will not be recreated.
+        Pick another entity to merge INTO{' '}
+        <span className="font-semibold">{entity.canonicalName}</span>. It keeps this {typeLabel}
+        &rsquo;s type; the other&rsquo;s aliases, mentions and relations move here, then it is
+        deleted and will not be recreated.
       </p>
       <Input
         size="sm"
@@ -534,7 +536,7 @@ function MergePanel({
       {all === null ? (
         <Spinner size="sm" />
       ) : candidates.length === 0 ? (
-        <p className="text-xs text-default-500">No other {typeLabel} entities match.</p>
+        <p className="text-xs text-default-500">No other entities match.</p>
       ) : (
         <div className="flex flex-col gap-1">
           {candidates.map((c) =>
@@ -543,7 +545,10 @@ function MergePanel({
                 key={c.id}
                 className="flex items-center justify-between gap-2 rounded-medium bg-warning-50 p-2"
               >
-                <span className="text-sm">Merge “{c.canonicalName}” in?</span>
+                <span className="text-sm">
+                  Merge &ldquo;{c.canonicalName}&rdquo;
+                  {c.type !== entity.type ? ` (${ENTITY_TYPE_LABEL[c.type].toLowerCase()})` : ''} in?
+                </span>
                 <div className="flex gap-1">
                   <Button size="sm" color="primary" isLoading={busy} onPress={() => onMerge(c.id)}>
                     Confirm
@@ -566,6 +571,9 @@ function MergePanel({
                     {c.mentionCount} recording{c.mentionCount === 1 ? '' : 's'}
                   </p>
                 </div>
+                <Chip size="sm" variant="flat" color={ENTITY_TYPE_COLOR[c.type]}>
+                  {ENTITY_TYPE_LABEL[c.type]}
+                </Chip>
               </button>
             ),
           )}
