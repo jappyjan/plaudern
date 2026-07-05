@@ -112,6 +112,7 @@ export function DocumentSection({ itemId, contentType, sourceUrl }: DocumentSect
             </div>
             <p className="font-medium">{doc.title}</p>
             {doc.issuer && <p className="text-sm text-default-500">{doc.issuer}</p>}
+            {doc.summary && <p className="text-sm text-default-600">{doc.summary}</p>}
             {doc.fields.length > 0 && (
               <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
                 {doc.fields.map((f, i) => (
