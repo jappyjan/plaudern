@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { entityTypeSchema, type ExtractedEntity } from '@plaudern/contracts';
+import { entityTypeSchema, isMeaningfulAlias, type ExtractedEntity } from '@plaudern/contracts';
 import type {
   EntityExtractionInput,
   EntityExtractionProvider,
@@ -118,6 +118,9 @@ export const SYSTEM_PROMPT = [
   'Rules:',
   '- "name" is the canonical/full form (e.g. resolve "she"/"the doctor" to the actual name ONLY if unambiguous; otherwise skip pronouns).',
   '- "mentions" lists the exact surface forms as they appear in the text; may be empty.',
+  '- NEVER emit a pronoun, possessive, article, or generic role word as a "name" or in "mentions"',
+  '  (e.g. "Sie", "ihr", "ihre", "der", "der Patient", "the doctor", "she", "them"). Only real',
+  '  names/labels belong there — a mention like "Sie" or "der Patient" must be omitted entirely.',
   '- Deduplicate: one object per distinct real-world entity, collecting its variants into "mentions".',
   '- Extract only entities actually present; never invent. Prefer precision over recall.',
   '- If there are no entities, return { "entities": [] }.',
@@ -153,6 +156,9 @@ export function parseEntitiesResponse(content: string): ExtractedEntity[] {
     const type = entityTypeSchema.safeParse(candidate.type);
     const name = typeof candidate.name === 'string' ? candidate.name.trim() : '';
     if (!type.success || !name) continue;
+    // A pronoun/article/generic-noun name ("Sie", "der Patient") is never a real
+    // entity — drop it rather than seed the registry with an unnamable row.
+    if (!isMeaningfulAlias(name)) continue;
     const mentions = Array.isArray(candidate.mentions)
       ? candidate.mentions
           .filter((m): m is string => typeof m === 'string')
