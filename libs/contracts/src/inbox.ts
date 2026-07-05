@@ -97,6 +97,31 @@ export const extractedPayloadSchema = z.object({
 export type ExtractedPayloadDto = z.infer<typeof extractedPayloadSchema>;
 
 /**
+ * Forward-compatible extractions array. A client build only knows the
+ * extraction kinds that existed when it shipped; a newer server can return a
+ * kind this build has never heard of (this is exactly how a stale web app
+ * broke — one unknown `kind` failed the whole inbox parse and the page showed
+ * a wall of Zod errors instead of the recordings). Drop rows whose `kind` we
+ * don't recognize before strict validation so an added extraction type can
+ * only make itself invisible to old clients, never take the inbox down.
+ * Rows with a known (or missing) `kind` still validate strictly, so genuine
+ * schema drift on a kind we do understand is still surfaced.
+ */
+export const tolerantExtractionsSchema = z.preprocess(
+  (rows) =>
+    Array.isArray(rows)
+      ? rows.filter(
+          (row) =>
+            !(row !== null && typeof row === 'object' && 'kind' in row) ||
+            extractionKindSchema.safeParse(
+              (row as { kind: unknown }).kind,
+            ).success,
+        )
+      : rows,
+  z.array(extractedPayloadSchema),
+);
+
+/**
  * The inbox envelope — the source of truth. Never edited in place; items can
  * only be deleted whole (row + blobs), leaving an idempotency tombstone so
  * automated syncs don't re-import them.
@@ -109,7 +134,7 @@ export const inboxItemSchema = z.object({
   /** Free-form capture metadata (GPS location, recording device, file tags, ...). */
   metadata: z.record(z.string(), z.unknown()).nullable(),
   source: sourcePayloadSchema.nullable(),
-  extractions: z.array(extractedPayloadSchema),
+  extractions: tolerantExtractionsSchema,
   /** Source recording ids (in playback order) when this item was produced by a merge. */
   mergedFromItemIds: z.array(z.string().uuid()).optional(),
 });
