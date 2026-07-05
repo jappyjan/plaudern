@@ -86,6 +86,15 @@ import {
   topicDocumentResponseSchema,
   topicDocumentVersionListResponseSchema,
   topicDocumentVersionDetailSchema,
+  journalDocumentResponseSchema,
+  journalPeriodListResponseSchema,
+  journalVersionListResponseSchema,
+  journalVersionDetailSchema,
+  type JournalDocumentResponse,
+  type JournalPeriodListResponse,
+  type JournalPeriodType,
+  type JournalVersionDetailDto,
+  type JournalVersionListResponse,
   type CreateTopicRequest,
   type ItemTopicsResponse,
   type TopicDto,
@@ -845,6 +854,56 @@ export async function getTopicDocumentVersion(
 export async function regenerateTopicDocument(topicId: string): Promise<TopicDocumentResponse> {
   return topicDocumentResponseSchema.parse(
     await requestJson(`/topics/${topicId}/document/regenerate`, { method: 'POST' }),
+  );
+}
+
+// ---- Auto-journal (JJ-17) ----
+
+/** Every composed entry of a granularity (day/week/month/year), newest first. */
+export async function listJournalPeriods(
+  periodType: JournalPeriodType,
+): Promise<JournalPeriodListResponse> {
+  return journalPeriodListResponseSchema.parse(await requestJson(`/journal/${periodType}`));
+}
+
+/** One period's current entry (body + latest-attempt status). */
+export async function getJournal(
+  periodType: JournalPeriodType,
+  periodKey: string,
+): Promise<JournalDocumentResponse> {
+  return journalDocumentResponseSchema.parse(
+    await requestJson(`/journal/${periodType}/${periodKey}`),
+  );
+}
+
+/** A period's succeeded version history (metadata only). */
+export async function listJournalVersions(
+  periodType: JournalPeriodType,
+  periodKey: string,
+): Promise<JournalVersionListResponse> {
+  return journalVersionListResponseSchema.parse(
+    await requestJson(`/journal/${periodType}/${periodKey}/versions`),
+  );
+}
+
+/** One historical version rendered in full. */
+export async function getJournalVersion(
+  periodType: JournalPeriodType,
+  periodKey: string,
+  version: number,
+): Promise<JournalVersionDetailDto> {
+  return journalVersionDetailSchema.parse(
+    await requestJson(`/journal/${periodType}/${periodKey}/versions/${version}`),
+  );
+}
+
+/** Manually (re)compose the period; returns the refreshed read model. */
+export async function regenerateJournal(
+  periodType: JournalPeriodType,
+  periodKey: string,
+): Promise<JournalDocumentResponse> {
+  return journalDocumentResponseSchema.parse(
+    await requestJson(`/journal/${periodType}/${periodKey}/regenerate`, { method: 'POST' }),
   );
 }
 

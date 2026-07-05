@@ -158,6 +158,14 @@ services:
       - TOPIC_DOCS_API_KEY=${SUMMARIZATION_API_KEY}
       - TOPIC_DOCS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
       - TOPIC_DOCS_MODEL=${TOPIC_DOCS_MODEL:-deepseek-chat}
+      # Auto-journal (JJ-17) reuses the summarization key/endpoint; a non-empty
+      # key auto-enables composition. Every evening the day is composed from its
+      # signals (recordings, calendar events) into a cited narrative diary
+      # entry, and weekly/monthly/yearly reviews compose from the dailies. Only
+      # the model is independently overridable.
+      - JOURNAL_API_KEY=${SUMMARIZATION_API_KEY}
+      - JOURNAL_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
+      - JOURNAL_MODEL=${JOURNAL_MODEL:-deepseek-chat}
       # Transcription: the hosted ElevenLabs Scribe API — fill in
       # ELEVENLABS_API_KEY (get one at elevenlabs.io). Audio bytes are uploaded
       # to ElevenLabs directly (storage stays private).

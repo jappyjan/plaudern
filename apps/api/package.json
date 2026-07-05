@@ -26,6 +26,7 @@
     "@plaudern/geocoding": "workspace:*",
     "@plaudern/inbox": "workspace:*",
     "@plaudern/ingestion": "workspace:*",
+    "@plaudern/journal": "workspace:*",
     "@plaudern/mcp": "workspace:*",
     "@plaudern/notifications": "workspace:*",
     "@plaudern/open-loops": "workspace:*",
