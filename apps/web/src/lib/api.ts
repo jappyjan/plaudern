@@ -82,11 +82,13 @@ import {
   topicListResponseSchema,
   topicItemsResponseSchema,
   topicSchema,
+  topicProposalListResponseSchema,
   type CreateTopicRequest,
   type ItemTopicsResponse,
   type TopicDto,
   type TopicItemsResponse,
   type TopicListResponse,
+  type TopicProposalListResponse,
   type UpdateTopicRequest,
   itemTasksResponseSchema,
   taskListResponseSchema,
@@ -746,6 +748,30 @@ export async function retryItemTopics(itemId: string): Promise<ItemTopicsRespons
   return itemTopicsResponseSchema.parse(
     await requestJson(`/inbox/${itemId}/topics/retry`, { method: 'POST' }),
   );
+}
+
+/** Taxonomy proposals from embedding clusters (JJ-64), plus whether the feature is enabled. */
+export async function listTopicProposals(): Promise<TopicProposalListResponse> {
+  return topicProposalListResponseSchema.parse(await requestJson('/topics/proposals'));
+}
+
+/** Trigger a fresh clustering + labeling pass; returns the refreshed proposal list. */
+export async function generateTopicProposals(): Promise<TopicProposalListResponse> {
+  return topicProposalListResponseSchema.parse(
+    await requestJson('/topics/proposals/generate', { method: 'POST' }),
+  );
+}
+
+/** Accept a proposal: creates the topic and reclassifies the cluster's items. */
+export async function acceptTopicProposal(id: string): Promise<TopicDto> {
+  return topicSchema.parse(
+    await requestJson(`/topics/proposals/${id}/accept`, { method: 'POST' }),
+  );
+}
+
+/** Dismiss a proposal so its cluster is not proposed again. */
+export async function dismissTopicProposal(id: string): Promise<void> {
+  return requestVoid(`/topics/proposals/${id}/dismiss`, { method: 'POST' });
 }
 
 /** An item's extracted commitments plus the extraction pipeline status. */

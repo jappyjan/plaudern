@@ -102,3 +102,43 @@ export const topicItemsResponseSchema = z.object({
   items: z.array(topicItemSchema),
 });
 export type TopicItemsResponse = z.infer<typeof topicItemsResponseSchema>;
+
+/**
+ * Taxonomy proposals from embedding clusters (JJ-64). A recurring/on-demand job
+ * clusters recent items' embeddings (pgvector), labels each cluster with the
+ * LLM, and surfaces a suggestion like "14 recent items mention 'Hausbau' —
+ * create a project?". Accepting one creates the topic in the taxonomy and
+ * reclassifies the cluster's items; dismissing one suppresses that cluster from
+ * being proposed again.
+ */
+export const topicProposalStatusSchema = z.enum(['pending', 'accepted', 'dismissed']);
+export type TopicProposalStatus = z.infer<typeof topicProposalStatusSchema>;
+
+export const topicProposalSchema = z.object({
+  id: z.string().uuid(),
+  /** LLM-suggested topic name for the cluster. */
+  label: z.string(),
+  /** LLM-suggested one-line description, when available. */
+  description: z.string().nullable(),
+  /** Number of items in the cluster. */
+  itemCount: z.number().int().nonnegative(),
+  /** A few representative member item ids, for a preview. */
+  sampleItemIds: z.array(z.string().uuid()),
+  status: topicProposalStatusSchema,
+  /** The taxonomy topic created when the proposal was accepted, else null. */
+  acceptedTopicId: z.string().uuid().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+export type TopicProposalDto = z.infer<typeof topicProposalSchema>;
+
+/**
+ * The proposals surfaced in the topics UI plus whether the feature can run at
+ * all. `enabled` is false when embeddings or the labeling LLM are unconfigured,
+ * so the UI hides the section instead of offering a button that always fails.
+ */
+export const topicProposalListResponseSchema = z.object({
+  proposals: z.array(topicProposalSchema),
+  enabled: z.boolean(),
+});
+export type TopicProposalListResponse = z.infer<typeof topicProposalListResponseSchema>;
