@@ -5,10 +5,22 @@
   "projectType": "library",
   "tags": ["scope:backend", "type:util"],
   "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc -p libs/backend/persistence/tsconfig.json --noEmit"
+      }
+    },
     "test": {
       "executor": "nx:run-commands",
       "options": {
         "command": "jest --config libs/backend/persistence/jest.config.js"
+      }
+    },
+    "migration-smoke": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsx libs/backend/persistence/scripts/migration-smoke.ts"
       }
     }
   }

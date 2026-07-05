@@ -20,16 +20,22 @@
  *   3. UP again — re-apply the reverted tail, proving `down()` left the database
  *             in a clean, re-migratable state.
  *
- * It reuses ALL_ENTITIES/ALL_MIGRATIONS from @plaudern/persistence, so it stays
+ * It reuses ALL_ENTITIES/ALL_MIGRATIONS from the persistence lib, so it stays
  * in sync automatically as migrations are added. Point it at a database with
  * DATABASE_URL (CI provides a `pgvector/pgvector` service container — the
  * `vector` extension is required by the embedding migrations).
+ *
+ * Run it via the persistence nx target so its deps resolve from the lib:
+ *   pnpm nx run persistence:migration-smoke        (= `pnpm migration:smoke`)
  *
  * Exit code 0 = clean; non-zero = a migration failed to apply or reverse.
  */
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
-import { ALL_ENTITIES, ALL_MIGRATIONS } from '@plaudern/persistence';
+// Relative import (not `@plaudern/persistence`): this script lives INSIDE the
+// persistence lib so Node resolves reflect-metadata/typeorm from the lib's own
+// node_modules, which pnpm's isolated linker keeps out of the repo-root tree.
+import { ALL_ENTITIES, ALL_MIGRATIONS } from '../src';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ?? 'postgres://plaudern:plaudern@localhost:5432/plaudern';
