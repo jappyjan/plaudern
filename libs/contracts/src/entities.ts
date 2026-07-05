@@ -176,6 +176,47 @@ export const duplicateCandidatesResponseSchema = z.object({
 });
 export type DuplicateCandidatesResponse = z.infer<typeof duplicateCandidatesResponseSchema>;
 
+/** How a merge suggestion arose: automatic post-extraction detection vs a manual reconcile. */
+export const mergeSuggestionSourceSchema = z.enum(['auto', 'manual']);
+export type MergeSuggestionSource = z.infer<typeof mergeSuggestionSourceSchema>;
+
+/** Suggestion lifecycle: pending until the user merges (applied) or dismisses it. */
+export const mergeSuggestionStatusSchema = z.enum(['pending', 'dismissed', 'applied']);
+export type MergeSuggestionStatus = z.infer<typeof mergeSuggestionStatusSchema>;
+
+/**
+ * A recorded likely-duplicate pair for the "possible duplicates" surface. Both
+ * sides are inlined as registry entities so the list renders names/types
+ * without a second fetch. Judge fields (`recommendedType`, `sameThing`,
+ * `confidence`, `rationale`) are null until a reconcile has judged the pair.
+ */
+export const mergeSuggestionSchema = z.object({
+  id: z.string().uuid(),
+  entity: registryEntitySchema,
+  candidate: registryEntitySchema,
+  recommendedSurvivorId: z.string().uuid().nullable(),
+  recommendedType: entityTypeSchema.nullable(),
+  sameThing: z.boolean().nullable(),
+  confidence: z.number().min(0).max(1).nullable(),
+  rationale: z.string().nullable(),
+  usedWeb: z.boolean(),
+  source: mergeSuggestionSourceSchema,
+  status: mergeSuggestionStatusSchema,
+  createdAt: z.string().datetime(),
+});
+export type MergeSuggestionDto = z.infer<typeof mergeSuggestionSchema>;
+
+/** GET /v1/entities/suggestions — optionally filter by lifecycle status. */
+export const mergeSuggestionsQuerySchema = z.object({
+  status: mergeSuggestionStatusSchema.optional(),
+});
+export type MergeSuggestionsQuery = z.infer<typeof mergeSuggestionsQuerySchema>;
+
+export const mergeSuggestionsResponseSchema = z.object({
+  suggestions: z.array(mergeSuggestionSchema),
+});
+export type MergeSuggestionsResponse = z.infer<typeof mergeSuggestionsResponseSchema>;
+
 /**
  * PATCH /v1/entities/:id — correct a registry entity: rename it and/or change
  * its type. Renaming keeps the OLD normalized name as a durable alias (and, on

@@ -111,9 +111,12 @@ import {
   autoLinkEntitiesResponseSchema,
   entityContactSuggestionsResponseSchema,
   duplicateCandidatesResponseSchema,
+  mergeSuggestionsResponseSchema,
   type AutoLinkEntitiesResponse,
   type EntityContactSuggestionsResponse,
   type DuplicateCandidatesResponse,
+  type MergeSuggestionStatus,
+  type MergeSuggestionsResponse,
   type EntityListResponse,
   type EntityDetailWithRelationsDto,
   type EntityDossierDto,
@@ -665,6 +668,22 @@ export async function duplicateCandidates(
   return duplicateCandidatesResponseSchema.parse(
     await requestJson(`/entities/${id}/duplicate-candidates${suffix}`),
   );
+}
+
+/**
+ * Recorded merge suggestions (default: pending) — likely-duplicate pairs
+ * detected automatically after extraction.
+ */
+export async function listMergeSuggestions(
+  status?: MergeSuggestionStatus,
+): Promise<MergeSuggestionsResponse> {
+  const suffix = status ? `?status=${status}` : '';
+  return mergeSuggestionsResponseSchema.parse(await requestJson(`/entities/suggestions${suffix}`));
+}
+
+/** Dismiss a merge suggestion so it is not surfaced again. */
+export async function dismissMergeSuggestion(id: string): Promise<void> {
+  await requestVoid(`/entities/suggestions/${id}/dismiss`, { method: 'POST' });
 }
 
 /** Delete/suppress an entity so re-extraction cannot recreate it. */

@@ -1,5 +1,17 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import type { DuplicateCandidateDto, RegistryEntityDto } from '@plaudern/contracts';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import type {
+  DuplicateCandidateDto,
+  MergeSuggestionDto,
+  MergeSuggestionStatus,
+  RegistryEntityDto,
+} from '@plaudern/contracts';
+import {
+  EntityMentionEntity,
+  EntityMergeSuggestionEntity,
+  EntityRegistryEntity,
+} from '@plaudern/persistence';
 import { EntitiesRegistryService } from './entities-registry.service';
 import { bestNameAffinity, FUZZY_DUPLICATE_FLOOR, nameKeys } from './contact-matching';
 
@@ -10,9 +22,9 @@ const MAX_CANDIDATES = 10;
  * Duplicate reconciliation (JJ-63). The extractor tags the same real-world
  * thing with different types across recordings (an organization in one, a
  * product in another), so the deterministic (type, normalizedName) dedupe
- * leaves two rows behind. This service surfaces those likely duplicates for an
- * entity so the user can merge them (merges themselves always go through the
- * confirm flow — this service never mutates entities):
+ * leaves two rows behind. This service surfaces those likely duplicates so the
+ * user can merge them — it NEVER mutates entities itself; merges always go
+ * through the confirm flow and the transactional correction path:
  *
  *  - `exact-cross-type`: another entity whose (folded) name matches but whose
  *    type differs — the split-typed case, high precision, surfaced directly.
@@ -21,11 +33,21 @@ const MAX_CANDIDATES = 10;
  *
  * Matching is pure JS over the user's entity list (there are no entity
  * embeddings and no pg_trgm), so it behaves identically on Postgres and the
- * sqlite test driver.
+ * sqlite test driver. Automatic detection after extraction records cheap
+ * exact-cross-type pairs as `pending` suggestions; the fuzzy sweep and any
+ * LLM/web judging happen only on demand.
  */
 @Injectable()
 export class EntityReconciliationService {
-  constructor(private readonly registry: EntitiesRegistryService) {}
+  constructor(
+    private readonly registry: EntitiesRegistryService,
+    @InjectRepository(EntityRegistryEntity)
+    private readonly entities: Repository<EntityRegistryEntity>,
+    @InjectRepository(EntityMentionEntity)
+    private readonly mentions: Repository<EntityMentionEntity>,
+    @InjectRepository(EntityMergeSuggestionEntity)
+    private readonly suggestions: Repository<EntityMergeSuggestionEntity>,
+  ) {}
 
   /**
    * Ranked duplicate candidates for one entity: exact cross-type first (score
@@ -64,9 +86,112 @@ export class EntityReconciliationService {
 
     return candidates.sort((a, b) => b.score - a.score).slice(0, MAX_CANDIDATES);
   }
+
+  /**
+   * Hot-path detection run best-effort after each extraction: for every entity
+   * this recording mentioned, record `pending` suggestions for any existing
+   * entity with the same (folded) name under a DIFFERENT type. Exact-only — no
+   * fuzzy sweep, no LLM, no network. Idempotent on the canonicalized pair, and a
+   * previously dismissed pair is left dismissed. Returns how many new
+   * suggestions were written.
+   */
+  async detectExactForItem(userId: string, inboxItemId: string): Promise<number> {
+    const itemMentions = await this.mentions.find({ where: { userId, inboxItemId } });
+    const mentionedIds = new Set(itemMentions.map((m) => m.entityId));
+    if (mentionedIds.size === 0) return 0;
+
+    const all = await this.entities.find({ where: { userId } });
+    const keysById = new Map(all.map((e) => [e.id, new Set(rowKeys(e))] as const));
+
+    let created = 0;
+    const seenPairs = new Set<string>();
+    for (const subject of all) {
+      if (!mentionedIds.has(subject.id)) continue;
+      const subjectKeys = keysById.get(subject.id)!;
+      for (const other of all) {
+        if (other.id === subject.id || other.type === subject.type) continue;
+        const otherKeys = keysById.get(other.id)!;
+        if (![...otherKeys].some((k) => subjectKeys.has(k))) continue;
+
+        const [a, b] = [subject.id, other.id].sort();
+        const pairKey = `${a}:${b}`;
+        if (seenPairs.has(pairKey)) continue;
+        seenPairs.add(pairKey);
+
+        const existing = await this.suggestions.findOne({
+          where: { userId, entityId: a, candidateEntityId: b },
+        });
+        if (existing) continue;
+        await this.suggestions.save(
+          this.suggestions.create({
+            userId,
+            entityId: a,
+            candidateEntityId: b,
+            source: 'auto',
+            status: 'pending',
+            usedWeb: false,
+          }),
+        );
+        created += 1;
+      }
+    }
+    return created;
+  }
+
+  /**
+   * Recorded merge suggestions for the "possible duplicates" surface, newest
+   * first. Both sides are resolved to full registry DTOs; a suggestion whose
+   * entity no longer exists (e.g. merged/deleted before cascade caught up) is
+   * skipped.
+   */
+  async listSuggestions(
+    userId: string,
+    status: MergeSuggestionStatus = 'pending',
+  ): Promise<MergeSuggestionDto[]> {
+    const rows = await this.suggestions.find({ where: { userId, status } });
+    if (rows.length === 0) return [];
+    const byId = new Map(
+      (await this.registry.list(userId, undefined, true)).map((e) => [e.id, e] as const),
+    );
+    return rows
+      .map((row) => {
+        const entity = byId.get(row.entityId);
+        const candidate = byId.get(row.candidateEntityId);
+        if (!entity || !candidate) return null;
+        return {
+          id: row.id,
+          entity,
+          candidate,
+          recommendedSurvivorId: row.recommendedSurvivorId,
+          recommendedType: row.recommendedType,
+          sameThing: row.sameThing,
+          confidence: row.confidence,
+          rationale: row.rationale,
+          usedWeb: row.usedWeb,
+          source: row.source,
+          status: row.status,
+          createdAt: row.createdAt.toISOString(),
+        } satisfies MergeSuggestionDto;
+      })
+      .filter((dto): dto is MergeSuggestionDto => dto !== null)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+
+  /** Mark a suggestion dismissed so it is not surfaced again. */
+  async dismiss(userId: string, suggestionId: string): Promise<void> {
+    const row = await this.suggestions.findOne({ where: { id: suggestionId, userId } });
+    if (!row) throw new NotFoundException('suggestion not found');
+    row.status = 'dismissed';
+    await this.suggestions.save(row);
+  }
 }
 
 /** An entity's full set of name forms: canonical plus every known alias. */
 function namesOf(entity: RegistryEntityDto): string[] {
   return [entity.canonicalName, ...entity.aliases];
+}
+
+/** Folded match keys for a raw registry row (canonical + aliases). */
+function rowKeys(row: EntityRegistryEntity): string[] {
+  return [row.canonicalName, ...(row.aliases ?? [])].flatMap(nameKeys);
 }

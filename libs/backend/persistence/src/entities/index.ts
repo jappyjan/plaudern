@@ -7,6 +7,7 @@ export * from './entity-mention.entity';
 export * from './entity-relation.entity';
 export * from './entity-alias.entity';
 export * from './entity-suppression.entity';
+export * from './entity-merge-suggestion.entity';
 export * from './inbox-tombstone.entity';
 export * from './plaud-settings.entity';
 export * from './email-settings.entity';

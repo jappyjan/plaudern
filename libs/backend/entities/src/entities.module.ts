@@ -8,6 +8,7 @@ import { QuestionsModule } from '@plaudern/questions';
 import {
   EntityAliasEntity,
   EntityMentionEntity,
+  EntityMergeSuggestionEntity,
   EntityRegistryEntity,
   EntityRelationEntity,
   EntitySuppressionEntity,
@@ -57,6 +58,7 @@ import { RelationsExtractor } from './relations.extractor';
       EntityRelationEntity,
       EntityAliasEntity,
       EntitySuppressionEntity,
+      EntityMergeSuggestionEntity,
       ExtractedPayloadEntity,
       InboxItemEntity,
       SpeakerOccurrenceEntity,

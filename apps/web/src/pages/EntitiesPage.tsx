@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, CardBody, Chip, Input, Select, SelectItem, Spinner } from '@heroui/react';
-import type { EntityType, RegistryEntityDto } from '@plaudern/contracts';
+import type { EntityType, MergeSuggestionDto, RegistryEntityDto } from '@plaudern/contracts';
 import { Link } from 'react-router-dom';
-import { listEntities } from '../lib/api';
+import { dismissMergeSuggestion, listEntities, listMergeSuggestions } from '../lib/api';
 import {
   ENTITY_TYPE_COLOR,
   ENTITY_TYPE_LABEL,
@@ -92,6 +92,8 @@ export function EntitiesPage() {
         </Button>
       </div>
 
+      <DuplicateSuggestions />
+
       {entities.length === 0 ? (
         <EmptyState />
       ) : (
@@ -148,6 +150,81 @@ export function EntitiesPage() {
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Pending duplicate suggestions detected automatically after extraction — pairs
+ * of entities with the same name under different types. Renders nothing when
+ * there are none. Each row links to an entity's page (where "Find duplicates"
+ * drives the confirmed merge) and offers a Dismiss.
+ */
+function DuplicateSuggestions() {
+  const [suggestions, setSuggestions] = useState<MergeSuggestionDto[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void listMergeSuggestions()
+      .then((res) => {
+        if (!cancelled) setSuggestions(res.suggestions);
+      })
+      .catch(() => {
+        if (!cancelled) setSuggestions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function dismiss(id: string) {
+    setSuggestions((cur) => (cur ? cur.filter((s) => s.id !== id) : cur));
+    void dismissMergeSuggestion(id).catch(() => {
+      // Best-effort; a failed dismiss reappears on the next load.
+    });
+  }
+
+  if (!suggestions || suggestions.length === 0) return null;
+
+  return (
+    <Card className="bg-warning-50">
+      <CardBody className="flex flex-col gap-2">
+        <p className="text-sm font-semibold">
+          Possible duplicates{' '}
+          <Chip size="sm" variant="flat" color="warning">
+            {suggestions.length}
+          </Chip>
+        </p>
+        <p className="text-xs text-default-500">
+          These were extracted with the same name under different types. Open one to review and
+          merge.
+        </p>
+        {suggestions.map((s) => (
+          <div
+            key={s.id}
+            className="flex items-center justify-between gap-2 rounded-medium bg-content1 p-2"
+          >
+            <div className="flex min-w-0 flex-wrap items-center gap-1">
+              <span className="truncate text-sm font-medium">{s.entity.canonicalName}</span>
+              <Chip size="sm" variant="flat" color={ENTITY_TYPE_COLOR[s.entity.type]}>
+                {ENTITY_TYPE_LABEL[s.entity.type]}
+              </Chip>
+              <span className="text-xs text-default-500">↔</span>
+              <Chip size="sm" variant="flat" color={ENTITY_TYPE_COLOR[s.candidate.type]}>
+                {ENTITY_TYPE_LABEL[s.candidate.type]}
+              </Chip>
+            </div>
+            <div className="flex shrink-0 gap-1">
+              <Button as={Link} to={`/entities/${s.entity.id}`} size="sm" variant="flat">
+                Review
+              </Button>
+              <Button size="sm" variant="light" onPress={() => dismiss(s.id)}>
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        ))}
+      </CardBody>
+    </Card>
   );
 }
 

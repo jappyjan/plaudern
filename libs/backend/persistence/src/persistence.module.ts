@@ -14,6 +14,7 @@ import {
   EmbeddingChunkEntity,
   EntityAliasEntity,
   EntityMentionEntity,
+  EntityMergeSuggestionEntity,
   EntityRegistryEntity,
   EntityRelationEntity,
   EntitySuppressionEntity,
@@ -86,6 +87,7 @@ import { CreateDecisions1720000000035 } from './migrations/1720000000035-CreateD
 import { CreateTopicDocuments1720000000036 } from './migrations/1720000000036-CreateTopicDocuments';
 import { VoiceProfileSelf1720000000037 } from './migrations/1720000000037-VoiceProfileSelf';
 import { CreateReminders1720000000038 } from './migrations/1720000000038-CreateReminders';
+import { CreateEntityMergeSuggestions1720000000039 } from './migrations/1720000000039-CreateEntityMergeSuggestions';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -112,6 +114,7 @@ export const ALL_ENTITIES = [
   EntityRelationEntity,
   EntityAliasEntity,
   EntitySuppressionEntity,
+  EntityMergeSuggestionEntity,
   InboxTombstoneEntity,
   PlaudSettingsEntity,
   EmailSettingsEntity,
@@ -176,6 +179,7 @@ export const ALL_MIGRATIONS = [
   CreateTopicDocuments1720000000036,
   VoiceProfileSelf1720000000037,
   CreateReminders1720000000038,
+  CreateEntityMergeSuggestions1720000000039,
 ];
 
 /**

@@ -4,6 +4,7 @@ import {
   ALL_ENTITIES,
   EntityAliasEntity,
   EntityMentionEntity,
+  EntityMergeSuggestionEntity,
   EntityRegistryEntity,
   EntitySuppressionEntity,
   ExtractedPayloadEntity,
@@ -37,14 +38,20 @@ describe('EntityReconciliationService', () => {
       dataSource.getRepository(EntityAliasEntity),
       dataSource.getRepository(EntitySuppressionEntity),
     );
-    reconciliation = new EntityReconciliationService(registry);
+    reconciliation = new EntityReconciliationService(
+      registry,
+      dataSource.getRepository(EntityRegistryEntity),
+      dataSource.getRepository(EntityMentionEntity),
+      dataSource.getRepository(EntityMergeSuggestionEntity),
+    );
   });
 
   afterEach(async () => {
     await dataSource.destroy();
   });
 
-  async function ingest(extracted: ExtractedEntity[]): Promise<void> {
+  /** Ingest a batch under a fresh item; returns the inbox item id. */
+  async function ingest(extracted: ExtractedEntity[]): Promise<string> {
     const item = await dataSource.getRepository(InboxItemEntity).save({
       userId: USER,
       deviceId: null,
@@ -62,6 +69,7 @@ describe('EntityReconciliationService', () => {
       createdAt: new Date('2026-07-01T10:00:00Z'),
     });
     await registry.ingest(USER, item.id, ext.id, extracted);
+    return item.id;
   }
 
   async function idOf(type: string): Promise<string> {
@@ -120,5 +128,52 @@ describe('EntityReconciliationService', () => {
     await expect(
       reconciliation.findCandidates(USER, '00000000-0000-0000-0000-0000000000ff'),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('detectExactForItem records a pending suggestion for a same-name cross-type pair, idempotently', async () => {
+    // First recording: "Foo" as an organization.
+    await ingest([{ type: 'organization', name: 'Foo', mentions: ['Foo'] }]);
+    // Later recording: "Foo" as a product — this item now collides.
+    const item2 = await ingest([{ type: 'product', name: 'Foo', mentions: ['Foo'] }]);
+
+    const created = await reconciliation.detectExactForItem(USER, item2);
+    expect(created).toBe(1);
+
+    const suggestions = await reconciliation.listSuggestions(USER);
+    expect(suggestions).toHaveLength(1);
+    const [s] = suggestions;
+    expect(s.source).toBe('auto');
+    expect(s.status).toBe('pending');
+    const types = [s.entity.type, s.candidate.type].sort();
+    expect(types).toEqual(['organization', 'product']);
+
+    // Running again writes no duplicate (unique canonicalized pair).
+    expect(await reconciliation.detectExactForItem(USER, item2)).toBe(0);
+    expect(await reconciliation.listSuggestions(USER)).toHaveLength(1);
+  });
+
+  it('does not re-create a dismissed suggestion', async () => {
+    await ingest([{ type: 'organization', name: 'Foo', mentions: ['Foo'] }]);
+    const item2 = await ingest([{ type: 'product', name: 'Foo', mentions: ['Foo'] }]);
+    await reconciliation.detectExactForItem(USER, item2);
+
+    const [s] = await reconciliation.listSuggestions(USER);
+    await reconciliation.dismiss(USER, s.id);
+
+    expect(await reconciliation.listSuggestions(USER, 'pending')).toHaveLength(0);
+    expect(await reconciliation.listSuggestions(USER, 'dismissed')).toHaveLength(1);
+
+    // A later re-detection of the same pair stays dismissed.
+    expect(await reconciliation.detectExactForItem(USER, item2)).toBe(0);
+    expect(await reconciliation.listSuggestions(USER, 'pending')).toHaveLength(0);
+  });
+
+  it('detectExactForItem is a no-op when the item has no cross-type collisions', async () => {
+    const item = await ingest([
+      { type: 'person', name: 'Alice', mentions: ['Alice'] },
+      { type: 'organization', name: 'ACME', mentions: ['ACME'] },
+    ]);
+    expect(await reconciliation.detectExactForItem(USER, item)).toBe(0);
+    expect(await reconciliation.listSuggestions(USER)).toHaveLength(0);
   });
 });

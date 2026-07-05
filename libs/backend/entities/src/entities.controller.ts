@@ -18,6 +18,7 @@ import {
   entityNeighborhoodQuerySchema,
   linkEntityContactRequestSchema,
   mergeEntityRequestSchema,
+  mergeSuggestionsQuerySchema,
   updateEntityRequestSchema,
   type AutoLinkEntitiesResponse,
   type DuplicateCandidatesResponse,
@@ -26,6 +27,7 @@ import {
   type EntityDetailWithRelationsDto,
   type EntityListResponse,
   type EntityNeighborhoodResponse,
+  type MergeSuggestionsResponse,
 } from '@plaudern/contracts';
 import { CurrentUser, type AuthenticatedUser } from '@plaudern/auth';
 import { EntitiesRegistryService } from './entities-registry.service';
@@ -98,6 +100,33 @@ export class EntitiesController {
   @Post('auto-link')
   async autoLink(@CurrentUser() user: AuthenticatedUser): Promise<AutoLinkEntitiesResponse> {
     return { linked: await this.resolver.autoLinkAll(user.id) };
+  }
+
+  /**
+   * Recorded merge suggestions (default: pending) — likely-duplicate pairs
+   * detected automatically after extraction. Declared before `:id` so the
+   * static path is not shadowed by the id route.
+   */
+  @Get('suggestions')
+  async suggestions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: unknown,
+  ): Promise<MergeSuggestionsResponse> {
+    const parsed = mergeSuggestionsQuerySchema.safeParse(query);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues[0]?.message ?? 'invalid query');
+    }
+    return { suggestions: await this.reconciliation.listSuggestions(user.id, parsed.data.status) };
+  }
+
+  /** Dismiss a merge suggestion so it is not surfaced again. */
+  @Post('suggestions/:sid/dismiss')
+  @HttpCode(204)
+  async dismissSuggestion(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('sid') sid: string,
+  ): Promise<void> {
+    await this.reconciliation.dismiss(user.id, sid);
   }
 
   @Get(':id')
