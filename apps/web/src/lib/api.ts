@@ -120,6 +120,15 @@ import {
   type CommitmentStatus,
   type ItemCommitmentsResponse,
   type UpdateCommitmentStatusRequest,
+  questionSchema,
+  questionListResponseSchema,
+  itemQuestionsResponseSchema,
+  type QuestionDto,
+  type QuestionDirection,
+  type QuestionListResponse,
+  type QuestionStatus,
+  type ItemQuestionsResponse,
+  type UpdateQuestionStatusRequest,
   openLoopSchema,
   openLoopListResponseSchema,
   type OpenLoopDto,
@@ -811,6 +820,40 @@ export async function updateCommitmentStatus(
 ): Promise<CommitmentDto> {
   return commitmentSchema.parse(
     await requestJson(`/commitments/${id}`, { method: 'PATCH', body: JSON.stringify(req) }),
+  );
+}
+
+/** An item's extracted open questions plus the extraction pipeline status. */
+export async function getItemQuestions(itemId: string): Promise<ItemQuestionsResponse> {
+  return itemQuestionsResponseSchema.parse(await requestJson(`/inbox/${itemId}/questions`));
+}
+
+/** Re-run question extraction for an item; returns the refreshed read model. */
+export async function retryItemQuestions(itemId: string): Promise<ItemQuestionsResponse> {
+  return itemQuestionsResponseSchema.parse(
+    await requestJson(`/inbox/${itemId}/questions/retry`, { method: 'POST' }),
+  );
+}
+
+/** The user's open questions across all recordings, optionally filtered. */
+export async function listQuestions(filters?: {
+  direction?: QuestionDirection;
+  status?: QuestionStatus;
+}): Promise<QuestionListResponse> {
+  const query = new URLSearchParams();
+  if (filters?.direction) query.set('direction', filters.direction);
+  if (filters?.status) query.set('status', filters.status);
+  const suffix = query.toString() ? `?${query}` : '';
+  return questionListResponseSchema.parse(await requestJson(`/questions${suffix}`));
+}
+
+/** Advance a question's lifecycle status (open → answered / dropped). */
+export async function updateQuestionStatus(
+  id: string,
+  req: UpdateQuestionStatusRequest,
+): Promise<QuestionDto> {
+  return questionSchema.parse(
+    await requestJson(`/questions/${id}`, { method: 'PATCH', body: JSON.stringify(req) }),
   );
 }
 

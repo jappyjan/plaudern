@@ -38,6 +38,10 @@ export const extractionKindSchema = z.enum([
   // LLM extraction of the user's own self-directed intentions ("book the
   // dentist"), deduplicated semantically into a per-user task list (JJ-35).
   'tasks',
+  // LLM extraction of unanswered open questions in both directions (questions
+  // I asked that got no answer ↔ questions asked of me that I deferred) —
+  // the loops a bad memory drops silently (JJ-34).
+  'questions',
 ]);
 export type ExtractionKind = z.infer<typeof extractionKindSchema>;
 
