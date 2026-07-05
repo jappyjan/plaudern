@@ -152,13 +152,21 @@ export class TopicDocumentService implements OnModuleDestroy {
   /**
    * Append a fresh `queued` document version for a topic and hand it to the
    * queue. Idempotent/coalescing: if a generation is already IN FLIGHT for the
-   * topic — `queued` (not yet started) OR `processing` (running right now) —
-   * that one will read the topic's current items when it runs/is running, so a
-   * fresh trigger just defers to it instead of stacking a second row (JJ-76: a
-   * `queued` row can flip to `processing` between a caller's check and the
-   * insert, which used to let a second concurrent generation slip through and
-   * burn an extra LLM call). Returns the (new or in-flight) document id, or
-   * null when disabled or a version race was lost.
+   * topic — `queued` (not yet started) OR `processing` (running right now) — a
+   * fresh trigger defers to it instead of stacking a second row (JJ-76). This
+   * saves the redundant LLM call the old `queued`-only guard let slip whenever
+   * a queued row had already flipped to `processing`.
+   *
+   * Deferral is only SAFE because of who covers which items:
+   *  - a `queued` generation hasn't read its sources yet, so it will naturally
+   *    include whatever just arrived when it runs;
+   *  - a `processing` generation already read its sources, so an item that
+   *    lands mid-flight is NOT in this run — the processor closes that gap with
+   *    a completion-time freshness re-check that enqueues exactly one follow-up
+   *    when new assignments appeared during the run (see TopicDocumentProcessor).
+   *
+   * Returns the (new or in-flight) document id, or null when disabled or a
+   * version race was lost.
    */
   async enqueueRegeneration(userId: string, topicId: string): Promise<string | null> {
     if (!this.provider.enabled) return null;

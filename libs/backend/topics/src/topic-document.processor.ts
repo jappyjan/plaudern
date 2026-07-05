@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { InboxService } from '@plaudern/inbox';
@@ -14,7 +15,7 @@ import {
   usedMarkers,
 } from './topic-document-context';
 import type { TopicDocumentJob } from './topic-document.job';
-import { pruneTopicDocumentHistory } from './topic-document.service';
+import { pruneTopicDocumentHistory, TopicDocumentService } from './topic-document.service';
 
 /**
  * Executes one living-document generation job: gather the topic's classified
@@ -38,6 +39,11 @@ export class TopicDocumentProcessor {
     private readonly topics: Repository<TopicEntity>,
     @InjectRepository(ItemTopicEntity)
     private readonly assignments: Repository<ItemTopicEntity>,
+    // Resolved lazily so we can re-enqueue a follow-up generation without a
+    // construction-time dependency: TopicDocumentService → queue → this
+    // processor is already a cycle, and injecting the service directly would
+    // close it. See the completion-time freshness re-check below (JJ-76).
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   async process(job: TopicDocumentJob): Promise<void> {
@@ -53,6 +59,9 @@ export class TopicDocumentProcessor {
         where: { topicId: job.topicId, userId: job.userId },
       });
       if (assignments.length === 0) throw new Error('topic has no classified items to document');
+      // Snapshot of what THIS version covers — anything classified after this
+      // read isn't in the sources we hand the model (JJ-76 re-check on success).
+      const coveredItemIds = new Set(assignments.map((a) => a.inboxItemId));
 
       const items = await this.loadItems(assignments.map((a) => a.inboxItemId));
       const sources = collectTopicDocumentSources(items);
@@ -110,6 +119,37 @@ export class TopicDocumentProcessor {
       } catch (err) {
         this.logger.warn(
           `failed to prune document history for topic ${job.topicId}: ${(err as Error).message}`,
+        );
+      }
+
+      // JJ-76: the enqueue-side coalescing guard now DEFERS a trigger that
+      // arrives while a generation is `processing` (not just `queued`). An item
+      // classified in that window is invisible to this already-started run —
+      // its sources were read above, before the item existed — so without a
+      // re-check that item would be silently dropped until unrelated future
+      // activity. Compare the topic's assignments now against what this run
+      // covered; if anything new landed mid-flight, enqueue exactly ONE
+      // follow-up. `enqueueRegeneration` itself coalesces, so this can't stack,
+      // and it only fires when genuinely-new work exists, so it can't loop
+      // (the follow-up run finds nothing newer and stops). Best-effort — a
+      // failed re-enqueue must not fail this already-succeeded generation.
+      try {
+        const currentAssignments = await this.assignments.find({
+          where: { topicId: job.topicId, userId: job.userId },
+          select: { inboxItemId: true },
+        });
+        const hasNewWork = currentAssignments.some((a) => !coveredItemIds.has(a.inboxItemId));
+        if (hasNewWork) {
+          await this.moduleRef
+            .get(TopicDocumentService, { strict: false })
+            .enqueueRegeneration(job.userId, job.topicId);
+          this.logger.log(
+            `re-enqueued topic ${job.topicId}: items were classified during generation`,
+          );
+        }
+      } catch (err) {
+        this.logger.warn(
+          `failed to re-enqueue follow-up generation for topic ${job.topicId}: ${(err as Error).message}`,
         );
       }
     } catch (err) {
