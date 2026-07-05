@@ -143,6 +143,13 @@ import {
   type OpenLoopKind,
   type OpenLoopListResponse,
   type OpenLoopState,
+  reminderSchema,
+  reminderListResponseSchema,
+  itemRemindersResponseSchema,
+  type ReminderDto,
+  type ReminderListResponse,
+  type ReminderStatus,
+  type ItemRemindersResponse,
   type UpdateEntityRequest,
   searchResponseSchema,
   similarResponseSchema,
@@ -938,6 +945,48 @@ export async function getItemTasks(itemId: string): Promise<ItemTasksResponse> {
 export async function retryItemTasks(itemId: string): Promise<ItemTasksResponse> {
   return itemTasksResponseSchema.parse(
     await requestJson(`/inbox/${itemId}/tasks/retry`, { method: 'POST' }),
+  );
+}
+
+// ---- Prospective-memory reminders (JJ-25) ----
+
+/**
+ * The user's calendar-visible reminders, optionally scoped to a due window
+ * ([from, to] ISO) and/or a status. The calendar fetches just the visible
+ * range; an "active" filter yields everything still pending.
+ */
+export async function listReminders(filters?: {
+  from?: string;
+  to?: string;
+  status?: ReminderStatus;
+}): Promise<ReminderListResponse> {
+  const query = new URLSearchParams();
+  if (filters?.from) query.set('from', filters.from);
+  if (filters?.to) query.set('to', filters.to);
+  if (filters?.status) query.set('status', filters.status);
+  const suffix = query.toString() ? `?${query}` : '';
+  return reminderListResponseSchema.parse(await requestJson(`/reminders${suffix}`));
+}
+
+/** Advance a reminder's lifecycle status (active → done / dismissed, or reopen). */
+export async function updateReminderStatus(
+  id: string,
+  status: ReminderStatus,
+): Promise<ReminderDto> {
+  return reminderSchema.parse(
+    await requestJson(`/reminders/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+  );
+}
+
+/** An item's extracted reminders plus the extraction pipeline status. */
+export async function getItemReminders(itemId: string): Promise<ItemRemindersResponse> {
+  return itemRemindersResponseSchema.parse(await requestJson(`/inbox/${itemId}/reminders`));
+}
+
+/** Re-run reminder extraction for an item; returns the refreshed read model. */
+export async function retryItemReminders(itemId: string): Promise<ItemRemindersResponse> {
+  return itemRemindersResponseSchema.parse(
+    await requestJson(`/inbox/${itemId}/reminders/retry`, { method: 'POST' }),
   );
 }
 
