@@ -11,20 +11,24 @@ import { extractionStatusSchema } from './inbox';
  * carries citations back to the recordings that stated it. These accumulate into
  * a per-person knowledge base that later powers the person dossier pages (JJ-24).
  *
- * Facts are APPEND-ONLY with SUPERSESSION: a newer fact about the same
- * (person, attribute) whose value differs marks the older one `superseded`
- * (pointing at the fact that replaced it) WITHOUT deleting it, so the history of
- * "school starts in August → moved to September" is preserved, not overwritten.
- * A `personal_facts` row lives outside the immutable inbox aggregate — it is a
- * derived, regenerable read model like a topic or a registry entity.
+ * Facts are APPEND-ONLY with SUPERSESSION among EXCLUSIVE facts: an attribute
+ * is `exclusive` when it holds one current value per person (birthday, current
+ * city, employer) — a newer exclusive fact about the same (person, attribute)
+ * marks the older one `superseded` (pointing at the fact that replaced it)
+ * WITHOUT deleting it, so the history of "school starts in August → moved to
+ * September" is preserved, not overwritten. ACCUMULATIVE facts (the default:
+ * allergies, gift ideas, hobbies, children) coexist and are never superseded —
+ * two allergies are both true at once. A `personal_facts` row lives outside the
+ * immutable inbox aggregate — it is a derived, regenerable read model like a
+ * topic or a registry entity.
  */
 
 /**
  * One candidate fact as produced by the LLM, before it is resolved + persisted.
  * `person` is the subject's name as spoken (empty when the model could not name
  * them). `attribute` is a short key naming WHAT the fact is about ("birthday",
- * "allergy", "schooling", "gift idea") — the axis a newer fact supersedes an
- * older one along. `value` is the fact itself.
+ * "allergy", "schooling", "gift idea") — the axis exclusive facts supersede each
+ * other along. `value` is the fact itself.
  */
 export const extractedFactSchema = z.object({
   /** The subject the fact is about: their name as spoken. May be empty/unknown. */
@@ -33,6 +37,14 @@ export const extractedFactSchema = z.object({
   attribute: z.string().min(1).max(80),
   /** The fact itself ("starts school in August", "allergic to nuts"). */
   value: z.string().min(1).max(500),
+  /**
+   * Whether the attribute holds ONE current value per person (birthday, current
+   * city, employer) — only exclusive facts supersede each other. Accumulative
+   * (false, the default): allergies, gift ideas, hobbies, children. Defaulting
+   * to accumulate means a model that omits or mislabels the flag degrades to
+   * "extra visible facts", never to hidden data.
+   */
+  exclusive: z.boolean().default(false),
   /** The source sentence the fact was inferred from (for the citation). */
   quote: z.string().max(1000).nullish(),
 });
@@ -66,7 +78,9 @@ export const personalFactSchema = z.object({
   attribute: z.string(),
   /** The fact itself. */
   value: z.string(),
-  /** The fact that superseded this one (newer, same person+attribute), or null when active. */
+  /** Whether the attribute holds one current value (participates in supersession). */
+  exclusive: z.boolean(),
+  /** The exclusive fact that superseded this one, or null when active/accumulative. */
   supersededByFactId: z.string().uuid().nullable(),
   /** When this fact was superseded (ISO), or null when still active. */
   supersededAt: z.string().datetime().nullable(),

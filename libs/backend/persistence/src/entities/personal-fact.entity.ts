@@ -14,11 +14,15 @@ import {
  * deduplicated across every recording that states it into ONE row carrying many
  * `personal_fact_citations`, exactly like a task carries citations.
  *
- * APPEND-ONLY with SUPERSESSION. A newer fact about the same
- * (subject, attribute) whose value differs marks the older one superseded —
- * `supersededByFactId` points at the fact that replaced it and `supersededAt`
- * records when — WITHOUT deleting it, so the timeline ("school in August → moved
- * to September") survives for the person dossier (JJ-24). Recency is decided by
+ * APPEND-ONLY with SUPERSESSION, applied only among EXCLUSIVE facts. An
+ * attribute is `exclusive` when it holds one current value per person (birthday,
+ * employer, current city): within a (subject, attribute) group the newest
+ * citation-live exclusive fact is active and every other exclusive fact points
+ * at it via `supersededByFactId` + `supersededAt` — WITHOUT being deleted, so
+ * the timeline ("school in August → moved to September") survives for the
+ * person dossier (JJ-24). ACCUMULATIVE facts (the default: allergies, gift
+ * ideas, hobbies, children) coexist and are never superseded — only exact
+ * duplicates collapse via the dedupe unique index. Recency is decided by
  * `lastOccurredAt` (the newest supporting recording's `occurredAt`), so the
  * chronologically-latest statement wins regardless of processing order.
  *
@@ -81,9 +85,19 @@ export class PersonalFactEntity {
   normalizedValue!: string;
 
   /**
-   * The fact that superseded this one (newer, same subject+attribute, different
-   * value), or null while this fact is the active one. Never triggers a delete —
-   * superseded rows are retained as history.
+   * Whether the attribute holds ONE current value per person (birthday, current
+   * city, employer) — only exclusive facts participate in supersession.
+   * Accumulative facts (false, the default) coexist: allergies, gift ideas,
+   * hobbies, children. LLM-classified; defaulting to accumulate means a
+   * mislabel degrades to "extra visible facts", never to hidden data.
+   */
+  @Column({ type: 'boolean', default: false })
+  exclusive!: boolean;
+
+  /**
+   * The exclusive fact that superseded this one (the group's active exclusive
+   * fact), or null while this fact is active (or accumulative). Never triggers
+   * a delete — superseded rows are retained as history.
    */
   @Column({ type: 'uuid', nullable: true })
   supersededByFactId!: string | null;

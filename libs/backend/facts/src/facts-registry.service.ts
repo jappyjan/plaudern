@@ -13,6 +13,8 @@ import {
   ExtractedPayloadEntity,
   PersonalFactCitationEntity,
   PersonalFactEntity,
+  recomputePersonalFactSupersession,
+  type PersonalFactGroupKey,
 } from '@plaudern/persistence';
 
 /**
@@ -31,6 +33,8 @@ export interface FactCandidate {
   person: string;
   attribute: string;
   value: string;
+  /** Whether the attribute holds one current value (participates in supersession). */
+  exclusive: boolean;
   quote: string | null;
   startSeconds: number | null;
 }
@@ -39,11 +43,14 @@ export interface FactCandidate {
  * Owns the per-user personal-facts store (JJ-31): resolving extracted candidate
  * facts to a subject (a registry `person` entity when the name matches, else a
  * raw name), deduplicating them into `personal_facts` rows with
- * `personal_fact_citations` edges, and maintaining APPEND-ONLY SUPERSESSION —
- * within a (subject, attribute) group the fact backed by the most recent
- * recording is active; the rest point at it via `supersededByFactId` and are
- * kept as history. Also serves the read models (per-person list, an item's
- * facts tab).
+ * `personal_fact_citations` edges, and maintaining APPEND-ONLY SUPERSESSION
+ * among EXCLUSIVE facts — within a (subject, attribute) group the citation-live
+ * exclusive fact backed by the most recent recording is active; other exclusive
+ * facts point at it via `supersededByFactId` and are kept as history, while
+ * accumulative facts (allergies, gift ideas) coexist untouched. The invariant
+ * itself lives in `recomputePersonalFactSupersession` (@plaudern/persistence)
+ * so the inbox delete path and the entity merge can restore it too. Also serves
+ * the read models (per-person list, an item's facts tab).
  *
  * Citations are keyed to the `facts` extraction that produced them; the read
  * models restrict citation aggregates to each item's LATEST succeeded `facts`
@@ -68,8 +75,14 @@ export class FactsRegistryService {
   /**
    * Dedupe a batch of candidate facts into the user's store and append one
    * citation per distinct fact for this extraction, then recompute supersession
-   * for every (subject, attribute) the batch touched. Returns the number of
-   * distinct facts the item was linked to.
+   * for every (subject, attribute) group the batch touched — INCLUDING the
+   * groups of facts this item's EARLIER extractions cited. That second set is
+   * what keeps a reprocess honest: a fact the new extraction stopped producing
+   * goes citation-stale and must release the active slot to a superseded
+   * sibling, and that sibling's group can only heal if it is recomputed. Runs
+   * even when the batch is empty (a re-run that found nothing still stales the
+   * item's previous facts). Returns the number of distinct facts the item was
+   * linked to.
    */
   async ingest(
     userId: string,
@@ -90,16 +103,35 @@ export class FactsRegistryService {
         person,
         attribute,
         value,
+        exclusive: raw.exclusive === true,
         quote: raw.quote ? clamp(raw.quote, MAX_QUOTE_CHARS) : null,
         startSeconds: raw.startSeconds,
       });
       if (cleaned.length >= MAX_FACTS_PER_EXTRACTION) break;
     }
-    if (cleaned.length === 0) return 0;
 
-    const personByName = await this.personEntities(userId);
+    const touchedGroups = new Map<string, PersonalFactGroupKey>();
+    const touch = (subjectKey: string, normalizedAttribute: string) =>
+      touchedGroups.set(`${subjectKey}::${normalizedAttribute}`, {
+        userId,
+        subjectKey,
+        normalizedAttribute,
+      });
+
+    // Groups of facts this item's earlier extractions cited: a reprocess that
+    // drops a fact must let its group re-elect an active fact.
+    const priorCitations = await this.citations.find({
+      where: { inboxItemId },
+      select: { factId: true },
+    });
+    const priorFactIds = [...new Set(priorCitations.map((c) => c.factId))];
+    if (priorFactIds.length > 0) {
+      const priorFacts = await this.facts.find({ where: { id: In(priorFactIds) } });
+      for (const fact of priorFacts) touch(fact.subjectKey, fact.normalizedAttribute);
+    }
+
+    const personByName = cleaned.length > 0 ? await this.personEntities(userId) : new Map<string, string>();
     const cited = new Set<string>();
-    const touchedGroups = new Map<string, { subjectKey: string; normalizedAttribute: string }>();
 
     for (const candidate of cleaned) {
       const normalizedPerson = normalize(candidate.person);
@@ -116,16 +148,21 @@ export class FactsRegistryService {
         normalizedAttribute,
         value: candidate.value,
         normalizedValue,
+        exclusive: candidate.exclusive,
         occurredAt: occurredAt ?? null,
       });
       await this.upsertCitation(userId, inboxItemId, extractionId, factId, candidate);
       cited.add(factId);
-      touchedGroups.set(`${subjectKey}::${normalizedAttribute}`, { subjectKey, normalizedAttribute });
+      touch(subjectKey, normalizedAttribute);
     }
 
-    for (const group of touchedGroups.values()) {
-      await this.recomputeSupersession(userId, group.subjectKey, group.normalizedAttribute);
-    }
+    // The in-flight extraction id is passed through so its citations count as
+    // the item's current truth even though its row isn't `succeeded` yet.
+    await recomputePersonalFactSupersession(
+      this.facts.manager,
+      [...touchedGroups.values()],
+      extractionId,
+    );
     return cited.size;
   }
 
@@ -140,6 +177,7 @@ export class FactsRegistryService {
       normalizedAttribute: string;
       value: string;
       normalizedValue: string;
+      exclusive: boolean;
       occurredAt: string | null;
     },
   ): Promise<string> {
@@ -151,11 +189,18 @@ export class FactsRegistryService {
     };
     const existing = await this.facts.findOne({ where });
     if (existing) {
-      // Refresh mutable, non-identity fields: adopt a newer linkage / spelling
-      // and advance recency so supersession sees the latest supporting instant.
+      // Refresh mutable, non-identity fields: adopt a newer linkage / spelling /
+      // classification and advance recency so supersession sees the latest
+      // supporting instant.
       let dirty = false;
       if (fields.personEntityId && existing.personEntityId !== fields.personEntityId) {
         existing.personEntityId = fields.personEntityId;
+        dirty = true;
+      }
+      if (existing.exclusive !== fields.exclusive) {
+        // Adopt the newest statement's classification; the group recompute that
+        // follows re-establishes the invariant either way.
+        existing.exclusive = fields.exclusive;
         dirty = true;
       }
       if (fields.occurredAt && (!existing.lastOccurredAt || fields.occurredAt > existing.lastOccurredAt)) {
@@ -176,6 +221,7 @@ export class FactsRegistryService {
           normalizedAttribute: fields.normalizedAttribute,
           value: fields.value,
           normalizedValue: fields.normalizedValue,
+          exclusive: fields.exclusive,
           supersededByFactId: null,
           supersededAt: null,
           lastOccurredAt: fields.occurredAt,
@@ -215,42 +261,6 @@ export class FactsRegistryService {
     } catch (err) {
       // Concurrent worker won the (extraction, fact) race — the citation exists.
       if (!isUniqueViolation(err)) throw err;
-    }
-  }
-
-  /**
-   * Recompute supersession for one (subject, attribute) group: the fact backed
-   * by the most recent recording (`lastOccurredAt`, tiebroken by newest
-   * `createdAt` then id) is the ACTIVE one; every other fact in the group points
-   * at it via `supersededByFactId` and is stamped `supersededAt`. Deterministic
-   * and idempotent — re-running yields the same active fact. Superseded rows are
-   * NEVER deleted; a later mention that makes an old value current simply flips
-   * the pointers back.
-   */
-  private async recomputeSupersession(
-    userId: string,
-    subjectKey: string,
-    normalizedAttribute: string,
-  ): Promise<void> {
-    const group = await this.facts.find({
-      where: { userId, subjectKey, normalizedAttribute },
-    });
-    if (group.length === 0) return;
-    const winner = group.slice().sort(byRecencyDesc)[0];
-    const now = new Date().toISOString();
-    for (const fact of group) {
-      const shouldBeActive = fact.id === winner.id;
-      if (shouldBeActive) {
-        if (fact.supersededByFactId !== null || fact.supersededAt !== null) {
-          fact.supersededByFactId = null;
-          fact.supersededAt = null;
-          await this.facts.save(fact);
-        }
-      } else if (fact.supersededByFactId !== winner.id) {
-        fact.supersededByFactId = winner.id;
-        fact.supersededAt = fact.supersededAt ?? now;
-        await this.facts.save(fact);
-      }
     }
   }
 
@@ -393,6 +403,7 @@ export class FactsRegistryService {
       personName: row.personName,
       attribute: row.attribute,
       value: row.value,
+      exclusive: row.exclusive,
       supersededByFactId: row.supersededByFactId,
       supersededAt: row.supersededAt,
       active: row.supersededByFactId === null,
@@ -403,15 +414,6 @@ export class FactsRegistryService {
       updatedAt: row.updatedAt.toISOString(),
     };
   }
-}
-
-/** Newest supporting recording first (nulls last), tiebroken by newest row then id. */
-function byRecencyDesc(a: PersonalFactEntity, b: PersonalFactEntity): number {
-  const ao = a.lastOccurredAt ?? '';
-  const bo = b.lastOccurredAt ?? '';
-  if (ao !== bo) return ao < bo ? 1 : -1;
-  if (a.createdAt.getTime() !== b.createdAt.getTime()) return b.createdAt.getTime() - a.createdAt.getTime();
-  return a.id < b.id ? 1 : -1;
 }
 
 /** Group by subject name, then newest activity first. */

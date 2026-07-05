@@ -11,10 +11,13 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * APPEND-ONLY with SUPERSESSION: `supersededByFactId` / `supersededAt` mark an
  * older fact when a newer one about the same (subject, attribute) with a
  * different value arrives, WITHOUT deleting it, preserving the timeline for the
- * dossier (JJ-24). Deduped on (userId, subjectKey, normalizedAttribute,
- * normalizedValue) so re-runs and repeated mentions upsert onto the same row.
- * `personal_fact_citations` are unique per (extractionId, factId) so ingestion
- * is idempotent. Additive only — safe on existing installs.
+ * dossier (JJ-24). Supersession applies only among EXCLUSIVE facts (`exclusive`
+ * = the attribute holds one current value per person, e.g. birthday, employer);
+ * accumulative facts (allergies, gift ideas, children — the default) coexist
+ * and are never superseded. Deduped on (userId, subjectKey,
+ * normalizedAttribute, normalizedValue) so re-runs and repeated mentions upsert
+ * onto the same row. `personal_fact_citations` are unique per (extractionId,
+ * factId) so ingestion is idempotent. Additive only — safe on existing installs.
  */
 export class CreatePersonalFacts1720000000031 implements MigrationInterface {
   name = 'CreatePersonalFacts1720000000031';
@@ -31,6 +34,7 @@ export class CreatePersonalFacts1720000000031 implements MigrationInterface {
         "normalizedAttribute" character varying NOT NULL,
         "value" text NOT NULL,
         "normalizedValue" character varying NOT NULL,
+        "exclusive" boolean NOT NULL DEFAULT false,
         "supersededByFactId" uuid,
         "supersededAt" character varying,
         "lastOccurredAt" character varying,

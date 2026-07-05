@@ -15,6 +15,8 @@ import {
   EntitySuppressionEntity,
   PersonalFactCitationEntity,
   PersonalFactEntity,
+  recomputePersonalFactSupersession,
+  type PersonalFactGroupKey,
 } from '@plaudern/persistence';
 import { normalize } from './contact-matching';
 
@@ -359,9 +361,12 @@ export class EntitiesCorrectionService {
    * survivor fact (same attribute+value), the victim fact's citations are moved
    * onto the survivor fact (deduping on the (extraction, fact) unique key) and
    * the victim fact is dropped; any survivor this victim fact had superseded is
-   * un-pointed first so the append-only supersede graph never dangles. Facts
-   * recorded under a raw name before the entity existed are not repointed here —
-   * they fold in on the next extraction, exactly as relations/mentions do.
+   * un-pointed first so the append-only supersede graph never dangles. The
+   * merged (subject, attribute) groups are then RECOMPUTED — inside this same
+   * merge transaction — so two previously-active exclusive facts (one per
+   * pre-merge entity) collapse to exactly one active fact. Facts recorded under
+   * a raw name before the entity existed are not repointed here — they fold in
+   * on the next extraction, exactly as relations/mentions do.
    */
   private async repointFacts(
     manager: EntityManager,
@@ -373,7 +378,13 @@ export class EntitiesCorrectionService {
     const citations = manager.getRepository(PersonalFactCitationEntity);
     const survivorKey = `e:${survivorId}`;
     const rows = await facts.find({ where: { userId, personEntityId: victimId } });
+    const touchedGroups = new Map<string, PersonalFactGroupKey>();
     for (const row of rows) {
+      touchedGroups.set(row.normalizedAttribute, {
+        userId,
+        subjectKey: survivorKey,
+        normalizedAttribute: row.normalizedAttribute,
+      });
       const clash = await facts.findOne({
         where: {
           userId,
@@ -406,6 +417,9 @@ export class EntitiesCorrectionService {
       row.subjectKey = survivorKey;
       await facts.save(row);
     }
+    // Restore the supersession invariant for every group the merge disturbed,
+    // atomically with the merge itself.
+    await recomputePersonalFactSupersession(manager, [...touchedGroups.values()]);
   }
 
   /**

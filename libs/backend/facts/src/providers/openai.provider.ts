@@ -109,15 +109,20 @@ export const SYSTEM_PROMPT = [
   '      "attribute": <short key naming what the fact is about, e.g. "birthday",',
   '                    "allergy", "schooling", "job", "gift idea", "preference">,',
   '      "value": <the fact itself, a short phrase>,',
+  '      "exclusive": <true|false — see below>,',
   '      "quote": <the short transcript span it came from, or null>',
   '  }, ... ] }',
   '',
   'Rules:',
   '- "person" is who the fact is ABOUT (not who is speaking) — use their name. If you',
   '  cannot confidently name the subject, OMIT the fact (prefer precision over recall).',
-  '- "attribute" groups facts that update each other: two facts with the same person and',
-  '  attribute but different values mean the newer one replaced the older (e.g. a moved',
-  '  appointment). Keep it short and reusable.',
+  '- "attribute" groups related facts about a person. Keep it short and reusable.',
+  '- "exclusive" says whether the attribute holds ONE current value per person:',
+  '    exclusive=true  → a newer statement REPLACES the older one: birthday,',
+  '                      current city, employer, relationship status, school year.',
+  '    exclusive=false → multiple values hold AT ONCE (accumulate): allergy,',
+  '                      gift idea, hobby, child, preference, dietary restriction.',
+  '  When unsure, use false — accumulating is safer than replacing.',
   '- Extract only DURABLE facts about people; ignore transient events, the owner\'s own',
   '  todo items, hypotheticals, and idle chatter.',
   '- Do NOT invent facts. If there are none, return { "facts": [] }.',
@@ -176,6 +181,10 @@ export function parseFactsResponse(content: string): ExtractedFact[] {
         typeof candidate.value === 'string'
           ? candidate.value.trim().slice(0, MAX_VALUE_CHARS)
           : candidate.value,
+      // Only an explicit true supersedes; anything else (absent, "true",
+      // garbage) accumulates — mislabeling must degrade to extra visible
+      // facts, never to hidden data.
+      exclusive: candidate.exclusive === true,
       quote:
         typeof candidate.quote === 'string' ? candidate.quote.trim().slice(0, MAX_QUOTE_CHARS) : null,
     });

@@ -55,6 +55,7 @@ export class FactsProcessor {
           person: fact.person,
           attribute: fact.attribute,
           value: fact.value,
+          exclusive: fact.exclusive,
           quote: fact.quote ?? null,
           startSeconds: located?.start ?? null,
         };
