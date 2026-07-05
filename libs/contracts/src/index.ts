@@ -13,6 +13,7 @@ export * from './facts';
 export * from './relations';
 export * from './commitments';
 export * from './questions';
+export * from './dossier';
 export * from './open-loops';
 export * from './events';
 export * from './geocode';

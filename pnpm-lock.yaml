@@ -487,15 +487,24 @@ importers:
       '@plaudern/auth':
         specifier: workspace:*
         version: link:../auth
+      '@plaudern/commitments':
+        specifier: workspace:*
+        version: link:../commitments
       '@plaudern/contracts':
         specifier: workspace:*
         version: link:../../contracts
+      '@plaudern/facts':
+        specifier: workspace:*
+        version: link:../facts
       '@plaudern/inbox':
         specifier: workspace:*
         version: link:../inbox
       '@plaudern/persistence':
         specifier: workspace:*
         version: link:../persistence
+      '@plaudern/questions':
+        specifier: workspace:*
+        version: link:../questions
       '@plaudern/queue':
         specifier: workspace:*
         version: link:../queue
