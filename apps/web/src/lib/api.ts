@@ -118,6 +118,12 @@ import {
   type CommitmentStatus,
   type ItemCommitmentsResponse,
   type UpdateCommitmentStatusRequest,
+  openLoopSchema,
+  openLoopListResponseSchema,
+  type OpenLoopDto,
+  type OpenLoopKind,
+  type OpenLoopListResponse,
+  type OpenLoopState,
   type UpdateEntityRequest,
   searchResponseSchema,
   similarResponseSchema,
@@ -804,6 +810,40 @@ export async function getItemTasks(itemId: string): Promise<ItemTasksResponse> {
 export async function retryItemTasks(itemId: string): Promise<ItemTasksResponse> {
   return itemTasksResponseSchema.parse(
     await requestJson(`/inbox/${itemId}/tasks/retry`, { method: 'POST' }),
+  );
+}
+
+// ---- Open-loop ledger (JJ-29) ----
+
+/**
+ * The unified open-loop ledger: every unresolved thread (open tasks + open
+ * commitments both ways, later questions), ranked by age + importance.
+ * `includeResolved` brings done/dropped rows back for the archive toggle.
+ */
+export async function listOpenLoops(filters?: {
+  kind?: OpenLoopKind;
+  direction?: CommitmentDirection;
+  includeResolved?: boolean;
+}): Promise<OpenLoopListResponse> {
+  const query = new URLSearchParams();
+  if (filters?.kind) query.set('kind', filters.kind);
+  if (filters?.direction) query.set('direction', filters.direction);
+  if (filters?.includeResolved) query.set('includeResolved', 'true');
+  const suffix = query.toString() ? `?${query}` : '';
+  return openLoopListResponseSchema.parse(await requestJson(`/open-loops${suffix}`));
+}
+
+/** Advance an open loop (done / dropped / reopen); routed to its owning source. */
+export async function updateOpenLoopState(
+  kind: OpenLoopKind,
+  id: string,
+  state: OpenLoopState,
+): Promise<OpenLoopDto> {
+  return openLoopSchema.parse(
+    await requestJson(`/open-loops/${kind}/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ state }),
+    }),
   );
 }
 
