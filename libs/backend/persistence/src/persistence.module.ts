@@ -10,6 +10,7 @@ import {
   CommitmentEntity,
   ConsentSettingsEntity,
   DecisionEntity,
+  DocumentMetadataEntity,
   EmailSettingsEntity,
   EmbeddingChunkEntity,
   EntityAliasEntity,
@@ -88,6 +89,7 @@ import { CreateTopicDocuments1720000000036 } from './migrations/1720000000036-Cr
 import { VoiceProfileSelf1720000000037 } from './migrations/1720000000037-VoiceProfileSelf';
 import { CreateReminders1720000000038 } from './migrations/1720000000038-CreateReminders';
 import { CreateJournalDocuments1720000000039 } from './migrations/1720000000039-CreateJournalDocuments';
+import { CreateDocumentMetadata1720000000042 } from './migrations/1720000000042-CreateDocumentMetadata';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -106,6 +108,7 @@ export const ALL_ENTITIES = [
   QuestionEntity,
   DecisionEntity,
   ReminderEntity,
+  DocumentMetadataEntity,
   TaskEntity,
   TaskCitationEntity,
   PersonalFactEntity,
@@ -180,6 +183,7 @@ export const ALL_MIGRATIONS = [
   VoiceProfileSelf1720000000037,
   CreateReminders1720000000038,
   CreateJournalDocuments1720000000039,
+  CreateDocumentMetadata1720000000042,
 ];
 
 /**

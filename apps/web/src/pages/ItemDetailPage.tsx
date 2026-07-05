@@ -11,7 +11,13 @@ import {
   Tab,
   Tabs,
 } from '@heroui/react';
-import { hasAudioPayload, type CalendarEventDto, type InboxItemDto } from '@plaudern/contracts';
+import {
+  hasAudioPayload,
+  hasDocumentPayload,
+  type CalendarEventDto,
+  type InboxItemDto,
+} from '@plaudern/contracts';
+import { DocumentSection } from '../components/DocumentSection';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   deleteCalendarLink,
@@ -315,6 +321,7 @@ export function ItemDetailPage() {
   // uploaded as a generic file) get the player + Transcript tab; everything
   // else (text notes, web clips, emails, ...) shows a plain "Note" tab.
   const audio = hasAudioPayload(item.sourceType, item.source?.contentType);
+  const isDocument = hasDocumentPayload(item.source?.contentType);
   const device = item.metadata?.device as Record<string, string> | undefined;
   const tags = item.metadata?.tags as Record<string, unknown> | undefined;
   const reprocessSteps = REPROCESS_STEPS.filter(
@@ -390,6 +397,14 @@ export function ItemDetailPage() {
             <AudioPlayer src={sourceUrl} className="w-full" seekToSeconds={seekToSeconds} />
           </CardBody>
         </Card>
+      )}
+
+      {isDocument && id && (
+        <DocumentSection
+          itemId={id}
+          contentType={item.source?.contentType}
+          sourceUrl={sourceUrl}
+        />
       )}
 
       <Card>

@@ -37,6 +37,8 @@
       "@plaudern/facts": ["libs/backend/facts/src/index.ts"],
       "@plaudern/decisions": ["libs/backend/decisions/src/index.ts"],
       "@plaudern/reminders": ["libs/backend/reminders/src/index.ts"],
+      "@plaudern/ocr": ["libs/backend/ocr/src/index.ts"],
+      "@plaudern/docmeta": ["libs/backend/docmeta/src/index.ts"],
       "@plaudern/open-loops": ["libs/backend/open-loops/src/index.ts"],
       "@plaudern/plaud-sync": ["libs/backend/plaud-sync/src/index.ts"],
       "@plaudern/email-ingest": ["libs/backend/email-ingest/src/index.ts"],

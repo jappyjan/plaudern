@@ -17,6 +17,8 @@ export * from './questions';
 export * from './dossier';
 export * from './decisions';
 export * from './reminders';
+export * from './ocr';
+export * from './docmeta';
 export * from './open-loops';
 export * from './events';
 export * from './geocode';
