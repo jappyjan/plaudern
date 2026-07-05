@@ -6,7 +6,7 @@ import {
   type CommitmentExtractionProvider,
 } from './commitments.provider';
 import { CommitmentContextService } from './commitment-context';
-import { CommitmentsService } from './commitments.service';
+import { CommitmentsPersistenceService } from './commitments-persistence.service';
 import type { CommitmentExtractionJob } from './commitments.job';
 
 /**
@@ -16,6 +16,12 @@ import type { CommitmentExtractionJob } from './commitments.job';
  * user-scoped `commitments` table (preserving user statuses on re-runs). The
  * parent `commitments` extraction row records provenance in `content`. Shared
  * by the inline and BullMQ queues.
+ *
+ * Depends on CommitmentsPersistenceService — NOT on CommitmentsService — so
+ * the module graph stays acyclic: the service injects the queue, whose factory
+ * injects this processor, and an edge from here back to the service would
+ * deadlock Nest's module compile (mirrors how the topics processor never
+ * depends on TopicsService).
  */
 @Injectable()
 export class CommitmentsProcessor {
@@ -24,7 +30,7 @@ export class CommitmentsProcessor {
   constructor(
     private readonly inbox: InboxService,
     private readonly context: CommitmentContextService,
-    private readonly service: CommitmentsService,
+    private readonly persistence: CommitmentsPersistenceService,
     @Inject(COMMITMENT_EXTRACTION_PROVIDER)
     private readonly provider: CommitmentExtractionProvider,
   ) {}
@@ -41,7 +47,7 @@ export class CommitmentsProcessor {
       }
 
       const result = await this.provider.extract(input);
-      const commitmentCount = await this.service.persist(
+      const commitmentCount = await this.persistence.persist(
         item.userId,
         item.id,
         job.extractionId,

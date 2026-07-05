@@ -69,4 +69,57 @@ describe('resolveDueDate', () => {
   it('pins resolved dates to a stable 17:00 UTC instant', () => {
     expect(resolveDueDate('tomorrow', ANCHOR)).toBe('2026-07-02T17:00:00.000Z');
   });
+
+  describe('German expressions', () => {
+    it('resolves heute/morgen/übermorgen', () => {
+      expect(day(resolveDueDate('heute', ANCHOR))).toBe('2026-07-01');
+      expect(day(resolveDueDate('morgen', ANCHOR))).toBe('2026-07-02');
+      expect(day(resolveDueDate('übermorgen', ANCHOR))).toBe('2026-07-03');
+      expect(day(resolveDueDate('uebermorgen', ANCHOR))).toBe('2026-07-03');
+    });
+
+    it('strips German promissory prepositions', () => {
+      expect(day(resolveDueDate('bis Freitag', ANCHOR))).toBe('2026-07-03');
+      expect(day(resolveDueDate('bis zum Freitag', ANCHOR))).toBe('2026-07-03');
+      expect(day(resolveDueDate('am Montag', ANCHOR))).toBe('2026-07-06');
+      expect(day(resolveDueDate('spätestens Freitag', ANCHOR))).toBe('2026-07-03');
+      expect(day(resolveDueDate('bis morgen', ANCHOR))).toBe('2026-07-02');
+    });
+
+    it('resolves German weekday names (anchor is a Wednesday/Mittwoch)', () => {
+      expect(day(resolveDueDate('Freitag', ANCHOR))).toBe('2026-07-03');
+      expect(day(resolveDueDate('Mittwoch', ANCHOR))).toBe('2026-07-08');
+      expect(day(resolveDueDate('Sonntag', ANCHOR))).toBe('2026-07-05');
+      expect(day(resolveDueDate('Samstag', ANCHOR))).toBe('2026-07-04');
+    });
+
+    it('treats "nächsten <Wochentag>" as the following week', () => {
+      expect(day(resolveDueDate('nächsten Freitag', ANCHOR))).toBe('2026-07-10');
+      expect(day(resolveDueDate('kommenden Montag', ANCHOR))).toBe('2026-07-13');
+    });
+
+    it('resolves nächste Woche / nächsten Monat / Wochenende', () => {
+      expect(day(resolveDueDate('nächste Woche', ANCHOR))).toBe('2026-07-08');
+      expect(day(resolveDueDate('naechste Woche', ANCHOR))).toBe('2026-07-08');
+      expect(day(resolveDueDate('nächsten Monat', ANCHOR))).toBe('2026-08-01');
+      expect(day(resolveDueDate('am Wochenende', ANCHOR))).toBe('2026-07-04');
+    });
+
+    it('resolves "in N Tagen/Wochen/Monaten"', () => {
+      expect(day(resolveDueDate('in 3 Tagen', ANCHOR))).toBe('2026-07-04');
+      expect(day(resolveDueDate('in 2 Wochen', ANCHOR))).toBe('2026-07-15');
+      expect(day(resolveDueDate('in 1 Monat', ANCHOR))).toBe('2026-08-01');
+    });
+
+    it('resolves Ende der Woche / Ende des Monats', () => {
+      expect(day(resolveDueDate('Ende der Woche', ANCHOR))).toBe('2026-07-03');
+      expect(day(resolveDueDate('Ende des Monats', ANCHOR))).toBe('2026-07-31');
+      expect(day(resolveDueDate('Monatsende', ANCHOR))).toBe('2026-07-31');
+    });
+
+    it('still nulls out ambiguous German phrases', () => {
+      expect(resolveDueDate('irgendwann', ANCHOR)).toBeNull();
+      expect(resolveDueDate('bald', ANCHOR)).toBeNull();
+    });
+  });
 });

@@ -13,13 +13,11 @@ import type {
   CommitmentListQuery,
   CommitmentListResponse,
   CommitmentStatus,
-  ExtractedCommitment,
   ExtractionStatus,
   ItemCommitmentsResponse,
 } from '@plaudern/contracts';
 import {
   CommitmentEntity,
-  EntityRegistryEntity,
   ExtractedPayloadEntity,
   InboxItemEntity,
 } from '@plaudern/persistence';
@@ -28,7 +26,6 @@ import {
   type CommitmentExtractionProvider,
 } from './commitments.provider';
 import { COMMITMENTS_QUEUE, type CommitmentsQueue } from './commitments.job';
-import { resolveDueDate } from './date-resolver';
 
 const ACTIVE_STATUSES: ExtractionStatus[] = ['queued', 'processing'];
 
@@ -39,19 +36,16 @@ const ACTIVE_STATUSES: ExtractionStatus[] = ['queued', 'processing'];
  */
 export const COMMITMENTS_EXTRACTOR_VERSION = 1;
 
-/** Caps on model output so one recording can't flood the table or store huge strings. */
-const MAX_COMMITMENTS_PER_ITEM = 50;
-const MAX_DESCRIPTION_CHARS = 500;
-const MAX_COUNTERPARTY_CHARS = 200;
-const MAX_QUOTE_CHARS = 1_000;
-
 /**
  * Owns the commitment-extraction pipeline step (JJ-36). WHEN it runs is decided
  * by the extraction DAG (`CommitmentsExtractor` + the generic pipeline in
- * @plaudern/extraction). This service owns HOW: enqueueing + manual retry,
- * persisting the resolved commitments (dedupe/upsert, relative-date resolution,
- * counterparty→registry linking), and the read models (an item's commitments,
- * the user's list, status updates).
+ * @plaudern/extraction). This service owns enqueueing + manual retry and the
+ * read models (an item's commitments, the user's list, status updates).
+ *
+ * Persisting an extraction's output lives in CommitmentsPersistenceService —
+ * deliberately NOT here, so the processor (reached via the queue this service
+ * injects) never needs an edge back to this service; that cycle would deadlock
+ * Nest's module compile.
  */
 @Injectable()
 export class CommitmentsService {
@@ -63,8 +57,6 @@ export class CommitmentsService {
     private readonly queue: CommitmentsQueue,
     @InjectRepository(CommitmentEntity)
     private readonly commitments: Repository<CommitmentEntity>,
-    @InjectRepository(EntityRegistryEntity)
-    private readonly entities: Repository<EntityRegistryEntity>,
     @InjectRepository(InboxItemEntity)
     private readonly items: Repository<InboxItemEntity>,
   ) {}
@@ -113,97 +105,6 @@ export class CommitmentsService {
     );
     await this.queue.enqueue({ extractionId: extraction.id, inboxItemId });
     return extraction.id;
-  }
-
-  /**
-   * Resolve + persist a batch of extracted commitments for an item. Relative
-   * due phrases are resolved to absolute instants against `occurredAt`;
-   * counterparties are linked to the per-user registry `person` entities when a
-   * confident name match exists. Deduped + upserted on
-   * (inboxItemId, direction, normalizedDescription): a re-run updates the
-   * existing row (repointing provenance to the new extraction) but PRESERVES the
-   * user's status, so backfills never duplicate or reset progress. Returns the
-   * number of commitment rows the extraction touched.
-   */
-  async persist(
-    userId: string,
-    inboxItemId: string,
-    extractionId: string,
-    occurredAt: string | undefined,
-    extracted: ExtractedCommitment[],
-  ): Promise<number> {
-    // Collapse duplicates within the batch first (same direction + normalized
-    // description), keeping the first occurrence, and clamp adversarial/verbose
-    // model output so a single recording can't flood the table or store
-    // unbounded strings.
-    const byKey = new Map<string, ExtractedCommitment>();
-    for (const raw of extracted) {
-      const description = clamp(raw.description, MAX_DESCRIPTION_CHARS);
-      if (!description) continue;
-      const key = `${raw.direction}:${normalize(description)}`;
-      if (!byKey.has(key)) byKey.set(key, { ...raw, description });
-      if (byKey.size >= MAX_COMMITMENTS_PER_ITEM) break;
-    }
-    if (byKey.size === 0) return 0;
-
-    const personByName = await this.personEntities(userId);
-    let count = 0;
-    // One transaction for the whole batch so a mid-loop failure can't leave the
-    // item with a half-written commitment set.
-    await this.commitments.manager.transaction(async (em) => {
-      const repo = em.getRepository(CommitmentEntity);
-      for (const raw of byKey.values()) {
-        const normalizedDescription = normalize(raw.description);
-        const counterpartyName = clamp(raw.counterparty, MAX_COUNTERPARTY_CHARS);
-        const counterpartyEntityId = counterpartyName
-          ? personByName.get(normalize(counterpartyName)) ?? null
-          : null;
-        const dueIso = resolveDueDate(raw.duePhrase, occurredAt ?? null);
-        const fields = {
-          extractionId,
-          description: raw.description,
-          counterpartyName,
-          counterpartyEntityId,
-          dueDate: dueIso,
-          sourceTimestamp: raw.sourceTimestamp ?? null,
-          sourceQuote: raw.sourceQuote ? clamp(raw.sourceQuote, MAX_QUOTE_CHARS) : null,
-        };
-
-        const existing = await repo.findOne({
-          where: { inboxItemId, direction: raw.direction, normalizedDescription },
-        });
-        if (existing) {
-          // status is deliberately left untouched — it is the user's to advance.
-          Object.assign(existing, fields);
-          await repo.save(existing);
-        } else {
-          try {
-            await repo.save(
-              repo.create({
-                userId,
-                inboxItemId,
-                direction: raw.direction,
-                normalizedDescription,
-                status: 'open',
-                ...fields,
-              }),
-            );
-          } catch (err) {
-            // Lost a race on the unique index (concurrent worker/backfill on the
-            // same item) — re-read the winner and update it instead of failing.
-            if (!isUniqueViolation(err)) throw err;
-            const winner = await repo.findOne({
-              where: { inboxItemId, direction: raw.direction, normalizedDescription },
-            });
-            if (!winner) throw err;
-            Object.assign(winner, fields);
-            await repo.save(winner);
-          }
-        }
-        count += 1;
-      }
-    });
-    return count;
   }
 
   // ---- Read models ----
@@ -255,17 +156,6 @@ export class CommitmentsService {
     );
   }
 
-  /** Named `person` registry entities keyed by normalized name, for linking. */
-  private async personEntities(userId: string): Promise<Map<string, string>> {
-    const rows = await this.entities.find({ where: { userId, type: 'person' } });
-    const map = new Map<string, string>();
-    for (const row of rows) {
-      // First writer wins so linking is stable when two rows normalize alike.
-      if (!map.has(row.normalizedName)) map.set(row.normalizedName, row.id);
-    }
-    return map;
-  }
-
   /** occurredAt (ISO) per inbox item id, for building DTOs in list/update. */
   private async occurredByItem(itemIds: string[]): Promise<Map<string, string>> {
     const map = new Map<string, string>();
@@ -308,33 +198,6 @@ function byDueThenCreated(a: CommitmentDto, b: CommitmentDto): number {
 function iso(value: Date | string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
   return value instanceof Date ? value.toISOString() : value;
-}
-
-/** Normalization key: lowercased, whitespace-collapsed. Dedupe + name matching. */
-export function normalize(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-/** Trim + hard-cap a model-supplied string so stored values stay bounded. */
-function clamp(value: string, maxChars: number): string {
-  const trimmed = value.trim();
-  return trimmed.length > maxChars ? trimmed.slice(0, maxChars) : trimmed;
-}
-
-/**
- * Whether a save failed on a unique index, across the drivers we run on:
- * Postgres surfaces SQLSTATE 23505, better-sqlite3 a SQLITE_CONSTRAINT* code /
- * "UNIQUE constraint failed" message. Anything else must propagate.
- */
-function isUniqueViolation(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  const driverError = (err as { driverError?: unknown }).driverError ?? err;
-  if (!driverError || typeof driverError !== 'object') return false;
-  const code = (driverError as { code?: unknown }).code;
-  if (code === '23505') return true;
-  if (typeof code === 'string' && code.startsWith('SQLITE_CONSTRAINT')) return true;
-  const message = (driverError as { message?: unknown }).message;
-  return typeof message === 'string' && message.includes('UNIQUE constraint failed');
 }
 
 function latestOfKind(

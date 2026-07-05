@@ -1,9 +1,11 @@
 /**
- * Resolve a promissory time expression ("by Friday", "next week", "in 3 days",
- * "2026-07-10") to an absolute instant, anchored on the recording time
- * (`occurredAt`). This is the "relative dates resolved from occurredAt" step of
- * the commitments extractor (JJ-36) — the extractor stores the ABSOLUTE result
- * so the read model never has to re-interpret language at query time.
+ * Resolve a promissory time expression ("by Friday", "bis Freitag", "next
+ * week", "in 3 Tagen", "2026-07-10") to an absolute instant, anchored on the
+ * recording time (`occurredAt`). This is the "relative dates resolved from
+ * occurredAt" step of the commitments extractor (JJ-36) — the extractor stores
+ * the ABSOLUTE result so the read model never has to re-interpret language at
+ * query time. English AND German tokens are understood, since recordings mix
+ * both.
  *
  * Deliberately conservative: only well-understood expressions resolve; anything
  * ambiguous returns null (an open commitment with no due date) rather than a
@@ -12,6 +14,7 @@
  */
 
 const WEEKDAYS: Record<string, number> = {
+  // English
   sunday: 0,
   monday: 1,
   tuesday: 2,
@@ -19,6 +22,15 @@ const WEEKDAYS: Record<string, number> = {
   thursday: 4,
   friday: 5,
   saturday: 6,
+  // German
+  sonntag: 0,
+  montag: 1,
+  dienstag: 2,
+  mittwoch: 3,
+  donnerstag: 4,
+  freitag: 5,
+  samstag: 6,
+  sonnabend: 6,
 };
 
 /** Resolved due dates land at 17:00 UTC — a neutral "end of business" instant. */
@@ -47,50 +59,91 @@ export function resolveDueDate(
     if (!Number.isNaN(parsed.getTime())) return atDueHour(parsed);
   }
 
-  // "end of (the) week/month" must be recognized BEFORE generic filler
-  // stripping, otherwise it would collapse to a bare "week"/"month".
-  if (/\bend of (the )?week\b/.test(lowered)) {
+  // "end of (the) week/month" (EN) / "Ende der Woche / des Monats" (DE) must
+  // be recognized BEFORE generic filler stripping, otherwise they would
+  // collapse to a bare "week"/"month".
+  if (/\bend of (the )?week\b/.test(lowered) || /\bende (der|dieser) woche\b/.test(lowered)) {
     return atDueHour(nextWeekday(anchor, 5, false)); // upcoming Friday
   }
-  if (/\bend of (the )?month\b/.test(lowered)) {
+  if (
+    /\bend of (the )?month\b/.test(lowered) ||
+    /\bende (des|dieses) monats\b/.test(lowered) ||
+    /\bmonatsende\b/.test(lowered)
+  ) {
     return atDueHour(endOfMonth(anchor));
   }
 
-  // Drop leading promissory prepositions/articles so "by Friday"/"on the
-  // Monday" match; loop until stable since several may stack ("by the Friday").
+  // Drop leading promissory prepositions/articles (EN + DE) so "by Friday" /
+  // "bis zum Freitag" / "am Montag" / "spätestens Freitag" match; loop until
+  // stable since several may stack ("by the Friday", "bis zum Freitag").
   let text = lowered;
   let previous: string;
   do {
     previous = text;
-    text = text.replace(/^(by|before|on|due|until|till|no later than|the)\s+/, '').trim();
+    text = text
+      .replace(
+        /^(by|before|on|due|until|till|no later than|the|bis|zum|zur|am|vor|spätestens|spaetestens|diesen|diesem|dieser|dieses)\s+/,
+        '',
+      )
+      .trim();
   } while (text !== previous);
   if (!text) return null;
 
-  if (text === 'today' || text === 'tonight' || text === 'this evening') {
+  if (
+    text === 'today' ||
+    text === 'tonight' ||
+    text === 'this evening' ||
+    text === 'heute' ||
+    text === 'heute abend'
+  ) {
     return atDueHour(addDays(anchor, 0));
   }
-  if (text === 'tomorrow') return atDueHour(addDays(anchor, 1));
-  if (text === 'day after tomorrow' || text === 'overmorrow') {
+  if (text === 'tomorrow' || text === 'morgen') return atDueHour(addDays(anchor, 1));
+  if (
+    text === 'day after tomorrow' ||
+    text === 'overmorrow' ||
+    text === 'übermorgen' ||
+    text === 'uebermorgen'
+  ) {
     return atDueHour(addDays(anchor, 2));
   }
-  if (text === 'week' || text === 'next week') return atDueHour(addDays(anchor, 7));
-  if (text === 'month' || text === 'next month') return atDueHour(addMonths(anchor, 1));
-  if (text === 'weekend' || text === 'this weekend') {
+  if (
+    text === 'week' ||
+    text === 'next week' ||
+    /^(nächste|naechste|kommende) woche$/.test(text)
+  ) {
+    return atDueHour(addDays(anchor, 7));
+  }
+  if (
+    text === 'month' ||
+    text === 'next month' ||
+    /^(nächsten|nächster|naechsten|naechster|kommenden) monat$/.test(text)
+  ) {
+    return atDueHour(addMonths(anchor, 1));
+  }
+  if (text === 'weekend' || text === 'this weekend' || text === 'wochenende') {
     return atDueHour(nextWeekday(anchor, 6, false));
   }
 
-  // "in N day(s)/week(s)/month(s)".
-  const relative = text.match(/^in\s+(\d+)\s+(day|days|week|weeks|month|months)$/);
+  // "in N day(s)/week(s)/month(s)" (EN) / "in N Tagen/Wochen/Monaten" (DE).
+  const relative = text.match(
+    /^in\s+(\d+)\s+(day|days|week|weeks|month|months|tag|tagen|woche|wochen|monat|monaten)$/,
+  );
   if (relative) {
     const n = Number(relative[1]);
     const unit = relative[2];
-    if (unit.startsWith('day')) return atDueHour(addDays(anchor, n));
-    if (unit.startsWith('week')) return atDueHour(addDays(anchor, n * 7));
+    if (unit.startsWith('day') || unit.startsWith('tag')) return atDueHour(addDays(anchor, n));
+    if (unit.startsWith('week') || unit.startsWith('woche')) {
+      return atDueHour(addDays(anchor, n * 7));
+    }
     return atDueHour(addMonths(anchor, n));
   }
 
-  // Weekday name, optionally "next monday" (jump to the following week).
-  const weekdayMatch = text.match(/^(next\s+)?(\w+)$/);
+  // Weekday name, optionally "next monday" / "nächsten Montag" (jump to the
+  // following week).
+  const weekdayMatch = text.match(
+    /^((?:next|nächsten|nächste|naechsten|naechste|kommenden|kommende)\s+)?([a-zäöüß]+)$/,
+  );
   if (weekdayMatch) {
     const forceNext = Boolean(weekdayMatch[1]);
     const target = WEEKDAYS[weekdayMatch[2]];

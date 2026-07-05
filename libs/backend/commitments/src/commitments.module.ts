@@ -13,6 +13,7 @@ import { COMMITMENT_EXTRACTION_PROVIDER } from './commitments.provider';
 import { COMMITMENTS_QUEUE } from './commitments.job';
 import { OpenAiCommitmentExtractionProvider } from './providers/openai.provider';
 import { CommitmentContextService } from './commitment-context';
+import { CommitmentsPersistenceService } from './commitments-persistence.service';
 import { CommitmentsProcessor } from './commitments.processor';
 import { CommitmentsService } from './commitments.service';
 import { CommitmentsExtractor } from './commitments.extractor';
@@ -40,6 +41,10 @@ import { InboxCommitmentsController } from './inbox-commitments.controller';
       useFactory: (openai: OpenAiCommitmentExtractionProvider) => openai,
     },
     CommitmentContextService,
+    // Persistence is a separate provider so the processor never needs an edge
+    // back to CommitmentsService (service → queue → processor → service would
+    // deadlock Nest's module compile).
+    CommitmentsPersistenceService,
     CommitmentsProcessor,
     {
       provide: COMMITMENTS_QUEUE,
