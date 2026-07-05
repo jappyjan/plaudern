@@ -6,7 +6,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import type { EntityType } from '@plaudern/contracts';
+import type { ContactLinkOrigin, EntityType } from '@plaudern/contracts';
 
 /**
  * A normalized entity in the per-user registry (JJ-32) — a person, place,
@@ -53,6 +53,14 @@ export class EntityRegistryEntity {
    */
   @Column({ type: 'uuid', nullable: true })
   voiceProfileId!: string | null;
+
+  /**
+   * Provenance of the contact link: `auto` (name/context match), `manual`
+   * (user-made), or `suppressed` (user unlinked — auto-linking must not
+   * re-link; `voiceProfileId` is null). Null when never linked.
+   */
+  @Column({ type: 'varchar', nullable: true })
+  voiceProfileLinkOrigin!: ContactLinkOrigin | null;
 
   @CreateDateColumn()
   createdAt!: Date;

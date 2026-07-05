@@ -6,6 +6,7 @@ import {
   type RelationExtractionProvider,
 } from './relations.provider';
 import { EntitiesRegistryService } from './entities-registry.service';
+import { EntityContactResolverService } from './entity-contact-resolver.service';
 import { EntityGraphService } from './entity-graph.service';
 import { buildRelationExtractionInput } from './relation-context';
 import type { RelationExtractionJob } from './relations.job';
@@ -26,6 +27,7 @@ export class RelationsProcessor {
     private readonly inbox: InboxService,
     private readonly registry: EntitiesRegistryService,
     private readonly graph: EntityGraphService,
+    private readonly resolver: EntityContactResolverService,
     @Inject(RELATION_EXTRACTION_PROVIDER)
     private readonly provider: RelationExtractionProvider,
   ) {}
@@ -66,6 +68,15 @@ export class RelationsProcessor {
       this.logger.log(
         `extracted ${relationCount} relations from inbox item ${job.inboxItemId}`,
       );
+
+      // The graph just gained this item's edges — re-run contact resolution
+      // for its person entities with the richer evidence (shared neighbors,
+      // co-mentions). Enrichment only — never fails the extraction.
+      await this.resolver
+        .autoLinkForItem(item.userId, item.id)
+        .catch((err) =>
+          this.logger.warn(`contact resolution after relations failed: ${(err as Error).message}`),
+        );
     } catch (err) {
       const message = (err as Error).message;
       this.logger.error(`relation extraction failed for ${job.inboxItemId}: ${message}`);

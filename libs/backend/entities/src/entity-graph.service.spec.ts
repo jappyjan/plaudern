@@ -8,7 +8,7 @@ import {
   InboxItemEntity,
 } from '@plaudern/persistence';
 import type { ExtractedRelation } from '@plaudern/contracts';
-import { normalize } from './entities-registry.service';
+import { normalize } from './contact-matching';
 import {
   COOCCURRENCE_CONFIDENCE,
   EntityGraphService,
