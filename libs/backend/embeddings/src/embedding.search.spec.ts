@@ -96,3 +96,36 @@ describe('EmbeddingSearchService (in-memory cosine path)', () => {
     expect(find).toHaveBeenCalledWith({ where: { userId: 'user-42' } });
   });
 });
+
+describe('EmbeddingSearchService.itemCentroids (JJ-64)', () => {
+  it('returns nothing for an empty id list without querying', async () => {
+    const { service, find } = build({ rows: [] });
+    expect(await service.itemCentroids('user-1', [])).toEqual([]);
+    expect(find).not.toHaveBeenCalled();
+  });
+
+  it('averages each item\'s chunk vectors into one centroid', async () => {
+    const { service } = build({
+      rows: [
+        chunk({ id: 'a1', inboxItemId: 'item-a', embedding: [1, 0, 0] }),
+        chunk({ id: 'a2', inboxItemId: 'item-a', embedding: [0, 1, 0] }),
+        chunk({ id: 'b1', inboxItemId: 'item-b', embedding: [0, 0, 2] }),
+      ],
+    });
+    const centroids = await service.itemCentroids('user-1', ['item-a', 'item-b']);
+    const byId = new Map(centroids.map((c) => [c.inboxItemId, c.vector]));
+    expect(byId.get('item-a')).toEqual([0.5, 0.5, 0]);
+    expect(byId.get('item-b')).toEqual([0, 0, 2]);
+  });
+
+  it('skips chunks whose dimension differs from the item\'s first chunk', async () => {
+    const { service } = build({
+      rows: [
+        chunk({ id: 'a1', inboxItemId: 'item-a', embedding: [2, 0, 0] }),
+        chunk({ id: 'a2', inboxItemId: 'item-a', embedding: [1, 1] }),
+      ],
+    });
+    const centroids = await service.itemCentroids('user-1', ['item-a']);
+    expect(centroids).toEqual([{ inboxItemId: 'item-a', vector: [2, 0, 0] }]);
+  });
+});

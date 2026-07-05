@@ -36,6 +36,7 @@ import {
   TaskCitationEntity,
   TaskEntity,
   TopicEntity,
+  TopicProposalEntity,
   UserEntity,
   VoiceProfileEntity,
 } from './entities';
@@ -70,6 +71,7 @@ import { CreateEntityCorrections1720000000027 } from './migrations/1720000000027
 import { ExtractionRunTrigger1720000000028 } from './migrations/1720000000028-ExtractionRunTrigger';
 import { CreateTasks1720000000029 } from './migrations/1720000000029-CreateTasks';
 import { CreateQuestions1720000000030 } from './migrations/1720000000030-CreateQuestions';
+import { CreateTopicProposals1720000000032 } from './migrations/1720000000032-CreateTopicProposals';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -81,6 +83,7 @@ export const ALL_ENTITIES = [
   EntityMentionEntity,
   TopicEntity,
   ItemTopicEntity,
+  TopicProposalEntity,
   CommitmentEntity,
   QuestionEntity,
   TaskEntity,
@@ -144,6 +147,7 @@ export const ALL_MIGRATIONS = [
   ExtractionRunTrigger1720000000028,
   CreateTasks1720000000029,
   CreateQuestions1720000000030,
+  CreateTopicProposals1720000000032,
 ];
 
 /**

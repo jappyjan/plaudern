@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Card, CardBody, Chip, Spinner } from '@heroui/react';
-import type { TopicDto } from '@plaudern/contracts';
+import type { TopicDto, TopicProposalDto } from '@plaudern/contracts';
 import { Link } from 'react-router-dom';
-import { listTopics } from '../lib/api';
+import {
+  acceptTopicProposal,
+  dismissTopicProposal,
+  generateTopicProposals,
+  listTopicProposals,
+  listTopics,
+} from '../lib/api';
 import { TopicModal } from '../components/TopicModal';
 import { TagIcon } from '../components/icons';
 
@@ -51,6 +57,8 @@ export function TopicsPage() {
           New topic
         </Button>
       </div>
+
+      <TopicProposals onAccepted={() => void load()} />
 
       {topics.length === 0 ? (
         <Card>
@@ -108,6 +116,150 @@ export function TopicsPage() {
         onClose={() => setModalOpen(false)}
         onSaved={() => void load()}
       />
+    </div>
+  );
+}
+
+/**
+ * Suggested taxonomy extensions from embedding clusters (JJ-64), rendered as a
+ * section of the topics page — no separate route. Hidden entirely when the
+ * feature is disabled (embeddings or the labeling LLM unconfigured) or there is
+ * nothing to suggest, so it never nags. Accepting one creates the topic and
+ * reclassifies the cluster's items server-side; dismissing suppresses it.
+ */
+function TopicProposals({ onAccepted }: { onAccepted: () => void }) {
+  const [proposals, setProposals] = useState<TopicProposalDto[]>([]);
+  const [enabled, setEnabled] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await listTopicProposals();
+      setProposals(res.proposals);
+      setEnabled(res.enabled);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const generate = useCallback(async () => {
+    setBusy('generate');
+    setError(null);
+    try {
+      const res = await generateTopicProposals();
+      setProposals(res.proposals);
+      setEnabled(res.enabled);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(null);
+    }
+  }, []);
+
+  const accept = useCallback(
+    async (id: string) => {
+      setBusy(id);
+      setError(null);
+      try {
+        await acceptTopicProposal(id);
+        setProposals((prev) => prev.filter((p) => p.id !== id));
+        onAccepted();
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        setBusy(null);
+      }
+    },
+    [onAccepted],
+  );
+
+  const dismiss = useCallback(async (id: string) => {
+    setBusy(id);
+    setError(null);
+    try {
+      await dismissTopicProposal(id);
+      setProposals((prev) => prev.filter((p) => p.id !== id));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(null);
+    }
+  }, []);
+
+  // Stay out of the way until we know the feature is usable.
+  if (!loaded || !enabled) return null;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-semibold">Suggested topics</h2>
+          {proposals.length > 0 && (
+            <Chip size="sm" variant="flat">
+              {proposals.length}
+            </Chip>
+          )}
+        </div>
+        <Button
+          size="sm"
+          variant="flat"
+          isLoading={busy === 'generate'}
+          onPress={() => void generate()}
+        >
+          {proposals.length > 0 ? 'Refresh' : 'Suggest topics'}
+        </Button>
+      </div>
+
+      {error && (
+        <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">{error}</div>
+      )}
+
+      {proposals.length > 0 && (
+        <p className="text-sm text-default-500">
+          We found clusters of recent items that don&apos;t fit your topics yet. Accepting one
+          creates the topic and reclassifies its items.
+        </p>
+      )}
+
+      {proposals.map((proposal) => (
+        <Card key={proposal.id}>
+          <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">{proposal.label}</p>
+              <p className="text-xs text-default-500">
+                {proposal.itemCount} recent item{proposal.itemCount === 1 ? '' : 's'}
+                {proposal.description ? ` — ${proposal.description}` : ''}
+              </p>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <Button
+                size="sm"
+                variant="light"
+                isDisabled={busy === proposal.id}
+                onPress={() => void dismiss(proposal.id)}
+              >
+                Dismiss
+              </Button>
+              <Button
+                size="sm"
+                color="primary"
+                isLoading={busy === proposal.id}
+                onPress={() => void accept(proposal.id)}
+              >
+                Create topic
+              </Button>
+            </div>
+          </CardBody>
+        </Card>
+      ))}
     </div>
   );
 }

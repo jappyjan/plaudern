@@ -1,9 +1,16 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import type { EmbeddingChunkSource } from '@plaudern/contracts';
 import { EmbeddingChunkEntity } from '@plaudern/persistence';
 import { EMBEDDING_PROVIDER, type EmbeddingProvider } from './embedding.provider';
+
+/** One item's mean embedding, the unit clustered by the taxonomy proposer (JJ-64). */
+export interface ItemCentroid {
+  inboxItemId: string;
+  /** Mean of the item's chunk vectors (unnormalized); dimension is uniform. */
+  vector: number[];
+}
 
 /** One retrieval hit: the best-matching chunk of a distinct inbox item. */
 export interface EmbeddingSearchHit {
@@ -62,6 +69,41 @@ export class EmbeddingSearchService {
     return driver === 'postgres'
       ? this.searchPostgres(userId, queryVector, limit)
       : this.searchInMemory(userId, queryVector, limit);
+  }
+
+  /**
+   * Mean embedding per item over the given item ids (JJ-64 clustering input).
+   * Averages each item's chunk vectors in JS — driver-agnostic (works on the
+   * sqlite test DB, which has no pgvector `avg()`), and cheap at the recent-item
+   * scale the proposer operates on. Chunks whose dimension doesn't match the
+   * item's first chunk are skipped (a provider/model change mid-history), and
+   * items with no usable chunks are omitted, so callers get only items that can
+   * actually be clustered.
+   */
+  async itemCentroids(userId: string, inboxItemIds: string[]): Promise<ItemCentroid[]> {
+    if (inboxItemIds.length === 0) return [];
+    const rows = await this.chunks.find({
+      where: { userId, inboxItemId: In(inboxItemIds) },
+    });
+    const sums = new Map<string, { sum: number[]; count: number; dims: number }>();
+    for (const row of rows) {
+      const vector = row.embedding;
+      if (!vector?.length) continue;
+      const existing = sums.get(row.inboxItemId);
+      if (!existing) {
+        sums.set(row.inboxItemId, { sum: [...vector], count: 1, dims: vector.length });
+        continue;
+      }
+      // Guard against mixed-dimension history: only average matching vectors.
+      if (vector.length !== existing.dims) continue;
+      for (let i = 0; i < existing.dims; i++) existing.sum[i] += vector[i];
+      existing.count += 1;
+    }
+    const centroids: ItemCentroid[] = [];
+    for (const [inboxItemId, { sum, count }] of sums) {
+      centroids.push({ inboxItemId, vector: sum.map((v) => v / count) });
+    }
+    return centroids;
   }
 
   /**
