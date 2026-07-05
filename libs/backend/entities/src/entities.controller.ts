@@ -210,12 +210,20 @@ export class EntitiesController {
     return this.graph.neighborhood(user.id, id, parsed.data.relationType);
   }
 
-  /** Detail + graph edges — the shape every mutation returns for UI refresh. */
+  /**
+   * Detail + graph edges — the shape every mutation returns for UI refresh.
+   * The detail page's Relations list shows only edges the model actually
+   * asserted; weak same-recording co-occurrence edges are excluded so the list
+   * carries signal, not every pair that happened to be mentioned together.
+   */
   private async detailWithRelations(
     userId: string,
     id: string,
   ): Promise<EntityDetailWithRelationsDto> {
     const detail = await this.registry.detail(userId, id);
-    return { ...detail, relations: await this.graph.edgesFor(userId, id) };
+    return {
+      ...detail,
+      relations: await this.graph.edgesFor(userId, id, undefined, false),
+    };
   }
 }

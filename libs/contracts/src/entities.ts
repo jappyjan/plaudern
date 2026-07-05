@@ -24,6 +24,25 @@ export const entityTypeSchema = z.enum([
 export type EntityType = z.infer<typeof entityTypeSchema>;
 
 /**
+ * Entity types that name a **transient value**, not a durable identity. A
+ * weekday ("Freitag") or a dose ("600 mg") does not denote one real-world
+ * thing tracked across recordings the way a person, org, place, product,
+ * medication or document does — every recording's "Freitag" is a different
+ * Friday. The extraction prompt already tells the model not to emit them; this
+ * is the authoritative safety net (a local model may ignore the instruction):
+ * even if one is emitted it is NOT normalized into the registry. Deduping them
+ * by name would fuse unrelated recordings into one bogus node and then
+ * co-occurrence-link it to everything, which is noise, not signal — so they
+ * never become registry rows, graph nodes, or relation endpoints.
+ */
+export const TRANSIENT_ENTITY_TYPES = ['date', 'amount'] as const;
+
+/** Whether an entity type earns a durable registry row (see TRANSIENT_ENTITY_TYPES). */
+export function isRegistryEntityType(type: EntityType): boolean {
+  return !(TRANSIENT_ENTITY_TYPES as readonly string[]).includes(type);
+}
+
+/**
  * One entity as produced by the LLM before it is normalized into the registry.
  * `name` is the canonical form the model settled on; `mentions` are the exact
  * surface forms it saw in the transcript (kept as aliases on the registry row).

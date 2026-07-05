@@ -186,18 +186,21 @@ describe('OpenAiEntityExtractionProvider request behavior', () => {
 });
 
 describe('SYSTEM_PROMPT', () => {
-  it('enumerates every supported entity type', () => {
+  it('enumerates every registry entity type', () => {
     for (const type of [
       'person',
       'organization',
       'place',
-      'date',
-      'amount',
       'product',
       'medication',
       'document_reference',
     ]) {
       expect(SYSTEM_PROMPT).toContain(type);
     }
+  });
+
+  it('tells the model not to extract transient dates or amounts', () => {
+    expect(SYSTEM_PROMPT).toMatch(/Do NOT extract standalone dates/i);
+    expect(SYSTEM_PROMPT).toMatch(/amounts\/quantities/i);
   });
 });
