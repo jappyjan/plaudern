@@ -612,6 +612,7 @@ function DuplicatesPanel({
   onMerge: (victimId: string) => void;
 }) {
   const [fuzzy, setFuzzy] = useState(false);
+  const [web, setWeb] = useState(false);
   const [candidates, setCandidates] = useState<DuplicateCandidateDto[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -637,10 +638,16 @@ function DuplicatesPanel({
         Possible duplicates of <span className="font-semibold">{entity.canonicalName}</span>. Merging
         keeps this entity and its type; the other is folded in and deleted.
       </p>
-      <label className="flex items-center gap-2 text-xs text-default-600">
-        <input type="checkbox" checked={fuzzy} onChange={(e) => setFuzzy(e.target.checked)} />
-        Include similar names
-      </label>
+      <div className="flex flex-wrap gap-4">
+        <label className="flex items-center gap-2 text-xs text-default-600">
+          <input type="checkbox" checked={fuzzy} onChange={(e) => setFuzzy(e.target.checked)} />
+          Include similar names
+        </label>
+        <label className="flex items-center gap-2 text-xs text-default-600">
+          <input type="checkbox" checked={web} onChange={(e) => setWeb(e.target.checked)} />
+          Research on the web (Ask AI)
+        </label>
+      </div>
       {error && <p className="text-xs text-danger">{error}</p>}
       {candidates === null ? (
         <Spinner size="sm" />
@@ -655,6 +662,7 @@ function DuplicatesPanel({
               candidate={c}
               reason={reason}
               busy={busy}
+              web={web}
               onMerge={onMerge}
             />
           ))}
@@ -670,12 +678,14 @@ function DuplicateRow({
   candidate: c,
   reason,
   busy,
+  web,
   onMerge,
 }: {
   entity: EntityDetailWithRelationsDto;
   candidate: RegistryEntityDto;
   reason: DuplicateCandidateDto['reason'];
   busy: boolean;
+  web: boolean;
   onMerge: (victimId: string) => void;
 }) {
   const [confirming, setConfirming] = useState(false);
@@ -687,7 +697,7 @@ function DuplicateRow({
   function ask() {
     setAsking(true);
     setAskError(null);
-    void reconcileEntity(entity.id, c.id)
+    void reconcileEntity(entity.id, c.id, web)
       .then((res) => setRec(res.recommendation))
       .catch((cause: unknown) => setAskError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setAsking(false));

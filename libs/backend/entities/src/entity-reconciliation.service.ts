@@ -15,6 +15,7 @@ import {
 } from '@plaudern/persistence';
 import { EntitiesRegistryService } from './entities-registry.service';
 import { ENTITY_JUDGE_PROVIDER, type EntityJudgeProvider } from './entity-judge.provider';
+import { WEB_RESEARCH_PROVIDER, type WebResearchProvider } from './web-research.provider';
 import { bestNameAffinity, FUZZY_DUPLICATE_FLOOR, nameKeys } from './contact-matching';
 
 /** Cap the candidate list so the UI (and any downstream judge) stays bounded. */
@@ -51,6 +52,8 @@ export class EntityReconciliationService {
     private readonly suggestions: Repository<EntityMergeSuggestionEntity>,
     @Inject(ENTITY_JUDGE_PROVIDER)
     private readonly judge: EntityJudgeProvider,
+    @Inject(WEB_RESEARCH_PROVIDER)
+    private readonly web: WebResearchProvider,
   ) {}
 
   /**
@@ -63,7 +66,7 @@ export class EntityReconciliationService {
     userId: string,
     entityId: string,
     candidateId: string,
-    _opts: { web?: boolean } = {},
+    opts: { web?: boolean } = {},
   ): Promise<ReconcileRecommendation | null> {
     const all = await this.registry.list(userId, undefined, true);
     const subject = all.find((e) => e.id === entityId);
@@ -71,11 +74,23 @@ export class EntityReconciliationService {
     if (!subject || !candidate) throw new NotFoundException('entity not found');
     if (!this.judge.enabled) return null;
 
-    // Web research is wired in a later phase; nothing leaves the network here.
-    const usedWeb = false;
+    // Opt-in web research: only when the caller asks AND it's enabled. Only the
+    // subject's name/type and the candidate's name leave — never transcripts.
+    let webSnippets: string[] = [];
+    let usedWeb = false;
+    if (opts.web && this.web.enabled) {
+      const research = await this.web.research({
+        name: subject.canonicalName,
+        type: subject.type,
+        context: `possibly the same as "${candidate.canonicalName}" (${candidate.type})`,
+      });
+      webSnippets = research.snippets;
+      usedWeb = research.usedWeb;
+    }
     const { decision } = await this.judge.judge({
       subject: { name: subject.canonicalName, type: subject.type, aliases: subject.aliases },
       candidate: { name: candidate.canonicalName, type: candidate.type, aliases: candidate.aliases },
+      webSnippets,
     });
     const survivorId = decision.survivor === 'candidate' ? candidate.id : subject.id;
     const recommendation: ReconcileRecommendation = {

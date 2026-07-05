@@ -19,6 +19,11 @@ import type {
   EntityJudgeProvider,
   EntityJudgeResult,
 } from './entity-judge.provider';
+import type {
+  WebResearchInput,
+  WebResearchProvider,
+  WebResearchResult,
+} from './web-research.provider';
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
 
@@ -41,11 +46,24 @@ class FakeJudge implements EntityJudgeProvider {
   }
 }
 
+/** A web-research fake whose enabled state and snippets tests can control. */
+class FakeWebResearch implements WebResearchProvider {
+  enabled = false;
+  lastInput: WebResearchInput | null = null;
+  snippets: string[] = [];
+
+  research(input: WebResearchInput): Promise<WebResearchResult> {
+    this.lastInput = input;
+    return Promise.resolve({ snippets: this.snippets, usedWeb: this.snippets.length > 0 });
+  }
+}
+
 describe('EntityReconciliationService', () => {
   let dataSource: DataSource;
   let registry: EntitiesRegistryService;
   let reconciliation: EntityReconciliationService;
   let judge: FakeJudge;
+  let web: FakeWebResearch;
 
   beforeEach(async () => {
     dataSource = new DataSource({
@@ -64,12 +82,14 @@ describe('EntityReconciliationService', () => {
       dataSource.getRepository(EntitySuppressionEntity),
     );
     judge = new FakeJudge();
+    web = new FakeWebResearch();
     reconciliation = new EntityReconciliationService(
       registry,
       dataSource.getRepository(EntityRegistryEntity),
       dataSource.getRepository(EntityMentionEntity),
       dataSource.getRepository(EntityMergeSuggestionEntity),
       judge,
+      web,
     );
   });
 
@@ -247,5 +267,50 @@ describe('EntityReconciliationService', () => {
     expect(s.sameThing).toBe(true);
     expect(s.recommendedType).toBe('product');
     expect(s.recommendedSurvivorId).toBe(product.id);
+  });
+
+  it('does not touch the network when web is not requested or is disabled', async () => {
+    await ingest([
+      { type: 'organization', name: 'Foo', mentions: ['Foo'] },
+      { type: 'product', name: 'Foo', mentions: ['Foo'] },
+    ]);
+    const rows = await dataSource.getRepository(EntityRegistryEntity).find({ where: { userId: USER } });
+    const org = rows.find((r) => r.type === 'organization')!;
+    const product = rows.find((r) => r.type === 'product')!;
+
+    judge.enabled = true;
+    web.enabled = true;
+    web.snippets = ['Foo is a SaaS product.'];
+
+    // web not requested → no research call, usedWeb false.
+    const noWeb = await reconciliation.recommend(USER, product.id, org.id);
+    expect(web.lastInput).toBeNull();
+    expect(noWeb!.usedWeb).toBe(false);
+
+    // web requested but provider disabled → still no call.
+    web.enabled = false;
+    await reconciliation.recommend(USER, product.id, org.id, { web: true });
+    expect(web.lastInput).toBeNull();
+  });
+
+  it('consults web research and passes snippets to the judge when web is on', async () => {
+    await ingest([
+      { type: 'organization', name: 'Foo', mentions: ['Foo'] },
+      { type: 'product', name: 'Foo', mentions: ['Foo'] },
+    ]);
+    const rows = await dataSource.getRepository(EntityRegistryEntity).find({ where: { userId: USER } });
+    const org = rows.find((r) => r.type === 'organization')!;
+    const product = rows.find((r) => r.type === 'product')!;
+
+    judge.enabled = true;
+    web.enabled = true;
+    web.snippets = ['Foo is a SaaS product.'];
+
+    const rec = await reconciliation.recommend(USER, product.id, org.id, { web: true });
+    expect(rec!.usedWeb).toBe(true);
+    // Only the subject name/type + candidate hint leave.
+    expect(web.lastInput).toMatchObject({ name: 'Foo', type: 'product' });
+    // The judge saw the snippets.
+    expect(judge.lastInput?.webSnippets).toEqual(['Foo is a SaaS product.']);
   });
 });
