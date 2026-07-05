@@ -272,10 +272,11 @@ export class ChatService {
       });
       for (const hit of response.results) {
         // Local-only routing guard (JJ-21): sensitive/secret items must NEVER
-        // reach the chat LLM (external by default). Drop them from retrieval so
-        // their text can't enter the prompt — the safe default even when a local
-        // chat tier is not (yet) available.
-        if (hit.sensitivityTier && isLocalOnlyTier(hit.sensitivityTier)) continue;
+        // reach the chat LLM (external by default). FAIL CLOSED — drop a hit
+        // whose tier is sensitive/secret OR not yet classified (null): a
+        // freshly-transcribed item is FTS-searchable before the sentinel runs,
+        // so an unknown tier must be excluded, not sent externally.
+        if (!hit.sensitivityTier || isLocalOnlyTier(hit.sensitivityTier)) continue;
         const existing = byItem.get(hit.itemId);
         if (!existing || hit.fusedScore > existing.score) {
           byItem.set(hit.itemId, { hit, score: hit.fusedScore });

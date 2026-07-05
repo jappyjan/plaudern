@@ -75,7 +75,7 @@ describe('McpToolsService', () => {
             keywordRank: 1,
             fusedScore: 0.0328,
             rank: 1,
-            sensitivityTier: null,
+            sensitivityTier: 'normal',
           },
         ],
         legs: { semantic: 'ran', keyword: 'ran', notes: [] },
@@ -119,7 +119,7 @@ describe('McpToolsService', () => {
             keywordRank: 1,
             fusedScore: 0.0164,
             rank: 1,
-            sensitivityTier: null,
+            sensitivityTier: 'normal',
           },
         ],
         legs: { semantic: 'unavailable', keyword: 'ran', notes: ['semantic unavailable'] },
@@ -128,6 +128,37 @@ describe('McpToolsService', () => {
 
       const result = await service.searchMemory('user-1', { query: 'note', limit: 5 });
       expect(result[0]).toMatchObject({ itemId: 'item-1', source: 'summary', snippet: '' });
+    });
+
+    it('excludes sensitive AND not-yet-classified (null tier) items — fail closed (JJ-21)', async () => {
+      const { service, fakes } = build();
+      const hit = (
+        itemId: string,
+        sensitivityTier: SearchResponse['results'][number]['sensitivityTier'],
+      ): SearchResponse['results'][number] => ({
+        itemId,
+        title: itemId,
+        sourceType: 'audio',
+        occurredAt: '2026-07-01T09:00:00.000Z',
+        snippet: `secret text for ${itemId}`,
+        snippetSource: 'transcript',
+        startSeconds: null,
+        endSeconds: null,
+        semanticScore: null,
+        semanticRank: null,
+        keywordScore: 0.2,
+        keywordRank: 1,
+        fusedScore: 0.02,
+        rank: 1,
+        sensitivityTier,
+      });
+      fakes.search.search.mockResolvedValue({
+        results: [hit('secret-item', 'secret'), hit('unclassified-item', null), hit('ok-item', 'normal')],
+        legs: { semantic: 'ran', keyword: 'ran', notes: [] },
+      });
+
+      const result = await service.searchMemory('user-1', { query: 'anything', limit: 5 });
+      expect(result.map((r) => r.itemId)).toEqual(['ok-item']);
     });
   });
 

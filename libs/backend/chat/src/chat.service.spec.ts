@@ -116,7 +116,7 @@ function makeHit(overrides: Partial<SearchResultItem> = {}): SearchResultItem {
     keywordRank: 1,
     fusedScore: 0.03,
     rank: 1,
-    sensitivityTier: null,
+    sensitivityTier: 'normal',
     ...overrides,
   };
 }
@@ -192,6 +192,30 @@ describe('ChatService.ask', () => {
     const promptText = JSON.stringify(provider.calls);
     expect(promptText).not.toContain('DE89370400440532013000');
     expect(promptText).not.toContain('IBAN');
+  });
+
+  it('FAILS CLOSED: excludes not-yet-classified (null tier) items from retrieval (JJ-21)', async () => {
+    const { service, provider, search } = build();
+    // Freshly transcribed, sentinel hasn't run yet → tier is null. Its transcript
+    // is FTS-searchable, but it must NOT reach the external chat LLM.
+    const unclassified = makeHit({
+      title: 'New recording',
+      snippet: 'the door code is 4417 and the safe combo is 8890',
+      sensitivityTier: null,
+    });
+    const normal = makeHit({ title: 'Lunch', snippet: 'we grabbed pizza', sensitivityTier: 'normal' });
+    search.defaultResults = [unclassified, normal];
+    provider.replies = ['{"answer": "You had pizza [1].", "confidence": "high"}'];
+
+    const res = await service.ask(USER, { message: 'what is the door code?' });
+
+    const citedIds = res.assistantMessage.citations.map((c) => c.inboxItemId);
+    expect(citedIds).not.toContain(unclassified.itemId);
+    // The excluded snippet's secret values (present only in that snippet, not in
+    // the question) must never appear in what was sent to the provider.
+    const promptText = JSON.stringify(provider.calls);
+    expect(promptText).not.toContain('4417');
+    expect(promptText).not.toContain('8890');
   });
 
   it('answers "not found" without calling the LLM when the only hits are sensitive (JJ-21)', async () => {

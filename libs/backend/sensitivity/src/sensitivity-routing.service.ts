@@ -144,17 +144,32 @@ export function isLocalEndpoint(url: string | null | undefined): boolean {
   }
   if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1); // IPv6 literal
   if (host === 'localhost' || host.endsWith('.localhost')) return true;
-  if (host === '::1' || host === '0.0.0.0') return true;
+  if (host === '0.0.0.0') return true;
+  // IPv6 literals contain a colon. Validate EXPLICITLY and fail closed — ONLY
+  // loopback (::1), Unique-Local fc00::/7 (fc../fd..) and link-local fe80::/10
+  // count as local; every other IPv6 (incl. public hosts like [2606:4700::1])
+  // is external. Must run BEFORE the dotless-hostname rule, which an IPv6
+  // literal (no dots) would otherwise wrongly match.
+  if (host.includes(':')) {
+    if (host === '::1') return true; // loopback
+    if (/^f[cd][0-9a-f]*(?::|$)/.test(host)) return true; // fc00::/7 ULA
+    if (/^fe[89ab][0-9a-f]*(?::|$)/.test(host)) return true; // fe80::/10 link-local
+    return false;
+  }
   // *.local / *.internal / *.lan mDNS + private DNS suffixes.
   if (/\.(local|internal|lan)$/.test(host)) return true;
-  // Bare single-label hostname (no dot) — a Docker/Compose service or LAN name
-  // (e.g. http://ollama:11434), never a public FQDN.
+  // Bare single-label hostname (no dot, not an IPv6 literal handled above) — a
+  // Docker/Compose service or LAN name (e.g. http://ollama:11434), never a
+  // public FQDN.
   if (!host.includes('.')) return true;
   // IPv4 loopback / RFC1918 private / link-local ranges.
   const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (m) {
     const a = Number(m[1]);
     const b = Number(m[2]);
+    // Cloud-metadata IP is non-local semantically (SSRF target) — exclude it
+    // explicitly even though it sits in the link-local block.
+    if (host === '169.254.169.254') return false;
     if (a === 127) return true; // 127.0.0.0/8
     if (a === 10) return true; // 10.0.0.0/8
     if (a === 192 && b === 168) return true; // 192.168.0.0/16

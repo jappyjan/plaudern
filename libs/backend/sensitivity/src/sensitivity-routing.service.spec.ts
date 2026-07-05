@@ -39,6 +39,10 @@ describe('isLocalEndpoint', () => {
     'http://ollama:11434/v1', // docker service name (single label)
     'http://gpu.local/v1',
     'http://llm.internal/v1',
+    'http://[::1]:11434/v1', // IPv6 loopback
+    'http://[fd12:3456:789a::1]:11434/v1', // ULA fc00::/7
+    'http://[fc00::1]/v1',
+    'http://[fe80::1]/v1', // link-local
   ])('treats %s as local', (url) => {
     expect(isLocalEndpoint(url)).toBe(true);
   });
@@ -49,6 +53,11 @@ describe('isLocalEndpoint', () => {
     'https://evil.example.com/v1',
     'http://8.8.8.8/v1',
     'http://172.32.0.1/v1', // just outside RFC1918
+    'http://169.254.169.254/latest', // cloud metadata (SSRF target)
+    'http://[2606:4700::1]/v1', // public IPv6 (Cloudflare) — the shipped-green leak
+    'http://[2001:4860:4860::8888]/v1', // public IPv6 (Google DNS)
+    'http://[fec0::1]/v1', // deprecated site-local, not fc00::/7 or fe80::/10
+    'http://[::]/v1', // unspecified
     '',
     'not-a-url',
     undefined,

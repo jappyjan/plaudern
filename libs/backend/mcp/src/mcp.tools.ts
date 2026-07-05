@@ -89,8 +89,10 @@ export class McpToolsService {
     });
     return results
       // Local-only routing guard (JJ-21): never surface sensitive/secret item
-      // text to an MCP client's (external) model.
-      .filter((r) => !(r.sensitivityTier && isLocalOnlyTier(r.sensitivityTier)))
+      // text to an MCP client's (external) model. FAIL CLOSED — a not-yet-
+      // classified item (null tier) is FTS-searchable before the sentinel runs,
+      // so an unknown tier is excluded, not surfaced.
+      .filter((r) => !!r.sensitivityTier && !isLocalOnlyTier(r.sensitivityTier))
       .map((r) => ({
         itemId: r.itemId,
         source: r.snippetSource ?? 'summary',
