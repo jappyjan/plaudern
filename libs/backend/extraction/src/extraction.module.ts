@@ -12,6 +12,7 @@ import { CommitmentsExtractor, CommitmentsModule } from '@plaudern/commitments';
 import { QuestionsExtractor, QuestionsModule } from '@plaudern/questions';
 import { TasksExtractor, TasksModule } from '@plaudern/tasks';
 import { FactsExtractor, FactsModule } from '@plaudern/facts';
+import { DecisionsExtractor, DecisionsModule } from '@plaudern/decisions';
 import { ExtractorGraph } from './extractor-graph';
 import { ExtractionPipelineService } from './extraction-pipeline.service';
 import { ExtractionRunsService } from './extraction-runs.service';
@@ -37,6 +38,7 @@ import { ExtractionController } from './extraction.controller';
     QuestionsModule,
     TasksModule,
     FactsModule,
+    DecisionsModule,
     TypeOrmModule.forFeature([ExtractionRunEntity, InboxItemEntity]),
   ],
   providers: [
@@ -54,6 +56,7 @@ import { ExtractionController } from './extraction.controller';
         CommitmentsExtractor,
         QuestionsExtractor,
         FactsExtractor,
+        DecisionsExtractor,
       ],
       useFactory: (
         transcription: TranscriptionExtractor,
@@ -67,6 +70,7 @@ import { ExtractionController } from './extraction.controller';
         commitments: CommitmentsExtractor,
         questions: QuestionsExtractor,
         facts: FactsExtractor,
+        decisions: DecisionsExtractor,
       ): Extractor[] => [
         transcription,
         diarization,
@@ -79,6 +83,7 @@ import { ExtractionController } from './extraction.controller';
         commitments,
         questions,
         facts,
+        decisions,
       ],
     },
     {

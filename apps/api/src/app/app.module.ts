@@ -14,6 +14,7 @@ import { CommitmentsModule } from '@plaudern/commitments';
 import { QuestionsModule } from '@plaudern/questions';
 import { TasksModule } from '@plaudern/tasks';
 import { FactsModule } from '@plaudern/facts';
+import { DecisionsModule } from '@plaudern/decisions';
 import { OpenLoopsModule } from '@plaudern/open-loops';
 import { IngestionModule } from '@plaudern/ingestion';
 import { PlaudSyncModule } from '@plaudern/plaud-sync';
@@ -45,6 +46,7 @@ import { HealthController } from './health.controller';
     QuestionsModule,
     TasksModule,
     FactsModule,
+    DecisionsModule,
     OpenLoopsModule,
     ExtractionModule,
     IngestionModule,
