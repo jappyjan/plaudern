@@ -17,6 +17,7 @@ const USER = 'user-1';
 
 interface FakeEmbeddingSearch {
   enabled: boolean;
+  isEnabled: (userId: string) => Promise<boolean>;
   search: jest.Mock;
 }
 
@@ -58,7 +59,10 @@ describe('SearchService', () => {
     itemTopics = dataSource.getRepository(ItemTopicEntity);
     chunks = dataSource.getRepository(EmbeddingChunkEntity);
 
-    embedding = { enabled: true, search: jest.fn(async () => []) };
+    // `EmbeddingSearchService.isEnabled(userId)` is async now; back it by the
+    // mutable `enabled` flag so individual tests can flip semantic off.
+    embedding = { enabled: true, search: jest.fn(async () => []) } as FakeEmbeddingSearch;
+    embedding.isEnabled = async () => embedding.enabled;
     const keyword = new KeywordSearchService(payloads, items);
     service = new SearchService(
       embedding as never,

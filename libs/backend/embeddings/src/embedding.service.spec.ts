@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { DataSource } from 'typeorm';
 import { ALL_ENTITIES, ExtractedPayloadEntity, InboxItemEntity } from '@plaudern/persistence';
 import type { InboxService } from '@plaudern/inbox';
+import type { AiConfigService, ResolvedAiConfig } from '@plaudern/ai-config';
 import type { ExtractionKind } from '@plaudern/contracts';
 import type { EmbeddingProvider } from './embedding.provider';
 import type { EmbeddingJob, EmbeddingQueue } from './embedding.job';
@@ -32,13 +33,25 @@ function fakeInbox(dataSource: DataSource): InboxService {
   } as unknown as InboxService;
 }
 
-function fakeProvider(enabled = true): EmbeddingProvider {
+function fakeProvider(): EmbeddingProvider {
   return {
     id: 'test:embedder',
-    enabled,
-    dimensions: 4,
+    isEnabled: async () => true,
     embed: async () => ({ vectors: [], model: 'test-model', dimensions: 4 }),
   };
+}
+
+/**
+ * Enablement now lives in the DB-backed AI config, not the provider — the
+ * service gates `retry`/`isEnabled` on `AiConfigService.isEnabled(userId,
+ * 'embeddings')`.
+ */
+function fakeAiConfig(enabled: boolean): AiConfigService {
+  return {
+    resolve: async () => (enabled ? ({} as ResolvedAiConfig) : null),
+    isEnabled: async () => enabled,
+    invalidate() {},
+  } as unknown as AiConfigService;
 }
 
 describe('EmbeddingService', () => {
@@ -46,13 +59,18 @@ describe('EmbeddingService', () => {
   let service: EmbeddingService;
   let enqueued: EmbeddingJob[];
 
-  function buildService(provider: EmbeddingProvider = fakeProvider()): EmbeddingService {
+  function buildService(enabled = true): EmbeddingService {
     const queue: EmbeddingQueue = {
       enqueue: async (job) => {
         enqueued.push(job);
       },
     };
-    return new EmbeddingService(fakeInbox(dataSource), provider, queue);
+    return new EmbeddingService(
+      fakeInbox(dataSource),
+      fakeAiConfig(enabled),
+      fakeProvider(),
+      queue,
+    );
   }
 
   beforeEach(async () => {
@@ -120,7 +138,7 @@ describe('EmbeddingService', () => {
     });
 
     it('rejects when embeddings are not configured', async () => {
-      service = buildService(fakeProvider(false));
+      service = buildService(false);
       const item = await createItem();
       await createExtraction(item, 'transcription', 'succeeded');
       await expect(service.retry(USER, item)).rejects.toBeInstanceOf(BadRequestException);
