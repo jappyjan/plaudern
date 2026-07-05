@@ -11,6 +11,8 @@ import {
   SpeakerOccurrenceEntity,
   VoiceProfileEntity,
 } from '@plaudern/persistence';
+import type { AiCapability } from '@plaudern/contracts';
+import type { AiConfigService, ResolvedAiConfig } from '@plaudern/ai-config';
 import type {
   ContactResolutionInput,
   ContactResolutionProvider,
@@ -22,10 +24,9 @@ import { EntityGraphService } from './entity-graph.service';
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
 
-/** Provider stub: disabled by default; tests flip it on with a canned verdict. */
+/** Provider stub with a canned verdict; enablement now lives in AiConfig. */
 class FakeResolutionProvider implements ContactResolutionProvider {
   readonly id = 'fake';
-  enabled = false;
   decision: ContactResolutionResult['decision'] = {
     voiceProfileId: null,
     confidence: 0,
@@ -33,9 +34,21 @@ class FakeResolutionProvider implements ContactResolutionProvider {
   };
   inputs: ContactResolutionInput[] = [];
 
-  async resolve(input: ContactResolutionInput): Promise<ContactResolutionResult> {
+  async resolve(_userId: string, input: ContactResolutionInput): Promise<ContactResolutionResult> {
     this.inputs.push(input);
     return { decision: this.decision, model: 'fake' };
+  }
+}
+
+/** AiConfig fake with per-capability enablement tests can flip on. */
+class FakeAiConfig {
+  readonly enabled = new Set<AiCapability>();
+  resolve = async (_userId: string, cap: AiCapability): Promise<ResolvedAiConfig | null> =>
+    this.enabled.has(cap) ? ({} as ResolvedAiConfig) : null;
+  isEnabled = async (_userId: string, cap: AiCapability): Promise<boolean> =>
+    this.enabled.has(cap);
+  invalidate(): void {
+    /* no-op */
   }
 }
 
@@ -44,6 +57,7 @@ describe('EntityContactResolverService', () => {
   let registry: EntitiesRegistryService;
   let resolver: EntityContactResolverService;
   let provider: FakeResolutionProvider;
+  let aiConfig: FakeAiConfig;
 
   beforeEach(async () => {
     dataSource = new DataSource({
@@ -67,6 +81,7 @@ describe('EntityContactResolverService', () => {
       dataSource.getRepository(ExtractedPayloadEntity),
     );
     provider = new FakeResolutionProvider();
+    aiConfig = new FakeAiConfig();
     resolver = new EntityContactResolverService(
       dataSource.getRepository(EntityRegistryEntity),
       dataSource.getRepository(EntityMentionEntity),
@@ -75,6 +90,7 @@ describe('EntityContactResolverService', () => {
       dataSource.getRepository(VoiceProfileEntity),
       registry,
       graph,
+      aiConfig as unknown as AiConfigService,
       provider,
     );
   });
@@ -199,7 +215,7 @@ describe('EntityContactResolverService', () => {
     const item = await createItem();
     const entity = await createPersonEntity('Detlef', item);
 
-    provider.enabled = true;
+    aiConfig.enabled.add('contact_resolution');
     provider.decision = { voiceProfileId: mueller, confidence: 0.9, reason: 'same person' };
     expect(await resolver.autoLinkAll(USER)).toBe(1);
     expect(provider.inputs).toHaveLength(1);
@@ -219,7 +235,7 @@ describe('EntityContactResolverService', () => {
     const item = await createItem();
     const entity = await createPersonEntity('Detlef', item);
 
-    provider.enabled = true;
+    aiConfig.enabled.add('contact_resolution');
     provider.decision = { voiceProfileId: mueller, confidence: 0.4, reason: 'maybe' };
     expect(await resolver.autoLinkAll(USER)).toBe(0);
     const row = await dataSource
