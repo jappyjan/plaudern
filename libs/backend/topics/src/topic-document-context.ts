@@ -89,29 +89,55 @@ export function toCitation(source: TopicDocumentSourceItem): TopicDocumentCitati
 }
 
 /**
+ * Identifier-guarded citation matchers, mirroring memory-chat's citation
+ * enforcer (`libs/backend/chat/src/citation-enforcer.ts`) so both cited
+ * artifacts share ONE positioning contract: a citation site is a RUN of `[n]`
+ * groups whose first bracket is NOT immediately preceded by an identifier
+ * character or a closing bracket/paren. That keeps code/array indices out of
+ * citation handling entirely — `array[99]` and `arr[1][2]` in prose are never
+ * treated as citations (never chipped, never stripped) — while "… done. [3]",
+ * a start-of-string "[1] …" and chained "… daily [1][2]." remain citations.
+ *
+ * We reuse chat's exact run/marker regexes but deliberately do NOT renumber
+ * survivors the way `enforceCitations` does: a living document keeps each
+ * source's ORIGINAL marker so the body stays aligned with the numbered source
+ * list and its citation chips. (That divergence is why the enforcer isn't
+ * imported wholesale here.)
+ */
+const MARKER_RUN_RE = /(?<![A-Za-z0-9_\])])(?:\[\d{1,3}\])+/g;
+/** A single `[n]` group INSIDE an already-validated run. */
+const MARKER_RE = /\[(\d{1,3})\]/g;
+
+/**
  * The set of source markers actually referenced by the body, keeping only
- * in-range `[n]` markers (1..sourceCount). Out-of-range markers are ignored so
- * a hallucinated number never yields a citation.
+ * in-range `[n]` markers (1..sourceCount) that sit at a citation position.
+ * Out-of-range numbers and identifier-adjacent brackets never yield a citation.
  */
 export function usedMarkers(markdown: string, sourceCount: number): Set<number> {
   const used = new Set<number>();
-  for (const match of markdown.matchAll(/\[(\d{1,3})\]/g)) {
-    const n = Number(match[1]);
-    if (n >= 1 && n <= sourceCount) used.add(n);
+  for (const run of markdown.match(MARKER_RUN_RE) ?? []) {
+    for (const match of run.matchAll(MARKER_RE)) {
+      const n = Number(match[1]);
+      if (n >= 1 && n <= sourceCount) used.add(n);
+    }
   }
   return used;
 }
 
 /**
  * Strip inline `[n]` markers that point outside the provided source range so a
- * hallucinated citation can never render as a chip. In-range markers are left
- * intact for the renderer to resolve.
+ * hallucinated citation can never render as a chip. Only markers at a citation
+ * position (inside a run) are considered — identifier-adjacent brackets like
+ * `array[99]` in prose are left untouched — and in-range markers are kept
+ * intact (original numbers) for the renderer to resolve.
  */
 export function sanitizeMarkers(markdown: string, sourceCount: number): string {
-  return markdown.replace(/\[(\d{1,3})\]/g, (whole, digits) => {
-    const n = Number(digits);
-    return n >= 1 && n <= sourceCount ? whole : '';
-  });
+  return markdown.replace(MARKER_RUN_RE, (run) =>
+    run.replace(MARKER_RE, (whole, digits: string) => {
+      const n = Number(digits);
+      return n >= 1 && n <= sourceCount ? whole : '';
+    }),
+  );
 }
 
 /** The latest succeeded summary's title, when one exists; null otherwise. */

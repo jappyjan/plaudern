@@ -108,13 +108,21 @@ export class TopicsProcessor {
 
       // The document writes itself: an item landing in a topic triggers a
       // (debounced, coalesced) regeneration of that topic's living document
-      // (JJ-12). Gated on the feature being configured, and never fatal to the
-      // classification itself — the read model above is already committed.
+      // (JJ-12). Gated on the feature being configured. Wrapped in its own
+      // try/catch so it is STRUCTURALLY never fatal to classification — the
+      // read model above is already committed and must not be undone by a
+      // hiccup while merely scheduling a regeneration.
       if (assignments.length > 0) {
-        this.topicDocuments?.onTopicsAssigned(
-          item.userId,
-          assignments.map((a) => a.topicId),
-        );
+        try {
+          this.topicDocuments?.onTopicsAssigned(
+            item.userId,
+            assignments.map((a) => a.topicId),
+          );
+        } catch (err) {
+          this.logger.error(
+            `failed to schedule living-document regeneration for ${job.inboxItemId}: ${(err as Error).message}`,
+          );
+        }
       }
     } catch (err) {
       const message = (err as Error).message;
