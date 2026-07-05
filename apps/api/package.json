@@ -17,6 +17,7 @@
     "@plaudern/chat": "workspace:*",
     "@plaudern/commitments": "workspace:*",
     "@plaudern/contracts": "workspace:*",
+    "@plaudern/decisions": "workspace:*",
     "@plaudern/email-ingest": "workspace:*",
     "@plaudern/embeddings": "workspace:*",
     "@plaudern/entities": "workspace:*",

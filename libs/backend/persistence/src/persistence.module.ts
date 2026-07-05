@@ -9,6 +9,7 @@ import {
   ChatMessageEntity,
   CommitmentEntity,
   ConsentSettingsEntity,
+  DecisionEntity,
   EmailSettingsEntity,
   EmbeddingChunkEntity,
   EntityAliasEntity,
@@ -80,6 +81,7 @@ import { CreatePersonalFacts1720000000031 } from './migrations/1720000000031-Cre
 import { CreateTopicProposals1720000000032 } from './migrations/1720000000032-CreateTopicProposals';
 import { CreateChatTables1720000000033 } from './migrations/1720000000033-CreateChatTables';
 import { AddCommitmentDuplicatesTask1720000000034 } from './migrations/1720000000034-AddCommitmentDuplicatesTask';
+import { CreateDecisions1720000000035 } from './migrations/1720000000035-CreateDecisions';
 import { CreateTopicDocuments1720000000036 } from './migrations/1720000000036-CreateTopicDocuments';
 
 export const ALL_ENTITIES = [
@@ -96,6 +98,7 @@ export const ALL_ENTITIES = [
   TopicDocumentEntity,
   CommitmentEntity,
   QuestionEntity,
+  DecisionEntity,
   TaskEntity,
   TaskCitationEntity,
   PersonalFactEntity,
@@ -165,6 +168,7 @@ export const ALL_MIGRATIONS = [
   CreateTopicProposals1720000000032,
   CreateChatTables1720000000033,
   AddCommitmentDuplicatesTask1720000000034,
+  CreateDecisions1720000000035,
   CreateTopicDocuments1720000000036,
 ];
 

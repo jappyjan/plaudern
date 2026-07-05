@@ -46,6 +46,10 @@ export const extractionKindSchema = z.enum([
   // I asked that got no answer ↔ questions asked of me that I deferred) —
   // the loops a bad memory drops silently (JJ-34).
   'questions',
+  // LLM extraction of DECISIONS that were made ("we decided to go with the
+  // cheaper option") into a searchable decision log with context, participants,
+  // and reasoning (JJ-33).
+  'decisions',
 ]);
 export type ExtractionKind = z.infer<typeof extractionKindSchema>;
 
