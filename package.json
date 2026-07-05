@@ -13,6 +13,8 @@
     "web:serve": "nx serve web",
     "web:build": "nx build web",
     "test": "nx run-many -t test",
+    "eval": "nx run-many -t eval",
+    "migration:smoke": "nx run persistence:migration-smoke",
     "typecheck": "nx run-many -t typecheck",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down"
