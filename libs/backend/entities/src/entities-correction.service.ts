@@ -13,9 +13,8 @@ import {
   EntityRegistryEntity,
   EntityRelationEntity,
   EntitySuppressionEntity,
-  VoiceProfileEntity,
 } from '@plaudern/persistence';
-import { normalize } from './entities-registry.service';
+import { normalize } from './contact-matching';
 
 /**
  * Relation types whose direction carries no meaning (mirrors
@@ -36,7 +35,8 @@ interface OwnIdentity {
 
 /**
  * Manual entity corrections (JJ-63): merge two entities, rename/retype one,
- * re-link a person to a voice-profile contact, and delete/suppress one. The
+ * and delete/suppress one (contact link/unlink/convert live in
+ * EntitiesRegistryService, which owns the voiceProfileLinkOrigin model). The
  * hard part is DURABILITY — every correction writes to the `entity_aliases` /
  * `entity_suppressions` side tables the registry upsert path consults, so a
  * merge/rename/delete is not undone by the next extraction run or backfill.
@@ -89,8 +89,19 @@ export class EntitiesCorrectionService {
       for (const alias of victim.aliases ?? []) aliases.add(alias);
       aliases.add(victim.canonicalName);
       survivor.aliases = [...aliases];
+      // Contact link: an unlinked survivor adopts the victim's link WITH its
+      // origin (manual stays manual, auto stays auto). When neither is linked
+      // but either side was explicitly unlinked (`suppressed`), the merged
+      // entity stays suppressed — sweeps must not redo what the user undid.
       if (!survivor.voiceProfileId && victim.voiceProfileId) {
         survivor.voiceProfileId = victim.voiceProfileId;
+        survivor.voiceProfileLinkOrigin = victim.voiceProfileLinkOrigin;
+      } else if (
+        !survivor.voiceProfileId &&
+        (survivor.voiceProfileLinkOrigin === 'suppressed' ||
+          victim.voiceProfileLinkOrigin === 'suppressed')
+      ) {
+        survivor.voiceProfileLinkOrigin = 'suppressed';
       }
       await manager.save(survivor);
 
@@ -209,32 +220,11 @@ export class EntitiesCorrectionService {
       row.type = newType;
       row.canonicalName = newCanonical;
       row.normalizedName = newNormalized;
-      // A non-person entity never carries a voice-profile link.
-      if (newType !== 'person') row.voiceProfileId = null;
-      await manager.save(row);
-      return id;
-    });
-  }
-
-  /** Re-link (or unlink, with null) a person entity to a voice-profile contact. */
-  async relinkContact(
-    userId: string,
-    id: string,
-    voiceProfileId: string | null,
-  ): Promise<string> {
-    return this.dataSource.transaction(async (manager) => {
-      const row = await this.lockEntity(manager, userId, id);
-      if (!row) throw new NotFoundException('entity not found');
-      if (row.type !== 'person') {
-        throw new BadRequestException('only person entities link to a voice-profile contact');
+      // A non-person entity never carries a voice-profile link (or an origin).
+      if (newType !== 'person') {
+        row.voiceProfileId = null;
+        row.voiceProfileLinkOrigin = null;
       }
-      if (voiceProfileId !== null) {
-        const profile = await manager.findOne(VoiceProfileEntity, {
-          where: { id: voiceProfileId, userId },
-        });
-        if (!profile) throw new NotFoundException('voice profile not found');
-      }
-      row.voiceProfileId = voiceProfileId;
       await manager.save(row);
       return id;
     });

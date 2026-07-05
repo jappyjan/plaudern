@@ -51,6 +51,15 @@ export const entityExtractionPayloadSchema = z.object({
 export type EntityExtractionPayload = z.infer<typeof entityExtractionPayloadSchema>;
 
 /**
+ * Provenance of a person entity's contact link. `auto` = matched by name/
+ * recording context, `manual` = the user linked (or converted) it themselves,
+ * `suppressed` = the user unlinked it and auto-linking must not re-link.
+ * `suppressed` only ever appears together with a null `voiceProfileId`.
+ */
+export const contactLinkOriginSchema = z.enum(['auto', 'manual', 'suppressed']);
+export type ContactLinkOrigin = z.infer<typeof contactLinkOriginSchema>;
+
+/**
  * A normalized entity in the per-user registry. Mutable (aliases accrete,
  * person links resolve), so it lives outside the immutable inbox aggregate —
  * exactly like a voice profile.
@@ -67,6 +76,10 @@ export const registryEntitySchema = z.object({
    * speaker-id contact book; null otherwise (and always null for non-people).
    */
   voiceProfileId: z.string().uuid().nullable(),
+  /** How the contact link came to be (or why auto-linking is off). */
+  voiceProfileLinkOrigin: contactLinkOriginSchema.nullable(),
+  /** Linked contact's display name, for rendering without a second fetch. */
+  voiceProfileName: z.string().nullable(),
   /** Distinct recordings this entity is mentioned in (latest extraction only). */
   mentionCount: z.number().int().nonnegative(),
   firstSeenAt: z.string().datetime(),
@@ -131,25 +144,52 @@ export const mergeEntityRequestSchema = z.object({
 export type MergeEntityRequest = z.infer<typeof mergeEntityRequestSchema>;
 
 /**
- * PATCH /v1/entities/:id — correct a wrong extraction: rename and/or retype.
- * Renaming keeps the OLD normalized name as an alias (and, on retype, the old
- * (type, name) too) so re-extraction folds back in instead of recreating.
+ * PATCH /v1/entities/:id — correct a registry entity: rename it and/or change
+ * its type. Renaming keeps the OLD normalized name as a durable alias (and, on
+ * retype, the old (type, name) too) so re-extraction folds back in instead of
+ * recreating; re-typing away from `person` drops any contact link.
  */
 export const updateEntityRequestSchema = z
   .object({
     canonicalName: z.string().trim().min(1).max(200).optional(),
     type: entityTypeSchema.optional(),
   })
-  .refine((body) => body.canonicalName !== undefined || body.type !== undefined, {
-    message: 'provide canonicalName and/or type',
+  .refine((req) => req.canonicalName !== undefined || req.type !== undefined, {
+    message: 'nothing to update',
   });
 export type UpdateEntityRequest = z.infer<typeof updateEntityRequestSchema>;
 
-/**
- * PATCH /v1/entities/:id/contact — re-link (or unlink) a `person` entity to a
- * voice-profile contact. `null` unlinks. Only valid for `person` entities.
- */
-export const relinkEntityContactRequestSchema = z.object({
-  voiceProfileId: z.string().uuid().nullable(),
+/** Manually link a `person` entity to a contact-book voice profile. */
+export const linkEntityContactRequestSchema = z.object({
+  voiceProfileId: z.string().uuid(),
 });
-export type RelinkEntityContactRequest = z.infer<typeof relinkEntityContactRequestSchema>;
+export type LinkEntityContactRequest = z.infer<typeof linkEntityContactRequestSchema>;
+
+/** Result of an auto-link sweep over all unlinked person entities. */
+export const autoLinkEntitiesResponseSchema = z.object({
+  /** How many person entities gained a contact link in this sweep. */
+  linked: z.number().int().nonnegative(),
+});
+export type AutoLinkEntitiesResponse = z.infer<typeof autoLinkEntitiesResponseSchema>;
+
+/**
+ * One ranked contact candidate for a person entity, produced by the identity
+ * resolver from real evidence (name affinity, whose voice is in the recordings
+ * mentioning the person, shared knowledge-graph connections). `reasons` are
+ * human-readable so the UI can show *why* a contact is suggested.
+ */
+export const entityContactSuggestionSchema = z.object({
+  voiceProfileId: z.string().uuid(),
+  name: z.string().nullable(),
+  confidence: z.number().min(0).max(1),
+  reasons: z.array(z.string()),
+});
+export type EntityContactSuggestionDto = z.infer<typeof entityContactSuggestionSchema>;
+
+/** GET /v1/entities/:id/contact-suggestions — best candidates first. */
+export const entityContactSuggestionsResponseSchema = z.object({
+  suggestions: z.array(entityContactSuggestionSchema),
+});
+export type EntityContactSuggestionsResponse = z.infer<
+  typeof entityContactSuggestionsResponseSchema
+>;

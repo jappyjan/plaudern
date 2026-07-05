@@ -1,51 +1,43 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Button,
-  Card,
-  CardBody,
-  CardHeader,
-  Chip,
-  Input,
-  Select,
-  SelectItem,
-  Spinner,
-} from '@heroui/react';
+import { Button, Card, CardBody, CardHeader, Chip, Input, Spinner } from '@heroui/react';
 import type {
+  EntityContactSuggestionDto,
   EntityDetailWithRelationsDto,
   EntityRelationEdgeDto,
-  EntityType,
   GraphEntityDto,
   RegistryEntityDto,
   RelationType,
-  VoiceProfileDto,
 } from '@plaudern/contracts';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
+  convertEntityToContact,
   deleteEntity,
   getEntity,
+  getEntityContactSuggestions,
   getEntityNeighborhood,
+  linkEntityContact,
   listEntities,
-  listSpeakers,
   mergeEntities,
-  relinkEntityContact,
-  updateEntity,
+  unlinkEntityContact,
 } from '../lib/api';
 import {
   ENTITY_TYPE_COLOR,
   ENTITY_TYPE_LABEL,
-  ENTITY_TYPES,
   RELATION_TYPE_LABEL,
 } from '../lib/entityLabels';
 import { formatDateTime } from '../lib/format';
 import { DocumentList, DocumentRow } from '../components/DocumentRow';
-import { BackIcon } from '../components/icons';
+import { EntityEditModal } from '../components/EntityEditModal';
+import { EntityLinkContactModal } from '../components/EntityLinkContactModal';
+import { BackIcon, EditIcon, LinkIcon, PeopleIcon, UnlinkIcon } from '../components/icons';
 
 /**
  * One registry entity: its identity and aliases, the recordings it is mentioned
  * in, and its edges in the knowledge graph grouped by relation type. LLM-stated
- * edges render solid; weak co-occurrence edges are muted. The "Manage" card
- * hosts the merge & correction tooling (JJ-63) as inline panels — no modals,
- * which iOS PWAs can drop (heroui#3222).
+ * edges render solid; weak co-occurrence edges are muted. Person entities also
+ * carry their contact-book link, manageable here (link/unlink/convert, JJ-63).
+ * The Manage card hosts merge-duplicate and delete as inline panels — not
+ * modals, which iOS PWAs can drop (heroui#3222).
  */
 export function EntityDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -54,8 +46,11 @@ export function EntityDetailPage() {
   // the connected entities' names/types so we can render them as links.
   const [neighbors, setNeighbors] = useState<Map<string, GraphEntityDto>>(new Map());
   const [error, setError] = useState<string | null>(null);
-  // Bumped after a correction to reload the detail + neighborhood.
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [editOpen, setEditOpen] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [suggestion, setSuggestion] = useState<EntityContactSuggestionDto | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,6 +59,7 @@ export function EntityDetailPage() {
     setEntity(null);
     setNeighbors(new Map());
     setError(null);
+    setActionError(null);
     if (!id) return;
 
     void (async () => {
@@ -89,7 +85,27 @@ export function EntityDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [id, refreshKey]);
+  }, [id]);
+
+  // The resolver's best candidate, offered inline for unlinked people. Purely
+  // an enrichment: failures leave the page fully functional.
+  const isUnlinkedPerson = entity?.type === 'person' && !entity.voiceProfileId;
+  useEffect(() => {
+    let cancelled = false;
+    setSuggestion(null);
+    if (!id || !isUnlinkedPerson) return;
+    void (async () => {
+      try {
+        const res = await getEntityContactSuggestions(id);
+        if (!cancelled) setSuggestion(res.suggestions[0] ?? null);
+      } catch {
+        /* non-fatal */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, isUnlinkedPerson]);
 
   if (error) {
     return (
@@ -117,6 +133,19 @@ export function EntityDetailPage() {
   }
   const relationGroups = [...groups.entries()];
 
+  // Mutations return the fresh detail DTO, so the page updates in place.
+  const runAction = async (action: () => Promise<EntityDetailWithRelationsDto>) => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      setEntity(await action());
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <BackLink />
@@ -131,14 +160,21 @@ export function EntityDetailPage() {
                 {formatDateTime(entity.firstSeenAt)}
               </p>
             </div>
-            <Chip
-              size="sm"
-              variant="flat"
-              color={ENTITY_TYPE_COLOR[entity.type]}
-              className="shrink-0"
-            >
-              {ENTITY_TYPE_LABEL[entity.type]}
-            </Chip>
+            <div className="flex shrink-0 items-center gap-1">
+              <Chip size="sm" variant="flat" color={ENTITY_TYPE_COLOR[entity.type]}>
+                {ENTITY_TYPE_LABEL[entity.type]}
+              </Chip>
+              <Button
+                isIconOnly
+                size="sm"
+                variant="light"
+                aria-label="Edit entity"
+                isDisabled={busy}
+                onPress={() => setEditOpen(true)}
+              >
+                <EditIcon className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -151,17 +187,97 @@ export function EntityDetailPage() {
             >
               View in graph
             </Button>
-            {entity.voiceProfileId && (
-              <Button
-                as={Link}
-                to={`/contacts/${entity.voiceProfileId}`}
-                size="sm"
-                variant="flat"
-              >
-                View linked contact
-              </Button>
-            )}
           </div>
+
+          {entity.type === 'person' &&
+            (entity.voiceProfileId ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  as={Link}
+                  to={`/contacts/${entity.voiceProfileId}`}
+                  size="sm"
+                  variant="flat"
+                  startContent={<PeopleIcon className="h-4 w-4" />}
+                >
+                  {entity.voiceProfileName ?? 'View linked contact'}
+                </Button>
+                {entity.voiceProfileLinkOrigin === 'auto' && (
+                  <Chip size="sm" variant="flat" title="Linked automatically by name/recording match">
+                    auto-linked
+                  </Chip>
+                )}
+                <Button
+                  size="sm"
+                  variant="light"
+                  color="danger"
+                  isDisabled={busy}
+                  startContent={<UnlinkIcon className="h-4 w-4" />}
+                  onPress={() => void runAction(() => unlinkEntityContact(entity.id))}
+                >
+                  Unlink
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {suggestion && (
+                  <div className="flex flex-col gap-1 rounded-medium bg-default-50 p-3">
+                    <p className="text-sm">
+                      Is this{' '}
+                      <span className="font-medium">
+                        {suggestion.name ?? 'an unnamed contact'}
+                      </span>
+                      ?{' '}
+                      <span className="text-default-500">
+                        {Math.round(suggestion.confidence * 100)}% match
+                      </span>
+                    </p>
+                    {suggestion.reasons.length > 0 && (
+                      <p className="text-xs text-default-500">{suggestion.reasons.join(' · ')}</p>
+                    )}
+                    <Button
+                      size="sm"
+                      color="primary"
+                      variant="flat"
+                      className="self-start"
+                      isDisabled={busy}
+                      startContent={<LinkIcon className="h-4 w-4" />}
+                      onPress={() =>
+                        void runAction(() => linkEntityContact(entity.id, suggestion.voiceProfileId))
+                      }
+                    >
+                      Link to {suggestion.name ?? 'this contact'}
+                    </Button>
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    isDisabled={busy}
+                    startContent={<LinkIcon className="h-4 w-4" />}
+                    onPress={() => setLinkOpen(true)}
+                  >
+                    Link to contact
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    isDisabled={busy}
+                    startContent={<PeopleIcon className="h-4 w-4" />}
+                    onPress={() => void runAction(() => convertEntityToContact(entity.id))}
+                  >
+                    Add to contacts
+                  </Button>
+                  {entity.voiceProfileLinkOrigin === 'suppressed' && (
+                    <Chip size="sm" variant="flat" title="You unlinked this entity; it won't re-link automatically">
+                      auto-link off
+                    </Chip>
+                  )}
+                </div>
+              </div>
+            ))}
+
+          {actionError && <p className="text-sm text-danger">{actionError}</p>}
 
           {entity.aliases.length > 0 && (
             <div className="flex flex-col gap-1">
@@ -178,7 +294,7 @@ export function EntityDetailPage() {
         </CardBody>
       </Card>
 
-      <ManageCard entity={entity} onChanged={() => setRefreshKey((k) => k + 1)} />
+      <ManageCard entity={entity} onMerged={setEntity} />
 
       <Card>
         <CardHeader className="pb-0">
@@ -229,22 +345,37 @@ export function EntityDetailPage() {
           />
         ))}
       </DocumentList>
+
+      <EntityEditModal
+        isOpen={editOpen}
+        entity={entity}
+        onClose={() => setEditOpen(false)}
+        onSaved={setEntity}
+      />
+      <EntityLinkContactModal
+        isOpen={linkOpen}
+        entity={entity}
+        onClose={() => setLinkOpen(false)}
+        onLinked={setEntity}
+      />
     </div>
   );
 }
 
-type Panel = 'rename' | 'merge' | 'contact' | 'delete';
+type Panel = 'merge' | 'delete';
 
 /**
- * Merge & correction tooling as inline panels (one open at a time). Kept out of
- * modals on purpose: iOS PWAs can drop HeroUI modal opens (heroui#3222).
+ * Merge & delete tooling (JJ-63) as inline panels (one open at a time), kept
+ * out of modals on purpose: iOS PWAs can drop HeroUI modal opens
+ * (heroui#3222). Rename/retype lives in EntityEditModal, contact linking in
+ * the identity card — this card owns the destructive registry corrections.
  */
 function ManageCard({
   entity,
-  onChanged,
+  onMerged,
 }: {
   entity: EntityDetailWithRelationsDto;
-  onChanged: () => void;
+  onMerged: (fresh: EntityDetailWithRelationsDto) => void;
 }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState<Panel | null>(null);
@@ -256,20 +387,6 @@ function ManageCard({
     setOpen((cur) => (cur === panel ? null : panel));
   }
 
-  /** Run a mutation with shared busy/error handling; `after` runs on success. */
-  async function run(action: () => Promise<unknown>, after: () => void) {
-    setBusy(true);
-    setError(null);
-    try {
-      await action();
-      after();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <Card>
       <CardHeader className="pb-0">
@@ -277,17 +394,9 @@ function ManageCard({
       </CardHeader>
       <CardBody className="gap-3">
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="flat" onPress={() => toggle('rename')}>
-            Rename / retype
-          </Button>
           <Button size="sm" variant="flat" onPress={() => toggle('merge')}>
             Merge duplicate
           </Button>
-          {entity.type === 'person' && (
-            <Button size="sm" variant="flat" onPress={() => toggle('contact')}>
-              {entity.voiceProfileId ? 'Change contact' : 'Link contact'}
-            </Button>
-          )}
           <Button size="sm" variant="flat" color="danger" onPress={() => toggle('delete')}>
             Delete
           </Button>
@@ -297,51 +406,23 @@ function ManageCard({
           <div className="rounded-medium bg-danger-50 p-2 text-xs text-danger">{error}</div>
         )}
 
-        {open === 'rename' && (
-          <RenamePanel
-            entity={entity}
-            busy={busy}
-            onSubmit={(changes) =>
-              run(
-                () => updateEntity(entity.id, changes),
-                () => {
-                  setOpen(null);
-                  onChanged();
-                },
-              )
-            }
-          />
-        )}
-
         {open === 'merge' && (
           <MergePanel
             entity={entity}
             busy={busy}
-            onMerge={(victimId) =>
-              run(
-                () => mergeEntities(entity.id, victimId),
-                () => {
+            onMerge={(victimId) => {
+              setBusy(true);
+              setError(null);
+              void mergeEntities(entity.id, victimId)
+                .then((fresh) => {
                   setOpen(null);
-                  onChanged();
-                },
-              )
-            }
-          />
-        )}
-
-        {open === 'contact' && entity.type === 'person' && (
-          <ContactPanel
-            entity={entity}
-            busy={busy}
-            onLink={(voiceProfileId) =>
-              run(
-                () => relinkEntityContact(entity.id, voiceProfileId),
-                () => {
-                  setOpen(null);
-                  onChanged();
-                },
-              )
-            }
+                  onMerged(fresh);
+                })
+                .catch((cause: unknown) => {
+                  setError(cause instanceof Error ? cause.message : String(cause));
+                })
+                .finally(() => setBusy(false));
+            }}
           />
         )}
 
@@ -356,7 +437,16 @@ function ManageCard({
                 size="sm"
                 color="danger"
                 isLoading={busy}
-                onPress={() => run(() => deleteEntity(entity.id), () => navigate('/entities'))}
+                onPress={() => {
+                  setBusy(true);
+                  setError(null);
+                  void deleteEntity(entity.id)
+                    .then(() => navigate('/entities'))
+                    .catch((cause: unknown) => {
+                      setError(cause instanceof Error ? cause.message : String(cause));
+                      setBusy(false);
+                    });
+                }}
               >
                 Delete permanently
               </Button>
@@ -368,55 +458,6 @@ function ManageCard({
         )}
       </CardBody>
     </Card>
-  );
-}
-
-function RenamePanel({
-  entity,
-  busy,
-  onSubmit,
-}: {
-  entity: EntityDetailWithRelationsDto;
-  busy: boolean;
-  onSubmit: (changes: { canonicalName?: string; type?: EntityType }) => void;
-}) {
-  const [name, setName] = useState(entity.canonicalName);
-  const [type, setType] = useState<EntityType>(entity.type);
-  const trimmed = name.trim();
-  const changed = trimmed !== entity.canonicalName || type !== entity.type;
-
-  return (
-    <div className="flex flex-col gap-2 rounded-medium bg-default-100 p-3">
-      <Input size="sm" label="Name" value={name} onValueChange={setName} />
-      <Select
-        size="sm"
-        label="Type"
-        selectedKeys={[type]}
-        onSelectionChange={(keys) => {
-          const next = [...keys][0];
-          if (typeof next === 'string') setType(next as EntityType);
-        }}
-      >
-        {ENTITY_TYPES.map((t) => (
-          <SelectItem key={t}>{ENTITY_TYPE_LABEL[t]}</SelectItem>
-        ))}
-      </Select>
-      <Button
-        size="sm"
-        color="primary"
-        className="self-start"
-        isLoading={busy}
-        isDisabled={!trimmed || !changed}
-        onPress={() =>
-          onSubmit({
-            canonicalName: trimmed !== entity.canonicalName ? trimmed : undefined,
-            type: type !== entity.type ? type : undefined,
-          })
-        }
-      >
-        Save
-      </Button>
-    </div>
   );
 }
 
@@ -518,71 +559,6 @@ function MergePanel({
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-function ContactPanel({
-  entity,
-  busy,
-  onLink,
-}: {
-  entity: EntityDetailWithRelationsDto;
-  busy: boolean;
-  onLink: (voiceProfileId: string | null) => void;
-}) {
-  const [profiles, setProfiles] = useState<VoiceProfileDto[] | null>(null);
-  const [selected, setSelected] = useState<string>(entity.voiceProfileId ?? '');
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const res = await listSpeakers().catch(() => null);
-      if (!cancelled && res) setProfiles(res.profiles);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return (
-    <div className="flex flex-col gap-2 rounded-medium bg-default-100 p-3">
-      <p className="text-xs text-default-500">
-        Link this person to a voice-profile contact, or unlink it.
-      </p>
-      {profiles === null ? (
-        <Spinner size="sm" />
-      ) : (
-        <Select
-          size="sm"
-          label="Contact"
-          selectedKeys={selected ? [selected] : []}
-          onSelectionChange={(keys) => {
-            const next = [...keys][0];
-            setSelected(typeof next === 'string' ? next : '');
-          }}
-        >
-          {profiles.map((p) => (
-            <SelectItem key={p.id}>{p.name ?? 'Unnamed contact'}</SelectItem>
-          ))}
-        </Select>
-      )}
-      <div className="flex gap-2">
-        <Button
-          size="sm"
-          color="primary"
-          isLoading={busy}
-          isDisabled={!selected || selected === entity.voiceProfileId}
-          onPress={() => onLink(selected || null)}
-        >
-          Save
-        </Button>
-        {entity.voiceProfileId && (
-          <Button size="sm" variant="flat" isLoading={busy} onPress={() => onLink(null)}>
-            Unlink
-          </Button>
-        )}
-      </div>
     </div>
   );
 }

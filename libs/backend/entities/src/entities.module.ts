@@ -9,17 +9,22 @@ import {
   EntityRelationEntity,
   EntitySuppressionEntity,
   ExtractedPayloadEntity,
+  SpeakerOccurrenceEntity,
   VoiceProfileEntity,
 } from '@plaudern/persistence';
 import { BullJobQueue, InlineJobQueue, redisConnectionFromConfig } from '@plaudern/queue';
 import { ENTITY_EXTRACTION_PROVIDER } from './entities.provider';
 import { ENTITY_EXTRACTION_QUEUE } from './entities.job';
+import { CONTACT_RESOLUTION_PROVIDER } from './contact-resolution.provider';
 import { RELATION_EXTRACTION_PROVIDER } from './relations.provider';
 import { RELATION_EXTRACTION_QUEUE } from './relations.job';
 import { OpenAiEntityExtractionProvider } from './providers/openai.provider';
+import { OpenAiContactResolutionProvider } from './providers/openai-contact-resolution.provider';
 import { OpenAiRelationExtractionProvider } from './providers/openai-relations.provider';
+import { ContactResolutionStartupService } from './contact-resolution-startup.service';
 import { EntitiesRegistryService } from './entities-registry.service';
 import { EntitiesCorrectionService } from './entities-correction.service';
+import { EntityContactResolverService } from './entity-contact-resolver.service';
 import { EntityGraphService } from './entity-graph.service';
 import { EntitiesProcessor } from './entities.processor';
 import { EntitiesService } from './entities.service';
@@ -41,12 +46,14 @@ import { RelationsExtractor } from './relations.extractor';
       EntityAliasEntity,
       EntitySuppressionEntity,
       ExtractedPayloadEntity,
+      SpeakerOccurrenceEntity,
       VoiceProfileEntity,
     ]),
   ],
   providers: [
     OpenAiEntityExtractionProvider,
     OpenAiRelationExtractionProvider,
+    OpenAiContactResolutionProvider,
     // Only one provider each for now (any OpenAI-compatible endpoint, DeepSeek
     // by default); the tokens keep the seam for future providers and test fakes.
     {
@@ -59,8 +66,15 @@ import { RelationsExtractor } from './relations.extractor';
       inject: [OpenAiRelationExtractionProvider],
       useFactory: (openai: OpenAiRelationExtractionProvider) => openai,
     },
+    {
+      provide: CONTACT_RESOLUTION_PROVIDER,
+      inject: [OpenAiContactResolutionProvider],
+      useFactory: (openai: OpenAiContactResolutionProvider) => openai,
+    },
     EntitiesRegistryService,
     EntitiesCorrectionService,
+    EntityContactResolverService,
+    ContactResolutionStartupService,
     EntityGraphService,
     EntitiesProcessor,
     RelationsProcessor,

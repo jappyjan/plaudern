@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import type {
@@ -15,14 +15,24 @@ import {
   ExtractedPayloadEntity,
   VoiceProfileEntity,
 } from '@plaudern/persistence';
+import { exactContactMatch, normalize } from './contact-matching';
 
 /**
  * Owns the per-user entity registry (JJ-32): normalizing/deduping extracted
- * entities into `entities` rows, recording `entity_mentions` edges, and linking
- * `person` entities to the voice-profile contact book. Also serves the read
- * models (list, detail) — restricting mention aggregates to each item's LATEST
+ * entities into `entities` rows, recording `entity_mentions` edges, and the
+ * manual contact-link operations (link/unlink/convert, JJ-63). At ingest
+ * only an exact (diacritic-folded) name match links a `person` to the contact
+ * book — everything fuzzier is the EntityContactResolverService's job, which
+ * weighs recordings and the knowledge graph. Also serves the read models
+ * (list, detail) — restricting mention aggregates to each item's LATEST
  * succeeded `entities` extraction so append-only reprocessing supersedes old
  * links, exactly like the diarization contact book.
+ *
+ * The upsert path consults the JJ-63 correction tables so manual corrections
+ * survive re-extraction: suppressed (deleted) names are skipped entirely, and
+ * merged-away/renamed names resolve — via `entity_aliases` — onto their
+ * surviving entity instead of resurrecting a duplicate. Rename/retype, merge,
+ * and delete themselves live in EntitiesCorrectionService (transactional).
  */
 @Injectable()
 export class EntitiesRegistryService {
@@ -78,7 +88,9 @@ export class EntitiesRegistryService {
     }
     if (byKey.size === 0) return 0;
 
-    const profilesByName = await this.namedProfiles(userId);
+    // Only exact (folded) name equality links at ingest; the contact resolver
+    // runs right after extraction with the full evidence (voices, graph).
+    const contacts = await this.profiles.find({ where: { userId } });
     let linked = 0;
     for (const { entity, surfaceForms, surfaceForm } of byKey.values()) {
       const registryEntity = await this.upsertEntity(
@@ -86,7 +98,7 @@ export class EntitiesRegistryService {
         entity.type,
         entity.name,
         [...surfaceForms],
-        profilesByName,
+        contacts,
       );
       // Suppressed (deleted) names resolve to null — no entity, no mention, so
       // the correction stays durable across re-extraction and backfills.
@@ -118,19 +130,20 @@ export class EntitiesRegistryService {
     });
     if (rows.length === 0) return [];
     const current = await this.currentMentions(rows.map((r) => r.id));
+    const names = await this.profileNames(rows);
     return rows
-      .map((row) => this.toDto(row, current.get(row.id) ?? []))
+      .map((row) => this.toDto(row, current.get(row.id) ?? [], names))
       .filter((dto) => includeUnreferenced || dto.mentionCount > 0)
       .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
   }
 
   /** One registry entity with its mentions (from the latest extraction/item). */
   async detail(userId: string, id: string): Promise<EntityDetailDto> {
-    const row = await this.entities.findOne({ where: { id, userId } });
-    if (!row) throw new NotFoundException('entity not found');
+    const row = await this.getOwned(userId, id);
     const mentions = (await this.currentMentions([id])).get(id) ?? [];
+    const names = await this.profileNames([row]);
     return {
-      ...this.toDto(row, mentions),
+      ...this.toDto(row, mentions, names),
       mentions: mentions
         .slice()
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
@@ -141,6 +154,62 @@ export class EntitiesRegistryService {
           createdAt: m.createdAt.toISOString(),
         })),
     };
+  }
+
+  /** Manually link a `person` entity to a contact-book voice profile. */
+  async linkContact(userId: string, id: string, voiceProfileId: string): Promise<EntityDetailDto> {
+    const row = await this.getOwned(userId, id);
+    if (row.type !== 'person') {
+      throw new BadRequestException('only person entities can link to a contact');
+    }
+    const profile = await this.profiles.findOne({ where: { id: voiceProfileId, userId } });
+    if (!profile) throw new NotFoundException('voice profile not found');
+    row.voiceProfileId = profile.id;
+    row.voiceProfileLinkOrigin = 'manual';
+    await this.entities.save(row);
+    return this.detail(userId, id);
+  }
+
+  /**
+   * Remove an entity's contact link and suppress auto-linking for it — an
+   * explicit unlink is a correction, so background sweeps and future ingests
+   * must not silently redo what the user undid. A manual link stays possible.
+   */
+  async unlinkContact(userId: string, id: string): Promise<EntityDetailDto> {
+    const row = await this.getOwned(userId, id);
+    if (row.type !== 'person') {
+      throw new BadRequestException('only person entities can link to a contact');
+    }
+    row.voiceProfileId = null;
+    row.voiceProfileLinkOrigin = 'suppressed';
+    await this.entities.save(row);
+    return this.detail(userId, id);
+  }
+
+  /**
+   * Promote a `person` entity to a real contact: create a confirmed voice
+   * profile named after it (no voiceprint — one attaches when the person is
+   * first heard and merged) and link the entity to it.
+   */
+  async convertToContact(userId: string, id: string): Promise<EntityDetailDto> {
+    const row = await this.getOwned(userId, id);
+    if (row.type !== 'person') {
+      throw new BadRequestException('only person entities can become a contact');
+    }
+    if (row.voiceProfileId) {
+      throw new BadRequestException('entity is already linked to a contact');
+    }
+    const profile = await this.profiles.save(
+      this.profiles.create({
+        userId,
+        name: row.canonicalName,
+        status: 'confirmed',
+      }),
+    );
+    row.voiceProfileId = profile.id;
+    row.voiceProfileLinkOrigin = 'manual';
+    await this.entities.save(row);
+    return this.detail(userId, id);
   }
 
   /**
@@ -164,8 +233,8 @@ export class EntitiesRegistryService {
 
   /**
    * Find or create the registry row for (userId, type, normalizedName),
-   * accreting any new surface forms as aliases and (re)linking a `person` to a
-   * matching named voice profile.
+   * accreting any new surface forms as aliases and linking a `person` to an
+   * exactly-matching named voice profile (respecting a `suppressed` origin).
    *
    * Consults the JJ-63 correction tables so manual edits survive re-extraction:
    * a suppressed (deleted) name returns null (skip it entirely); a merged-away
@@ -177,7 +246,7 @@ export class EntitiesRegistryService {
     type: EntityType,
     name: string,
     surfaceForms: string[],
-    profilesByName: Map<string, string>,
+    contacts: VoiceProfileEntity[],
   ): Promise<EntityRegistryEntity | null> {
     const normalizedName = normalize(name);
     // Deleted/suppressed names must never come back.
@@ -211,6 +280,7 @@ export class EntitiesRegistryService {
         normalizedName,
         aliases: [],
         voiceProfileId: null,
+        voiceProfileLinkOrigin: null,
       });
     }
 
@@ -222,9 +292,16 @@ export class EntitiesRegistryService {
 
     // Guarded on the ROW's type (not the requested one) so a voice link can
     // never be written onto a non-person, whatever path resolved the row.
-    if (row.type === 'person' && !row.voiceProfileId) {
-      const profileId = profilesByName.get(normalizedName);
-      if (profileId) row.voiceProfileId = profileId;
+    if (
+      row.type === 'person' &&
+      !row.voiceProfileId &&
+      row.voiceProfileLinkOrigin !== 'suppressed'
+    ) {
+      const profileId = exactContactMatch([row.canonicalName, ...row.aliases], contacts);
+      if (profileId) {
+        row.voiceProfileId = profileId;
+        row.voiceProfileLinkOrigin = 'auto';
+      }
     }
 
     try {
@@ -238,7 +315,10 @@ export class EntitiesRegistryService {
       if (!winner) throw new Error('failed to upsert entity');
       const merged = new Set([...(winner.aliases ?? []), ...row.aliases]);
       winner.aliases = [...merged];
-      if (!winner.voiceProfileId && row.voiceProfileId) winner.voiceProfileId = row.voiceProfileId;
+      if (!winner.voiceProfileId && row.voiceProfileId) {
+        winner.voiceProfileId = row.voiceProfileId;
+        winner.voiceProfileLinkOrigin = row.voiceProfileLinkOrigin;
+      }
       return this.entities.save(winner);
     }
   }
@@ -258,17 +338,20 @@ export class EntitiesRegistryService {
     );
   }
 
-  /** Named voice profiles keyed by normalized name, for person linking. */
-  private async namedProfiles(userId: string): Promise<Map<string, string>> {
-    const rows = await this.profiles.find({ where: { userId } });
-    const map = new Map<string, string>();
-    for (const row of rows) {
-      if (!row.name) continue;
-      // First writer wins so linking is stable when two profiles share a name.
-      const key = normalize(row.name);
-      if (!map.has(key)) map.set(key, row.id);
-    }
-    return map;
+  private async getOwned(userId: string, id: string): Promise<EntityRegistryEntity> {
+    const row = await this.entities.findOne({ where: { id, userId } });
+    if (!row) throw new NotFoundException('entity not found');
+    return row;
+  }
+
+  /** Display names of the profiles linked by the given rows, keyed by id. */
+  private async profileNames(rows: EntityRegistryEntity[]): Promise<Map<string, string | null>> {
+    const ids = [...new Set(rows.map((r) => r.voiceProfileId).filter((id): id is string => !!id))];
+    const names = new Map<string, string | null>();
+    if (ids.length === 0) return names;
+    const profiles = await this.profiles.find({ where: { id: In(ids) } });
+    for (const profile of profiles) names.set(profile.id, profile.name);
+    return names;
   }
 
   /**
@@ -304,7 +387,11 @@ export class EntitiesRegistryService {
     return result;
   }
 
-  private toDto(row: EntityRegistryEntity, mentions: EntityMentionEntity[]): RegistryEntityDto {
+  private toDto(
+    row: EntityRegistryEntity,
+    mentions: EntityMentionEntity[],
+    profileNames: Map<string, string | null>,
+  ): RegistryEntityDto {
     const itemIds = new Set(mentions.map((m) => m.inboxItemId));
     const lastSeen = mentions.reduce<Date | null>(
       (max, m) => (max === null || m.createdAt > max ? m.createdAt : max),
@@ -316,17 +403,16 @@ export class EntitiesRegistryService {
       canonicalName: row.canonicalName,
       aliases: row.aliases ?? [],
       voiceProfileId: row.voiceProfileId,
+      voiceProfileLinkOrigin: row.voiceProfileLinkOrigin,
+      voiceProfileName: row.voiceProfileId
+        ? (profileNames.get(row.voiceProfileId) ?? null)
+        : null,
       mentionCount: itemIds.size,
       firstSeenAt: row.createdAt.toISOString(),
       lastSeenAt: (lastSeen ?? row.createdAt).toISOString(),
       createdAt: row.createdAt.toISOString(),
     };
   }
-}
-
-/** Normalization key: lowercased, whitespace-collapsed. Alias/case matching. */
-export function normalize(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 /**

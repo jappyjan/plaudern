@@ -262,37 +262,44 @@ describe('EntitiesCorrectionService', () => {
     expect((await registry.list(USER, undefined, true)).map((e) => e.canonicalName)).toEqual(['Keep']);
   });
 
-  it('re-links and unlinks a person entity to a voice profile', async () => {
+  // Contact link/unlink/convert moved to EntitiesRegistryService (JJ-63 +
+  // #78's voiceProfileLinkOrigin model) and are covered by its spec.
+
+  it('merge adopts the victim contact link with its origin', async () => {
     const profile = await dataSource
       .getRepository(VoiceProfileEntity)
-      .save({ userId: USER, name: 'Someone', status: 'confirmed' });
-    const item = await createItem();
-    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
-    await ingest(item, ext, [{ type: 'person', name: 'Bob', mentions: [] }]);
-    const bob = (await entityByName('Bob'))!;
-
-    await corrections.relinkContact(USER, bob.id, profile.id);
-    expect((await entityByName('Bob'))!.voiceProfileId).toBe(profile.id);
-
-    await corrections.relinkContact(USER, bob.id, null);
-    expect((await entityByName('Bob'))!.voiceProfileId).toBeNull();
-  });
-
-  it('rejects linking a non-person entity, and an unknown/foreign profile', async () => {
+      .save({ userId: USER, name: 'Detlef Contact', status: 'confirmed' });
     const item = await createItem();
     const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
     await ingest(item, ext, [
-      { type: 'organization', name: 'ACME', mentions: [] },
-      { type: 'person', name: 'Bob', mentions: [] },
+      { type: 'person', name: 'Detlef Müller', mentions: [] },
+      { type: 'person', name: 'Detlef', mentions: [] },
     ]);
-    const acme = (await entityByName('ACME'))!;
-    const bob = (await entityByName('Bob'))!;
-    const foreign = await dataSource
-      .getRepository(VoiceProfileEntity)
-      .save({ userId: OTHER_USER, name: 'Nope', status: 'confirmed' });
+    const survivor = (await entityByName('Detlef Müller'))!;
+    const victim = (await entityByName('Detlef'))!;
+    await registry.linkContact(USER, victim.id, profile.id); // manual link on the victim
 
-    await expect(corrections.relinkContact(USER, acme.id, null)).rejects.toBeInstanceOf(BadRequestException);
-    await expect(corrections.relinkContact(USER, bob.id, foreign.id)).rejects.toBeInstanceOf(NotFoundException);
+    await corrections.merge(USER, survivor.id, victim.id);
+    const merged = (await entityByName('Detlef Müller'))!;
+    expect(merged.voiceProfileId).toBe(profile.id);
+    expect(merged.voiceProfileLinkOrigin).toBe('manual');
+  });
+
+  it('merge keeps a suppressed link-origin so sweeps do not re-link', async () => {
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+    await ingest(item, ext, [
+      { type: 'person', name: 'Detlef Müller', mentions: [] },
+      { type: 'person', name: 'Detlef', mentions: [] },
+    ]);
+    const survivor = (await entityByName('Detlef Müller'))!;
+    const victim = (await entityByName('Detlef'))!;
+    await registry.unlinkContact(USER, victim.id); // user said: do not auto-link
+
+    await corrections.merge(USER, survivor.id, victim.id);
+    const merged = (await entityByName('Detlef Müller'))!;
+    expect(merged.voiceProfileId).toBeNull();
+    expect(merged.voiceProfileLinkOrigin).toBe('suppressed');
   });
 
   it('scopes every correction to the owning user', async () => {

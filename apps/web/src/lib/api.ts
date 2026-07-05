@@ -92,12 +92,17 @@ import {
   entityDetailWithRelationsSchema,
   entityNeighborhoodResponseSchema,
   entityConnectResponseSchema,
+  autoLinkEntitiesResponseSchema,
+  entityContactSuggestionsResponseSchema,
+  type AutoLinkEntitiesResponse,
+  type EntityContactSuggestionsResponse,
   type EntityListResponse,
   type EntityDetailWithRelationsDto,
   type EntityNeighborhoodResponse,
   type EntityConnectResponse,
   type EntityType,
   type RelationType,
+  type UpdateEntityRequest,
   searchResponseSchema,
   similarResponseSchema,
   type SearchRequest,
@@ -469,6 +474,66 @@ export async function getEntity(id: string): Promise<EntityDetailWithRelationsDt
   return entityDetailWithRelationsSchema.parse(await requestJson(`/entities/${id}`));
 }
 
+/** Correct a registry entity: rename it and/or change its type. */
+export async function updateEntity(
+  id: string,
+  req: UpdateEntityRequest,
+): Promise<EntityDetailWithRelationsDto> {
+  return entityDetailWithRelationsSchema.parse(
+    await requestJson(`/entities/${id}`, { method: 'PATCH', body: JSON.stringify(req) }),
+  );
+}
+
+/**
+ * Ranked contact candidates for a person entity, straight from the identity
+ * resolver: confidence plus human-readable evidence (name affinity, whose
+ * voice is in the recordings, shared knowledge-graph connections).
+ */
+export async function getEntityContactSuggestions(
+  id: string,
+): Promise<EntityContactSuggestionsResponse> {
+  return entityContactSuggestionsResponseSchema.parse(
+    await requestJson(`/entities/${id}/contact-suggestions`),
+  );
+}
+
+/** Manually link a person entity to a contact-book voice profile. */
+export async function linkEntityContact(
+  id: string,
+  voiceProfileId: string,
+): Promise<EntityDetailWithRelationsDto> {
+  return entityDetailWithRelationsSchema.parse(
+    await requestJson(`/entities/${id}/contact-link`, {
+      method: 'PUT',
+      body: JSON.stringify({ voiceProfileId }),
+    }),
+  );
+}
+
+/** Unlink an entity from the contact book; auto-linking won't re-link it. */
+export async function unlinkEntityContact(id: string): Promise<EntityDetailWithRelationsDto> {
+  return entityDetailWithRelationsSchema.parse(
+    await requestJson(`/entities/${id}/contact-link`, { method: 'DELETE' }),
+  );
+}
+
+/** Promote a person entity to a new confirmed contact and link it. */
+export async function convertEntityToContact(id: string): Promise<EntityDetailWithRelationsDto> {
+  return entityDetailWithRelationsSchema.parse(
+    await requestJson(`/entities/${id}/convert-to-contact`, { method: 'POST' }),
+  );
+}
+
+/**
+ * Re-run contact auto-linking over every unlinked person entity — e.g. after
+ * naming a speaker in the contact book. Returns how many entities linked up.
+ */
+export async function autoLinkEntities(): Promise<AutoLinkEntitiesResponse> {
+  return autoLinkEntitiesResponseSchema.parse(
+    await requestJson('/entities/auto-link', { method: 'POST' }),
+  );
+}
+
 /** One hop of the graph around an entity: its edges plus the connected entities. */
 export async function getEntityNeighborhood(
   id: string,
@@ -501,9 +566,9 @@ export async function connectEntities(
 }
 
 /**
- * Merge & correction tooling (JJ-63). Each mutation returns the refreshed
- * entity detail (mentions + relations), so the detail page reloads from one
- * call. Durability against re-extraction is enforced server-side.
+ * Merge & suppress tooling (JJ-63). Each mutation returns the refreshed entity
+ * detail (mentions + relations), so the detail page reloads from one call.
+ * Durability against re-extraction is enforced server-side.
  */
 
 /** Merge `victimId` INTO `survivorId` (the survivor is kept). */
@@ -515,29 +580,6 @@ export async function mergeEntities(
     await requestJson(`/entities/${survivorId}/merge`, {
       method: 'POST',
       body: JSON.stringify({ victimId }),
-    }),
-  );
-}
-
-/** Rename and/or retype an entity (correct a wrong extraction). */
-export async function updateEntity(
-  id: string,
-  changes: { canonicalName?: string; type?: EntityType },
-): Promise<EntityDetailWithRelationsDto> {
-  return entityDetailWithRelationsSchema.parse(
-    await requestJson(`/entities/${id}`, { method: 'PATCH', body: JSON.stringify(changes) }),
-  );
-}
-
-/** Re-link (or unlink, with null) a person entity to a voice-profile contact. */
-export async function relinkEntityContact(
-  id: string,
-  voiceProfileId: string | null,
-): Promise<EntityDetailWithRelationsDto> {
-  return entityDetailWithRelationsSchema.parse(
-    await requestJson(`/entities/${id}/contact`, {
-      method: 'PATCH',
-      body: JSON.stringify({ voiceProfileId }),
     }),
   );
 }
