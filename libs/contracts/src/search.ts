@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { sourceTypeSchema } from './source-type';
 import { embeddingChunkSourceSchema } from './embedding';
+import { sensitivityTierSchema } from './sensitivity';
 
 /**
  * Hybrid search over the whole memory (JJ-38): a semantic leg (pgvector),
@@ -83,6 +84,11 @@ export const searchResultItemSchema = z.object({
   fusedScore: z.number(),
   /** 1-indexed final rank in the fused result list. */
   rank: z.number().int(),
+  /**
+   * The item's effective sensitivity tier (JJ-21). `sensitive`/`secret` items
+   * are masked-by-default in the result list; null when unclassified.
+   */
+  sensitivityTier: sensitivityTierSchema.nullable(),
 });
 export type SearchResultItem = z.infer<typeof searchResultItemSchema>;
 

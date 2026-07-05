@@ -39,10 +39,18 @@ describe('ExtractionRunsService — startup backfill scan', () => {
 
   /** Build the service around a graph of the given fake extractors. */
   function buildService(extractors: Extractor[]): ExtractionRunsService {
+    // The startup scan here only exercises the (ungated) `transcription` kind,
+    // so the routing guard is never consulted — a stub is sufficient.
+    const routing = {
+      decide: async () => 'external',
+      markHeld: async () => undefined,
+      clearHeld: async () => undefined,
+    } as unknown as ConstructorParameters<typeof ExtractionRunsService>[3];
     return new ExtractionRunsService(
       new ExtractorGraph(extractors),
       dataSource.getRepository(ExtractionRunEntity),
       dataSource.getRepository(InboxItemEntity),
+      routing,
     );
   }
 

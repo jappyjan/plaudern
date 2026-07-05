@@ -7,17 +7,18 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import type {
-  ChatAskRequest,
-  ChatAskResponse,
-  ChatCitation,
-  ChatConfidence,
-  ChatConversationDetailDto,
-  ChatConversationDto,
-  ChatConversationListResponse,
-  ChatMessageDto,
-  ChatStatusDto,
-  SearchResultItem,
+import {
+  isLocalOnlyTier,
+  type ChatAskRequest,
+  type ChatAskResponse,
+  type ChatCitation,
+  type ChatConfidence,
+  type ChatConversationDetailDto,
+  type ChatConversationDto,
+  type ChatConversationListResponse,
+  type ChatMessageDto,
+  type ChatStatusDto,
+  type SearchResultItem,
 } from '@plaudern/contracts';
 import { ChatConversationEntity, ChatMessageEntity } from '@plaudern/persistence';
 import { SearchService } from '@plaudern/search';
@@ -270,6 +271,12 @@ export class ChatService {
         limit: RETRIEVAL_LIMIT,
       });
       for (const hit of response.results) {
+        // Local-only routing guard (JJ-21): sensitive/secret items must NEVER
+        // reach the chat LLM (external by default). FAIL CLOSED — drop a hit
+        // whose tier is sensitive/secret OR not yet classified (null): a
+        // freshly-transcribed item is FTS-searchable before the sentinel runs,
+        // so an unknown tier must be excluded, not sent externally.
+        if (!hit.sensitivityTier || isLocalOnlyTier(hit.sensitivityTier)) continue;
         const existing = byItem.get(hit.itemId);
         if (!existing || hit.fusedScore > existing.score) {
           byItem.set(hit.itemId, { hit, score: hit.fusedScore });

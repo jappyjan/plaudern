@@ -12,6 +12,7 @@ import {
   googleAuthUrlResponseSchema,
   googlePendingResponseSchema,
   inboxItemSchema,
+  itemSensitivitySchema,
   inboxListResponseSchema,
   inboxPurgeResponseSchema,
   inboxSplitResponseSchema,
@@ -434,6 +435,24 @@ export async function getSummary(itemId: string): Promise<SummaryDto> {
 export async function retrySummary(itemId: string): Promise<SummaryDto> {
   return summarySchema.parse(
     await requestJson(`/inbox/${itemId}/summary/retry`, { method: 'POST' }),
+  );
+}
+
+/** The item's sensitivity classification (tier, mask spans, held state) — JJ-21. */
+export async function getItemSensitivity(itemId: string) {
+  return itemSensitivitySchema.parse(await requestJson(`/inbox/${itemId}/sensitivity`));
+}
+
+/** Set (or clear, with null) a user's manual sensitivity-tier override — JJ-21. */
+export async function setItemSensitivity(
+  itemId: string,
+  manualTier: 'public' | 'normal' | 'sensitive' | 'secret' | null,
+) {
+  return itemSensitivitySchema.parse(
+    await requestJson(`/inbox/${itemId}/sensitivity`, {
+      method: 'PATCH',
+      body: JSON.stringify({ manualTier }),
+    }),
   );
 }
 

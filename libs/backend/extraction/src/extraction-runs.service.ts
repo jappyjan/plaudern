@@ -1,10 +1,11 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
-import type {
-  ExtractionBackfillRequest,
-  ExtractionKind,
-  ExtractionRunDto,
+import {
+  isExternalLlmKind,
+  type ExtractionBackfillRequest,
+  type ExtractionKind,
+  type ExtractionRunDto,
 } from '@plaudern/contracts';
 import type { Extractor } from '@plaudern/inbox';
 import {
@@ -12,6 +13,7 @@ import {
   InboxItemEntity,
   RecordingMergeEntity,
 } from '@plaudern/persistence';
+import { SensitivityRoutingService } from '@plaudern/sensitivity';
 import { ExtractorGraph } from './extractor-graph';
 import { evaluateReadiness, isActive, latestOfKind } from './readiness';
 
@@ -52,6 +54,7 @@ export class ExtractionRunsService {
     private readonly runs: Repository<ExtractionRunEntity>,
     @InjectRepository(InboxItemEntity)
     private readonly items: Repository<InboxItemEntity>,
+    private readonly routing: SensitivityRoutingService,
   ) {}
 
   async startBackfill(userId: string, req: ExtractionBackfillRequest): Promise<ExtractionRunDto> {
@@ -204,6 +207,22 @@ export class ExtractionRunsService {
         for (const item of batch) {
           run.itemsMatched += 1;
           if (this.shouldEnqueue(extractor, item, run)) {
+            // Local-only routing guard (JJ-21): a backfill must not send
+            // sensitive content externally either. Hold / skip the same way the
+            // event pipeline does.
+            if (isExternalLlmKind(run.kind)) {
+              const decision = await this.routing.decide(item.id, run.kind);
+              if (decision === 'hold') {
+                await this.routing.markHeld(item.id);
+                run.itemsSkipped += 1;
+                continue;
+              }
+              if (decision === 'wait') {
+                run.itemsSkipped += 1;
+                continue;
+              }
+              await this.routing.clearHeld(item.id);
+            }
             try {
               await extractor.enqueue(item);
               run.itemsQueued += 1;

@@ -1,16 +1,18 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Card, CardBody, Chip, Input, Select, SelectItem, Spinner } from '@heroui/react';
-import type {
-  RegistryEntityDto,
-  SearchFilters,
-  SearchRequest,
-  SearchResponse,
-  SourceType,
-  TopicDto,
+import {
+  isMaskedTier,
+  type RegistryEntityDto,
+  type SearchFilters,
+  type SearchRequest,
+  type SearchResponse,
+  type SourceType,
+  type TopicDto,
 } from '@plaudern/contracts';
 import { listEntities, listTopics, searchMemory } from '../lib/api';
 import { ChatIcon, SearchIcon } from '../components/icons';
+import { SensitivityBadge } from '../components/SensitivityControls';
 
 const SOURCE_TYPES: { key: SourceType; label: string }[] = [
   { key: 'audio', label: 'Audio' },
@@ -285,11 +287,18 @@ export function SearchPage() {
                 <span className="text-sm font-medium">{r.title ?? 'Untitled'}</span>
                 <span className="shrink-0 text-xs text-default-400">{formatDate(r.occurredAt)}</span>
               </div>
-              {r.snippet && <Snippet text={r.snippet} />}
+              {r.sensitivityTier && isMaskedTier(r.sensitivityTier) ? (
+                <p className="text-sm italic text-default-400">
+                  🔒 Sensitive content — open the item to reveal.
+                </p>
+              ) : (
+                r.snippet && <Snippet text={r.snippet} />
+              )}
               <div className="mt-1 flex flex-wrap items-center gap-1">
                 <Chip size="sm" variant="flat">
                   {SOURCE_LABEL[r.sourceType] ?? r.sourceType}
                 </Chip>
+                {r.sensitivityTier && <SensitivityBadge tier={r.sensitivityTier} />}
                 {r.semanticScore !== null && (
                   <Chip size="sm" variant="flat" color="secondary">
                     semantic
