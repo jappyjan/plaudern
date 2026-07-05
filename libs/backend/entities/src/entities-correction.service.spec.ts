@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { DataSource } from 'typeorm';
 import {
   ALL_ENTITIES,
+  CommitmentEntity,
   EntityAliasEntity,
   EntityMentionEntity,
   EntityRegistryEntity,
@@ -11,6 +12,7 @@ import {
   InboxItemEntity,
   PersonalFactCitationEntity,
   PersonalFactEntity,
+  QuestionEntity,
   VoiceProfileEntity,
 } from '@plaudern/persistence';
 import type { ExtractedEntity } from '@plaudern/contracts';
@@ -245,6 +247,72 @@ describe('EntitiesCorrectionService', () => {
     // One works_at (deduped) survivor→ACME, zero self-edges.
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ sourceEntityId: survivor.id, targetEntityId: acme.id, relationType: 'works_at' });
+  });
+
+  it('merge repoints question/commitment counterpartyEntityId (JJ-70)', async () => {
+    const questions = dataSource.getRepository(QuestionEntity);
+    const commitments = dataSource.getRepository(CommitmentEntity);
+    const item = await createItem();
+    const ext = await createEntitiesExtraction(item, new Date('2026-07-01T10:00:00Z'));
+    await ingest(item, ext, [
+      { type: 'person', name: 'Detlef Müller', mentions: [] },
+      { type: 'person', name: 'Detlef', mentions: [] },
+    ]);
+    const survivor = (await entityByName('Detlef Müller'))!;
+    const victim = (await entityByName('Detlef'))!;
+
+    const questionsExt = await dataSource.getRepository(ExtractedPayloadEntity).save({
+      inboxItemId: item,
+      kind: 'questions',
+      version: 1,
+      provider: 'test',
+      status: 'succeeded',
+      createdAt: new Date('2026-07-01T10:00:00Z'),
+    });
+    const commitmentsExt = await dataSource.getRepository(ExtractedPayloadEntity).save({
+      inboxItemId: item,
+      kind: 'commitments',
+      version: 1,
+      provider: 'test',
+      status: 'succeeded',
+      createdAt: new Date('2026-07-01T10:00:00Z'),
+    });
+
+    const question = await questions.save({
+      userId: USER,
+      inboxItemId: item,
+      extractionId: questionsExt.id,
+      direction: 'asked_of_me',
+      counterpartyName: 'Detlef',
+      counterpartyEntityId: victim.id,
+      question: 'When can you send the report?',
+      normalizedQuestion: 'when can you send the report?',
+      status: 'open',
+      sourceTimestamp: null,
+      sourceQuote: null,
+    });
+    const commitment = await commitments.save({
+      userId: USER,
+      inboxItemId: item,
+      extractionId: commitmentsExt.id,
+      direction: 'owed_to_me',
+      counterpartyName: 'Detlef',
+      counterpartyEntityId: victim.id,
+      description: 'send the report by Friday',
+      normalizedDescription: 'send the report by friday',
+      dueDate: null,
+      status: 'open',
+      duplicatesTaskId: null,
+      sourceTimestamp: null,
+      sourceQuote: null,
+    });
+
+    await corrections.merge(USER, survivor.id, victim.id);
+
+    const mergedQuestion = await questions.findOneBy({ id: question.id });
+    const mergedCommitment = await commitments.findOneBy({ id: commitment.id });
+    expect(mergedQuestion!.counterpartyEntityId).toBe(survivor.id);
+    expect(mergedCommitment!.counterpartyEntityId).toBe(survivor.id);
   });
 
   it('rejects merging different types and self-merge', async () => {

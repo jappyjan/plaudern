@@ -14,6 +14,7 @@ export * from './relations';
 export * from './commitments';
 export * from './questions';
 export * from './dossier';
+export * from './decisions';
 export * from './open-loops';
 export * from './events';
 export * from './geocode';

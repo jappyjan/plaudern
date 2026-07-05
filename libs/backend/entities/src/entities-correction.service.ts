@@ -8,6 +8,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager } from 'typeorm';
 import type { EntityType, RelationType } from '@plaudern/contracts';
 import {
+  CommitmentEntity,
   EntityAliasEntity,
   EntityMentionEntity,
   EntityRegistryEntity,
@@ -15,6 +16,7 @@ import {
   EntitySuppressionEntity,
   PersonalFactCitationEntity,
   PersonalFactEntity,
+  QuestionEntity,
   recomputePersonalFactSupersession,
   type PersonalFactGroupKey,
 } from '@plaudern/persistence';
@@ -87,6 +89,8 @@ export class EntitiesCorrectionService {
       await this.repointMentions(manager, victimId, survivorId);
       await this.repointRelations(manager, victimId, survivorId);
       await this.repointFacts(manager, userId, victimId, survivorId);
+      await this.repointQuestions(manager, victimId, survivorId);
+      await this.repointCommitments(manager, victimId, survivorId);
 
       // Union the victim's known spellings onto the survivor. The user chose the
       // survivor, so its canonical name is kept; the victim's becomes an alias.
@@ -420,6 +424,44 @@ export class EntitiesCorrectionService {
     // Restore the supersession invariant for every group the merge disturbed,
     // atomically with the merge itself.
     await recomputePersonalFactSupersession(manager, [...touchedGroups.values()]);
+  }
+
+  /**
+   * Repoint the victim's `questions.counterpartyEntityId` (JJ-34) to the
+   * survivor, so a merge never strands an open/asked question's counterparty
+   * link. This is a loose (no-FK) reference and isn't part of the row's unique
+   * key (inboxItemId, direction, normalizedQuestion), so — unlike mentions and
+   * relations — no dedup/clash handling is needed: a plain bulk update
+   * suffices.
+   */
+  private async repointQuestions(
+    manager: EntityManager,
+    victimId: string,
+    survivorId: string,
+  ): Promise<void> {
+    await manager.update(
+      QuestionEntity,
+      { counterpartyEntityId: victimId },
+      { counterpartyEntityId: survivorId },
+    );
+  }
+
+  /**
+   * Repoint the victim's `commitments.counterpartyEntityId` (JJ-36) to the
+   * survivor, mirroring {@link repointQuestions}: the counterparty link is a
+   * loose reference outside the row's unique key (inboxItemId, direction,
+   * normalizedDescription), so a plain bulk update is safe.
+   */
+  private async repointCommitments(
+    manager: EntityManager,
+    victimId: string,
+    survivorId: string,
+  ): Promise<void> {
+    await manager.update(
+      CommitmentEntity,
+      { counterpartyEntityId: victimId },
+      { counterpartyEntityId: survivorId },
+    );
   }
 
   /**
