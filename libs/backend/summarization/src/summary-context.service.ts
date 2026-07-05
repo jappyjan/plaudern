@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import type { ExtractionSegment, SummarySpeakerDto } from '@plaudern/contracts';
+import {
+  TEXT_PASSTHROUGH_PROVIDER_ID,
+  type ExtractionSegment,
+  type SummarySpeakerDto,
+} from '@plaudern/contracts';
 import {
   ExtractedPayloadEntity,
   InboxItemEntity,
@@ -90,6 +94,11 @@ export class SummaryContextService {
         language: transcription.language ?? undefined,
         occurredAt: iso(item.occurredAt),
         durationSeconds: maxSegmentEnd(transcription.segments ?? null),
+        // Passthrough rows carry typed/clipped text, not speech — steer the
+        // prompt off the row's provenance, not the source type (an mp3 can
+        // arrive as a generic 'file' upload and still be a real recording).
+        sourceKind:
+          transcription.provider === TEXT_PASSTHROUGH_PROVIDER_ID ? 'note' : 'recording',
       },
       speakers: roster,
     };

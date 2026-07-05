@@ -150,10 +150,13 @@ describe('Speaker identification (e2e, Path A)', () => {
       })
       .expect(201);
 
+    // Text notes get a passthrough transcription (their own body) but are
+    // never diarized, so the read model is the flat text without speakers.
     const res = await request(app.getHttpServer())
       .get(`/api/v1/inbox/${text.body.id}/speaker-transcript`)
       .expect(200);
-    expect(res.body.mode).toBe('none');
+    expect(res.body.mode).toBe('flat');
+    expect(res.body.text).toBe('no audio here');
     expect(res.body.speakers).toHaveLength(0);
     expect(res.body.diarizationStatus).toBeNull();
   });

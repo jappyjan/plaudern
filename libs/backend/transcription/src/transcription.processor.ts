@@ -26,6 +26,17 @@ export class TranscriptionProcessor {
   async process(job: TranscriptionJob): Promise<void> {
     await this.inbox.setExtractionStatus(job.extractionId, 'processing');
     try {
+      if (job.passthrough) {
+        // Text-bearing source: the note body is already text, so copy the
+        // stored blob into the row and let the downstream DAG take over.
+        const content = await this.readText(job.storageKey);
+        await this.inbox.completeExtraction(job.extractionId, {
+          status: 'succeeded',
+          content,
+        });
+        this.logger.log(`copied text content for inbox item ${job.inboxItemId}`);
+        return;
+      }
       // Presign at run time (not enqueue time) so queue retries never hold an
       // expired URL. The provider downloads the URL itself.
       const audioUrl = await this.storage.createInternalPresignedGetUrl(job.storageKey);
@@ -51,5 +62,14 @@ export class TranscriptionProcessor {
       });
       throw err;
     }
+  }
+
+  private async readText(storageKey: string): Promise<string> {
+    const stream = await this.storage.getObjectStream(storageKey);
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks).toString('utf8');
   }
 }

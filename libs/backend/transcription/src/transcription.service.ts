@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
 } from '@nestjs/common';
+import { TEXT_PASSTHROUGH_PROVIDER_ID } from '@plaudern/contracts';
 import { InboxService } from '@plaudern/inbox';
 import {
   TRANSCRIPTION_PROVIDER,
@@ -16,6 +17,8 @@ export interface EnqueueParams {
   contentType: string;
   filename?: string;
   languageHint?: string;
+  /** Copy the stored text blob into the row instead of calling the provider. */
+  passthrough?: boolean;
 }
 
 /**
@@ -43,7 +46,7 @@ export class TranscriptionService {
     const extraction = await this.inbox.addExtraction(
       inboxItemId,
       'transcription',
-      this.provider.id,
+      params.passthrough ? TEXT_PASSTHROUGH_PROVIDER_ID : this.provider.id,
       TRANSCRIPTION_EXTRACTOR_VERSION,
     );
     await this.queue.enqueue({
@@ -53,6 +56,7 @@ export class TranscriptionService {
       contentType: params.contentType,
       filename: params.filename,
       languageHint: params.languageHint,
+      passthrough: params.passthrough,
     });
     return extraction.id;
   }
