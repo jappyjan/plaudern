@@ -101,12 +101,14 @@ import {
   entityDetailWithRelationsSchema,
   entityNeighborhoodResponseSchema,
   entityConnectResponseSchema,
+  entityDossierSchema,
   autoLinkEntitiesResponseSchema,
   entityContactSuggestionsResponseSchema,
   type AutoLinkEntitiesResponse,
   type EntityContactSuggestionsResponse,
   type EntityListResponse,
   type EntityDetailWithRelationsDto,
+  type EntityDossierDto,
   type EntityNeighborhoodResponse,
   type EntityConnectResponse,
   type EntityType,
@@ -514,6 +516,15 @@ export async function listEntities(
 /** One registry entity with its mentions (recordings) and aggregated relation edges. */
 export async function getEntity(id: string): Promise<EntityDetailWithRelationsDto> {
   return entityDetailWithRelationsSchema.parse(await requestJson(`/entities/${id}`));
+}
+
+/**
+ * The person dossier (JJ-24): everything the platform knows about one entity —
+ * facts (active + superseded), commitments both ways, open questions, relations
+ * and recent mentions — each cited to its source recording.
+ */
+export async function getEntityDossier(id: string): Promise<EntityDossierDto> {
+  return entityDossierSchema.parse(await requestJson(`/entities/${id}/dossier`));
 }
 
 /** Correct a registry entity: rename it and/or change its type. */

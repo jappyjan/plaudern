@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { InboxModule } from '@plaudern/inbox';
+import { FactsModule } from '@plaudern/facts';
+import { CommitmentsModule } from '@plaudern/commitments';
+import { QuestionsModule } from '@plaudern/questions';
 import {
   EntityAliasEntity,
   EntityMentionEntity,
@@ -9,6 +12,7 @@ import {
   EntityRelationEntity,
   EntitySuppressionEntity,
   ExtractedPayloadEntity,
+  InboxItemEntity,
   SpeakerOccurrenceEntity,
   VoiceProfileEntity,
 } from '@plaudern/persistence';
@@ -26,6 +30,8 @@ import { EntitiesRegistryService } from './entities-registry.service';
 import { EntitiesCorrectionService } from './entities-correction.service';
 import { EntityContactResolverService } from './entity-contact-resolver.service';
 import { EntityGraphService } from './entity-graph.service';
+import { DossierService } from './dossier.service';
+import { DossierController } from './dossier.controller';
 import { EntitiesProcessor } from './entities.processor';
 import { EntitiesService } from './entities.service';
 import { EntitiesController } from './entities.controller';
@@ -39,6 +45,11 @@ import { RelationsExtractor } from './relations.extractor';
   imports: [
     ConfigModule,
     InboxModule,
+    // The dossier aggregation composes these read models; importing them here
+    // exposes their read services (no cycle — none imports EntitiesModule).
+    FactsModule,
+    CommitmentsModule,
+    QuestionsModule,
     TypeOrmModule.forFeature([
       EntityRegistryEntity,
       EntityMentionEntity,
@@ -46,6 +57,7 @@ import { RelationsExtractor } from './relations.extractor';
       EntityAliasEntity,
       EntitySuppressionEntity,
       ExtractedPayloadEntity,
+      InboxItemEntity,
       SpeakerOccurrenceEntity,
       VoiceProfileEntity,
     ]),
@@ -76,6 +88,7 @@ import { RelationsExtractor } from './relations.extractor';
     EntityContactResolverService,
     ContactResolutionStartupService,
     EntityGraphService,
+    DossierService,
     EntitiesProcessor,
     RelationsProcessor,
     {
@@ -105,7 +118,7 @@ import { RelationsExtractor } from './relations.extractor';
     RelationsService,
     RelationsExtractor,
   ],
-  controllers: [EntitiesController, InboxEntitiesController],
+  controllers: [EntitiesController, InboxEntitiesController, DossierController],
   exports: [EntitiesService, EntitiesExtractor, RelationsService, RelationsExtractor],
 })
 export class EntitiesModule {}

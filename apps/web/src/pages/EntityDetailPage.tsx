@@ -178,6 +178,17 @@ export function EntityDetailPage() {
           </div>
 
           <div className="flex flex-wrap gap-2">
+            {entity.type === 'person' && (
+              <Button
+                as={Link}
+                to={`/entities/${entity.id}/dossier`}
+                size="sm"
+                variant="solid"
+                color="primary"
+              >
+                View dossier
+              </Button>
+            )}
             <Button
               as={Link}
               to={`/entities/graph?seed=${entity.id}`}

@@ -59,6 +59,6 @@ import { FactsController, InboxFactsController } from './facts.controller';
     FactsExtractor,
   ],
   controllers: [FactsController, InboxFactsController],
-  exports: [FactsService, FactsExtractor],
+  exports: [FactsService, FactsExtractor, FactsRegistryService],
 })
 export class FactsModule {}

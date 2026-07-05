@@ -359,6 +359,42 @@ export class FactsRegistryService {
     };
   }
 
+  /**
+   * Current source-item citations per fact — restricted to each item's latest
+   * succeeded `facts` extraction, exactly like the list read model — reduced to
+   * the fields a citation deep link needs (item id, quote, segment start). The
+   * person dossier (JJ-24) uses this to cite each fact back to its recordings
+   * without re-implementing the supersede-aware citation aggregation.
+   */
+  async citationRefs(
+    factIds: string[],
+  ): Promise<Map<string, { inboxItemId: string; quote: string | null; startSeconds: number | null }[]>> {
+    const byFact = await this.currentCitations(factIds);
+    const result = new Map<
+      string,
+      { inboxItemId: string; quote: string | null; startSeconds: number | null }[]
+    >();
+    for (const [factId, rows] of byFact) {
+      // Newest recording first, deduped to one citation per source item.
+      const byItem = new Map<string, PersonalFactCitationEntity>();
+      for (const row of rows) {
+        const current = byItem.get(row.inboxItemId);
+        if (!current || row.createdAt > current.createdAt) byItem.set(row.inboxItemId, row);
+      }
+      result.set(
+        factId,
+        [...byItem.values()]
+          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+          .map((row) => ({
+            inboxItemId: row.inboxItemId,
+            quote: row.quote,
+            startSeconds: row.startSeconds,
+          })),
+      );
+    }
+    return result;
+  }
+
   private async factsById(ids: string[]): Promise<Map<string, PersonalFactEntity>> {
     const unique = [...new Set(ids)];
     if (unique.length === 0) return new Map();
