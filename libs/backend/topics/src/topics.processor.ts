@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { InboxService } from '@plaudern/inbox';
@@ -9,6 +9,7 @@ import {
   type TopicClassificationProvider,
 } from './topics.provider';
 import { buildTopicContent } from './topic-context';
+import { TopicDocumentService } from './topic-document.service';
 import type { TopicsJob } from './topics.job';
 
 /**
@@ -31,6 +32,11 @@ export class TopicsProcessor {
     private readonly topics: Repository<TopicEntity>,
     @InjectRepository(ItemTopicEntity)
     private readonly assignments: Repository<ItemTopicEntity>,
+    // Optional so unit tests can construct the processor without the living-doc
+    // stack; in the wired module it is always present and drives regeneration
+    // when an item lands in a topic (JJ-12).
+    @Optional()
+    private readonly topicDocuments?: TopicDocumentService,
   ) {}
 
   async process(job: TopicsJob): Promise<void> {
@@ -99,6 +105,25 @@ export class TopicsProcessor {
       this.logger.log(
         `classified inbox item ${job.inboxItemId} into ${assignments.length} topic(s)`,
       );
+
+      // The document writes itself: an item landing in a topic triggers a
+      // (debounced, coalesced) regeneration of that topic's living document
+      // (JJ-12). Gated on the feature being configured. Wrapped in its own
+      // try/catch so it is STRUCTURALLY never fatal to classification — the
+      // read model above is already committed and must not be undone by a
+      // hiccup while merely scheduling a regeneration.
+      if (assignments.length > 0) {
+        try {
+          this.topicDocuments?.onTopicsAssigned(
+            item.userId,
+            assignments.map((a) => a.topicId),
+          );
+        } catch (err) {
+          this.logger.error(
+            `failed to schedule living-document regeneration for ${job.inboxItemId}: ${(err as Error).message}`,
+          );
+        }
+      }
     } catch (err) {
       const message = (err as Error).message;
       this.logger.error(`topic classification failed for ${job.inboxItemId}: ${message}`);

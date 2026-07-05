@@ -4,6 +4,7 @@ import type { TopicDto, TopicItemDto } from '@plaudern/contracts';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { deleteTopic, listTopicItems, listTopics, updateTopic } from '../lib/api';
 import { TopicModal } from '../components/TopicModal';
+import { TopicDocumentCard } from '../components/TopicDocumentCard';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { DocumentList, DocumentRow } from '../components/DocumentRow';
 import { ArchiveIcon, BackIcon, EditIcon, TrashIcon } from '../components/icons';
@@ -137,6 +138,8 @@ export function TopicDetailPage() {
           </div>
         </CardBody>
       </Card>
+
+      <TopicDocumentCard topicId={id} />
 
       <DocumentList
         title="Items"
