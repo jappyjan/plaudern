@@ -21,6 +21,7 @@ import type {
 } from '@plaudern/contracts';
 import { ChatConversationEntity, ChatMessageEntity } from '@plaudern/persistence';
 import { SearchService } from '@plaudern/search';
+import { VerificationService } from '@plaudern/citations';
 import {
   CHAT_COMPLETION_PROVIDER,
   type ChatCompletionMessage,
@@ -107,6 +108,7 @@ export class ChatService {
     @Inject(CHAT_COMPLETION_PROVIDER)
     private readonly provider: ChatCompletionProvider,
     private readonly search: SearchService,
+    private readonly verification: VerificationService,
     @InjectRepository(ChatConversationEntity)
     private readonly conversations: Repository<ChatConversationEntity>,
     @InjectRepository(ChatMessageEntity)
@@ -329,8 +331,30 @@ export class ChatService {
       ...(bySourceMarker.get(orig) as ChatCitation),
       marker: index + 1,
     }));
-    const confidence: ChatConfidence =
+
+    // Structural confidence: the model's own hedge OR any uncited clause
+    // (clause-level coverage, JJ-68) forces low.
+    let confidence: ChatConfidence =
       modelConfidence === 'low' || enforced.uncitedClaimCount > 0 ? 'low' : 'high';
+
+    // Verification pass (JJ-20): only worth running when the answer would
+    // otherwise ship at HIGH — an LLM-judge re-checks its high-stakes fields
+    // (dates/amounts/names) against the cited passages, catching the
+    // confident-but-wrong extraction a valid marker can't. Gated + best-effort:
+    // disabled or failed verification leaves the structural confidence intact.
+    if (confidence === 'high' && this.verification.enabled) {
+      const passages = citations
+        .map((c) => c.snippet)
+        .filter((snippet): snippet is string => !!snippet);
+      const outcome = await this.verification.verifyHighStakes(enforced.content, passages);
+      if (outcome.ran && outcome.unsupported.length > 0) {
+        this.logger.warn(
+          `verification flagged unsupported values, downgrading to low: ${outcome.unsupported.join(', ')}`,
+        );
+        confidence = 'low';
+      }
+    }
+
     return { content: enforced.content, citations, confidence };
   }
 

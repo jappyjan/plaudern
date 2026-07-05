@@ -47,7 +47,8 @@
       "@plaudern/auth": ["libs/backend/auth/src/index.ts"],
       "@plaudern/mcp": ["libs/backend/mcp/src/index.ts"],
       "@plaudern/search": ["libs/backend/search/src/index.ts"],
-      "@plaudern/chat": ["libs/backend/chat/src/index.ts"]
+      "@plaudern/chat": ["libs/backend/chat/src/index.ts"],
+      "@plaudern/citations": ["libs/backend/citations/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]
