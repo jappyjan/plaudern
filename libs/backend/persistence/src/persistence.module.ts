@@ -40,6 +40,7 @@ import {
   SummarizationSettingsEntity,
   TaskCitationEntity,
   TaskEntity,
+  TopicDocumentEntity,
   TopicEntity,
   TopicProposalEntity,
   UserEntity,
@@ -81,7 +82,8 @@ import { CreateTopicProposals1720000000032 } from './migrations/1720000000032-Cr
 import { CreateChatTables1720000000033 } from './migrations/1720000000033-CreateChatTables';
 import { AddCommitmentDuplicatesTask1720000000034 } from './migrations/1720000000034-AddCommitmentDuplicatesTask';
 import { CreateDecisions1720000000035 } from './migrations/1720000000035-CreateDecisions';
-import { VoiceProfileSelf1720000000036 } from './migrations/1720000000036-VoiceProfileSelf';
+import { CreateTopicDocuments1720000000036 } from './migrations/1720000000036-CreateTopicDocuments';
+import { VoiceProfileSelf1720000000037 } from './migrations/1720000000037-VoiceProfileSelf';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -94,6 +96,7 @@ export const ALL_ENTITIES = [
   TopicEntity,
   ItemTopicEntity,
   TopicProposalEntity,
+  TopicDocumentEntity,
   CommitmentEntity,
   QuestionEntity,
   DecisionEntity,
@@ -167,7 +170,8 @@ export const ALL_MIGRATIONS = [
   CreateChatTables1720000000033,
   AddCommitmentDuplicatesTask1720000000034,
   CreateDecisions1720000000035,
-  VoiceProfileSelf1720000000036,
+  CreateTopicDocuments1720000000036,
+  VoiceProfileSelf1720000000037,
 ];
 
 /**

@@ -142,3 +142,95 @@ export const topicProposalListResponseSchema = z.object({
   enabled: z.boolean(),
 });
 export type TopicProposalListResponse = z.infer<typeof topicProposalListResponseSchema>;
+
+/**
+ * Living topic documents (JJ-12): an evergreen, self-updating Markdown document
+ * the AI maintains for each topic — current state, timeline, decisions, open
+ * items, people involved. It regenerates whenever a new item classifies into
+ * the topic, and EVERY statement cites its source items structurally (the body
+ * carries inline `[n]` markers resolved against `citations`, exactly like the
+ * memory chat answer in `chat.ts`). Each generation is stored as a new version
+ * so the topic's evolution stays visible.
+ */
+
+/**
+ * One cited source of a living document. `marker` is the number the body
+ * references as `[n]`; it deep-links to the inbox item (and, when a transcript
+ * segment offset is known, to the audio moment — null for summary-level
+ * sources), mirroring `chatCitationSchema` so the same renderer works.
+ */
+export const topicDocumentCitationSchema = z.object({
+  marker: z.number().int().positive(),
+  inboxItemId: z.string(),
+  title: z.string().nullable(),
+  occurredAt: z.string().datetime(),
+  /** Short excerpt of the source the claim rests on, when captured. */
+  snippet: z.string().nullable(),
+  /** Transcript segment start (seconds) for an audio deep link; null otherwise. */
+  startSeconds: z.number().nullable(),
+  endSeconds: z.number().nullable(),
+});
+export type TopicDocumentCitation = z.infer<typeof topicDocumentCitationSchema>;
+
+/**
+ * The persisted shape of a generation's `citations` column — the structural
+ * source list a version was produced from.
+ */
+export const topicDocumentCitationsPayloadSchema = z.array(topicDocumentCitationSchema);
+export type TopicDocumentCitationsPayload = z.infer<typeof topicDocumentCitationsPayloadSchema>;
+
+/**
+ * Read model for a topic's living document. `status` is the state of the most
+ * recent generation attempt (so the UI can show a spinner while a fresh version
+ * is being written); `markdown`/`citations`/`version` describe the current
+ * (latest succeeded) document, which stays visible during a regeneration and
+ * after a failed attempt. `enabled` is false when generation is unconfigured,
+ * so the UI hides the feature instead of offering an action that always fails.
+ */
+export const topicDocumentResponseSchema = z.object({
+  topicId: z.string().uuid(),
+  status: extractionStatusSchema.nullable(),
+  version: z.number().int().positive().nullable(),
+  markdown: z.string().nullable(),
+  citations: z.array(topicDocumentCitationSchema),
+  sourceItemCount: z.number().int().nonnegative().nullable(),
+  model: z.string().nullable(),
+  /** Error of the most recent attempt when it failed; null otherwise. */
+  error: z.string().nullable(),
+  /** When the current (visible) document was generated. */
+  generatedAt: z.string().datetime().nullable(),
+  /** When the most recent attempt (any status) was last touched. */
+  updatedAt: z.string().datetime().nullable(),
+  enabled: z.boolean(),
+});
+export type TopicDocumentResponse = z.infer<typeof topicDocumentResponseSchema>;
+
+/** One entry in a document's version history — metadata only (no body). */
+export const topicDocumentVersionSchema = z.object({
+  version: z.number().int().positive(),
+  sourceItemCount: z.number().int().nonnegative(),
+  model: z.string().nullable(),
+  createdAt: z.string().datetime(),
+});
+export type TopicDocumentVersionDto = z.infer<typeof topicDocumentVersionSchema>;
+
+export const topicDocumentVersionListResponseSchema = z.object({
+  topicId: z.string().uuid(),
+  /** Succeeded versions, newest first. */
+  versions: z.array(topicDocumentVersionSchema),
+});
+export type TopicDocumentVersionListResponse = z.infer<
+  typeof topicDocumentVersionListResponseSchema
+>;
+
+/** A single historical version rendered in full — the body plus its citations. */
+export const topicDocumentVersionDetailSchema = z.object({
+  topicId: z.string().uuid(),
+  version: z.number().int().positive(),
+  markdown: z.string(),
+  citations: z.array(topicDocumentCitationSchema),
+  sourceItemCount: z.number().int().nonnegative(),
+  model: z.string().nullable(),
+  createdAt: z.string().datetime(),
+});
+export type TopicDocumentVersionDetailDto = z.infer<typeof topicDocumentVersionDetailSchema>;
