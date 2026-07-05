@@ -10,6 +10,7 @@ import { ExtractionModule } from '@plaudern/extraction';
 import { EmbeddingModule } from '@plaudern/embeddings';
 import { EntitiesModule } from '@plaudern/entities';
 import { TopicsModule } from '@plaudern/topics';
+import { CommitmentsModule } from '@plaudern/commitments';
 import { TasksModule } from '@plaudern/tasks';
 import { IngestionModule } from '@plaudern/ingestion';
 import { PlaudSyncModule } from '@plaudern/plaud-sync';
@@ -36,6 +37,7 @@ import { HealthController } from './health.controller';
     EmbeddingModule,
     EntitiesModule,
     TopicsModule,
+    CommitmentsModule,
     TasksModule,
     ExtractionModule,
     IngestionModule,

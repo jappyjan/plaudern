@@ -101,6 +101,9 @@ services:
       - TOPICS_API_KEY=${SUMMARIZATION_API_KEY}
       - TOPICS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
       - TOPICS_MODEL=${TOPICS_MODEL:-deepseek-chat}
+      - COMMITMENTS_API_KEY=${SUMMARIZATION_API_KEY}
+      - COMMITMENTS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
+      - COMMITMENTS_MODEL=${COMMITMENTS_MODEL:-deepseek-chat}
       # Embeddings power semantic recall (MCP search_memory, similarity,
       # hybrid search). They CANNOT reuse the summarization key: DeepSeek has
       # no embeddings API. Fill in EMBEDDINGS_API_KEY with an OpenAI key —

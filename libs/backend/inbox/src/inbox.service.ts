@@ -8,6 +8,7 @@ import type {
   SourceType,
 } from '@plaudern/contracts';
 import {
+  CommitmentEntity,
   EmbeddingChunkEntity,
   EntityMentionEntity,
   EntityRegistryEntity,
@@ -292,6 +293,7 @@ export class InboxService {
       await em.getRepository(EntityRelationEntity).delete({ inboxItemId: item.id });
       await em.getRepository(EntityMentionEntity).delete({ inboxItemId: item.id });
       await em.getRepository(ItemTopicEntity).delete({ inboxItemId: item.id });
+      await em.getRepository(CommitmentEntity).delete({ inboxItemId: item.id });
       // Tasks: remember which tasks this item cited, drop the citations, then
       // hard-delete OPEN tasks left with no citations at all — an open task no
       // recording supports any more is a ghost. Completed/dismissed tasks are
@@ -369,6 +371,7 @@ export class InboxService {
         await em.getRepository(EntityRelationEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(EntityMentionEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(ItemTopicEntity).delete({ inboxItemId: In(itemIds) });
+        await em.getRepository(CommitmentEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(TaskCitationEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(ExtractedPayloadEntity).delete({ inboxItemId: In(itemIds) });
         await em.getRepository(SourcePayloadEntity).delete({ inboxItemId: In(itemIds) });

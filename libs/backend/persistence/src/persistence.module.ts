@@ -5,6 +5,7 @@ import {
   AuthSessionEntity,
   CalendarEventEntity,
   CalendarFeedEntity,
+  CommitmentEntity,
   ConsentSettingsEntity,
   EmailSettingsEntity,
   EmbeddingChunkEntity,
@@ -62,6 +63,7 @@ import { CreateTopics1720000000021 } from './migrations/1720000000021-CreateTopi
 import { CreateMcpTokens1720000000022 } from './migrations/1720000000022-CreateMcpTokens';
 import { CreateEntityRelations1720000000023 } from './migrations/1720000000023-CreateEntityRelations';
 import { EntityContactLinkOrigin1720000000024 } from './migrations/1720000000024-EntityContactLinkOrigin';
+import { CreateCommitments1720000000025 } from './migrations/1720000000025-CreateCommitments';
 import { AddFullTextSearch1720000000026 } from './migrations/1720000000026-AddFullTextSearch';
 import { CreateEntityCorrections1720000000027 } from './migrations/1720000000027-CreateEntityCorrections';
 import { ExtractionRunTrigger1720000000028 } from './migrations/1720000000028-ExtractionRunTrigger';
@@ -77,6 +79,7 @@ export const ALL_ENTITIES = [
   EntityMentionEntity,
   TopicEntity,
   ItemTopicEntity,
+  CommitmentEntity,
   TaskEntity,
   TaskCitationEntity,
   EntityRelationEntity,
@@ -132,6 +135,7 @@ export const ALL_MIGRATIONS = [
   CreateMcpTokens1720000000022,
   CreateEntityRelations1720000000023,
   EntityContactLinkOrigin1720000000024,
+  CreateCommitments1720000000025,
   AddFullTextSearch1720000000026,
   CreateEntityCorrections1720000000027,
   ExtractionRunTrigger1720000000028,
