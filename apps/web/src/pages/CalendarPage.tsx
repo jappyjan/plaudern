@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Spinner } from '@heroui/react';
-import type { CalendarEventDto, RecordingSummaryDto } from '@plaudern/contracts';
+import type { CalendarEventDto, RecordingSummaryDto, ReminderDto } from '@plaudern/contracts';
 import { Link, useSearchParams } from 'react-router-dom';
-import { listCalendarEvents, listCalendarRecordings } from '../lib/api';
+import {
+  listCalendarEvents,
+  listCalendarRecordings,
+  listReminders,
+  updateReminderStatus,
+} from '../lib/api';
 import { localDayKey, monthGridDays, utcDayKey } from '../lib/format';
 import { MonthGrid, type DayMarkers } from '../components/calendar/MonthGrid';
 import { DayDetailList } from '../components/calendar/DayDetailList';
+import { ReminderList } from '../components/calendar/ReminderList';
 import { EventDetailModal } from '../components/calendar/EventDetailModal';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -13,6 +19,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 interface DayBucket {
   events: CalendarEventDto[];
   recordings: RecordingSummaryDto[];
+  reminders: ReminderDto[];
 }
 
 /**
@@ -24,12 +31,13 @@ interface DayBucket {
 function buildBuckets(
   events: CalendarEventDto[],
   recordings: RecordingSummaryDto[],
+  reminders: ReminderDto[],
 ): Map<string, DayBucket> {
   const buckets = new Map<string, DayBucket>();
   const bucket = (key: string): DayBucket => {
     let entry = buckets.get(key);
     if (!entry) {
-      entry = { events: [], recordings: [] };
+      entry = { events: [], recordings: [], reminders: [] };
       buckets.set(key, entry);
     }
     return entry;
@@ -63,6 +71,11 @@ function buildBuckets(
   for (const recording of recordings) {
     bucket(localDayKey(recording.occurredAt)).recordings.push(recording);
   }
+
+  // Reminders land on the browser-local day their resolved due instant falls on.
+  for (const reminder of reminders) {
+    bucket(localDayKey(reminder.dueAt)).reminders.push(reminder);
+  }
   return buckets;
 }
 
@@ -74,6 +87,7 @@ export function CalendarPage() {
   const [selectedKey, setSelectedKey] = useState(todayKey);
   const [events, setEvents] = useState<CalendarEventDto[] | null>(null);
   const [recordings, setRecordings] = useState<RecordingSummaryDto[]>([]);
+  const [reminders, setReminders] = useState<ReminderDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const eventId = searchParams.get('event');
@@ -85,12 +99,14 @@ export function CalendarPage() {
       const days = monthGridDays(year, month);
       const from = new Date(days[0].date.getTime() - DAY_MS).toISOString();
       const to = new Date(days[days.length - 1].date.getTime() + 2 * DAY_MS).toISOString();
-      const [eventsRes, recordingsRes] = await Promise.all([
+      const [eventsRes, recordingsRes, remindersRes] = await Promise.all([
         listCalendarEvents(from, to),
         listCalendarRecordings(from, to),
+        listReminders({ from, to }),
       ]);
       setEvents(eventsRes.events);
       setRecordings(recordingsRes.recordings);
+      setReminders(remindersRes.reminders);
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -101,19 +117,35 @@ export function CalendarPage() {
     void refresh();
   }, [refresh]);
 
-  const buckets = useMemo(() => buildBuckets(events ?? [], recordings), [events, recordings]);
+  const buckets = useMemo(
+    () => buildBuckets(events ?? [], recordings, reminders),
+    [events, recordings, reminders],
+  );
   const markers = useMemo(() => {
     const map = new Map<string, DayMarkers>();
     for (const [key, value] of buckets) {
       map.set(key, {
         hasEvents: value.events.length > 0,
         hasRecordings: value.recordings.length > 0,
+        hasReminders: value.reminders.length > 0,
       });
     }
     return map;
   }, [buckets]);
 
-  const selected = buckets.get(selectedKey) ?? { events: [], recordings: [] };
+  const updateReminder = useCallback(
+    async (id: string, status: 'done' | 'dismissed' | 'active') => {
+      try {
+        await updateReminderStatus(id, status);
+        await refresh();
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
+    },
+    [refresh],
+  );
+
+  const selected = buckets.get(selectedKey) ?? { events: [], recordings: [], reminders: [] };
   const selectedLabel = new Date(`${selectedKey}T12:00:00`).toLocaleDateString(undefined, {
     weekday: 'long',
     month: 'long',
@@ -155,23 +187,30 @@ export function CalendarPage() {
           <Spinner label="Loading calendar…" />
         </div>
       ) : (
-        <DayDetailList
-          dayLabel={selectedLabel}
-          events={selected.events}
-          recordings={selected.recordings}
-          onEventClick={(id) => setSearchParams({ event: id })}
-        />
+        <div className="flex flex-col gap-4">
+          <DayDetailList
+            dayLabel={selectedLabel}
+            events={selected.events}
+            recordings={selected.recordings}
+            onEventClick={(id) => setSearchParams({ event: id })}
+          />
+          <ReminderList reminders={selected.reminders} onUpdate={updateReminder} />
+        </div>
       )}
 
-      {events !== null && events.length === 0 && recordings.length === 0 && !error && (
-        <p className="text-sm text-default-500">
-          Nothing on the calendar yet — subscribe to a calendar feed in{' '}
-          <Link to="/settings" className="text-primary">
-            settings
-          </Link>
-          .
-        </p>
-      )}
+      {events !== null &&
+        events.length === 0 &&
+        recordings.length === 0 &&
+        reminders.length === 0 &&
+        !error && (
+          <p className="text-sm text-default-500">
+            Nothing on the calendar yet — subscribe to a calendar feed in{' '}
+            <Link to="/settings" className="text-primary">
+              settings
+            </Link>
+            .
+          </p>
+        )}
 
       <EventDetailModal
         eventId={eventId}
