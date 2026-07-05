@@ -13,8 +13,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * One row per item (unique inboxItemId). Additive only — safe on existing
  * installs.
  */
-export class CreateItemSensitivity1720000000043 implements MigrationInterface {
-  name = 'CreateItemSensitivity1720000000043';
+export class CreateItemSensitivity1720000000044 implements MigrationInterface {
+  name = 'CreateItemSensitivity1720000000044';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

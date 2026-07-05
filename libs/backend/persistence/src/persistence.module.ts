@@ -15,6 +15,7 @@ import {
   EmbeddingChunkEntity,
   EntityAliasEntity,
   EntityMentionEntity,
+  EntityMergeSuggestionEntity,
   EntityRegistryEntity,
   EntityRelationEntity,
   EntitySuppressionEntity,
@@ -92,7 +93,8 @@ import { CreateReminders1720000000038 } from './migrations/1720000000038-CreateR
 import { CreateJournalDocuments1720000000039 } from './migrations/1720000000039-CreateJournalDocuments';
 import { SanitizeEntityAliases1720000000040 } from './migrations/1720000000040-SanitizeEntityAliases';
 import { CreateDocumentMetadata1720000000042 } from './migrations/1720000000042-CreateDocumentMetadata';
-import { CreateItemSensitivity1720000000043 } from './migrations/1720000000043-CreateItemSensitivity';
+import { CreateEntityMergeSuggestions1720000000043 } from './migrations/1720000000043-CreateEntityMergeSuggestions';
+import { CreateItemSensitivity1720000000044 } from './migrations/1720000000044-CreateItemSensitivity';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -122,6 +124,7 @@ export const ALL_ENTITIES = [
   EntityRelationEntity,
   EntityAliasEntity,
   EntitySuppressionEntity,
+  EntityMergeSuggestionEntity,
   InboxTombstoneEntity,
   PlaudSettingsEntity,
   EmailSettingsEntity,
@@ -189,7 +192,8 @@ export const ALL_MIGRATIONS = [
   CreateJournalDocuments1720000000039,
   SanitizeEntityAliases1720000000040,
   CreateDocumentMetadata1720000000042,
-  CreateItemSensitivity1720000000043,
+  CreateEntityMergeSuggestions1720000000043,
+  CreateItemSensitivity1720000000044,
 ];
 
 /**

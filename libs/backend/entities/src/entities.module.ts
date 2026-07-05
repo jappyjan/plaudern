@@ -8,6 +8,7 @@ import { QuestionsModule } from '@plaudern/questions';
 import {
   EntityAliasEntity,
   EntityMentionEntity,
+  EntityMergeSuggestionEntity,
   EntityRegistryEntity,
   EntityRelationEntity,
   EntitySuppressionEntity,
@@ -20,14 +21,20 @@ import { BullJobQueue, InlineJobQueue, redisConnectionFromConfig } from '@plaude
 import { ENTITY_EXTRACTION_PROVIDER } from './entities.provider';
 import { ENTITY_EXTRACTION_QUEUE } from './entities.job';
 import { CONTACT_RESOLUTION_PROVIDER } from './contact-resolution.provider';
+import { ENTITY_JUDGE_PROVIDER } from './entity-judge.provider';
+import { WEB_RESEARCH_FETCH, WEB_RESEARCH_PROVIDER } from './web-research.provider';
 import { RELATION_EXTRACTION_PROVIDER } from './relations.provider';
 import { RELATION_EXTRACTION_QUEUE } from './relations.job';
 import { OpenAiEntityExtractionProvider } from './providers/openai.provider';
 import { OpenAiContactResolutionProvider } from './providers/openai-contact-resolution.provider';
+import { OpenAiEntityJudgeProvider } from './providers/openai-entity-judge.provider';
+import { OpenAiWebResearchProvider } from './providers/openai-web-research.provider';
+import { DisabledWebResearchProvider } from './providers/disabled-web-research.provider';
 import { OpenAiRelationExtractionProvider } from './providers/openai-relations.provider';
 import { ContactResolutionStartupService } from './contact-resolution-startup.service';
 import { EntitiesRegistryService } from './entities-registry.service';
 import { EntitiesCorrectionService } from './entities-correction.service';
+import { EntityReconciliationService } from './entity-reconciliation.service';
 import { EntityContactResolverService } from './entity-contact-resolver.service';
 import { EntityGraphService } from './entity-graph.service';
 import { DossierService } from './dossier.service';
@@ -56,6 +63,7 @@ import { RelationsExtractor } from './relations.extractor';
       EntityRelationEntity,
       EntityAliasEntity,
       EntitySuppressionEntity,
+      EntityMergeSuggestionEntity,
       ExtractedPayloadEntity,
       InboxItemEntity,
       SpeakerOccurrenceEntity,
@@ -66,6 +74,9 @@ import { RelationsExtractor } from './relations.extractor';
     OpenAiEntityExtractionProvider,
     OpenAiRelationExtractionProvider,
     OpenAiContactResolutionProvider,
+    OpenAiEntityJudgeProvider,
+    OpenAiWebResearchProvider,
+    DisabledWebResearchProvider,
     // Only one provider each for now (any OpenAI-compatible endpoint, DeepSeek
     // by default); the tokens keep the seam for future providers and test fakes.
     {
@@ -83,8 +94,26 @@ import { RelationsExtractor } from './relations.extractor';
       inject: [OpenAiContactResolutionProvider],
       useFactory: (openai: OpenAiContactResolutionProvider) => openai,
     },
+    {
+      provide: ENTITY_JUDGE_PROVIDER,
+      inject: [OpenAiEntityJudgeProvider],
+      useFactory: (openai: OpenAiEntityJudgeProvider) => openai,
+    },
+    // Injectable fetch for web research; plain global fetch in production, a fake
+    // in tests. Web research is OFF unless WEB_RESEARCH_ENABLED=true.
+    { provide: WEB_RESEARCH_FETCH, useValue: (url: string, init?: RequestInit) => fetch(url, init) },
+    {
+      provide: WEB_RESEARCH_PROVIDER,
+      inject: [ConfigService, OpenAiWebResearchProvider, DisabledWebResearchProvider],
+      useFactory: (
+        config: ConfigService,
+        openai: OpenAiWebResearchProvider,
+        disabled: DisabledWebResearchProvider,
+      ) => (config.get<string>('WEB_RESEARCH_ENABLED', 'false') === 'true' ? openai : disabled),
+    },
     EntitiesRegistryService,
     EntitiesCorrectionService,
+    EntityReconciliationService,
     EntityContactResolverService,
     ContactResolutionStartupService,
     EntityGraphService,

@@ -64,6 +64,13 @@ export class EntitiesCorrectionService {
    * the unique constraints, dropping survivor→survivor self-edges), record the
    * victim's names as aliases of the survivor so re-extraction resolves to it,
    * then delete the victim. Returns the survivor id.
+   *
+   * The two entities may be of DIFFERENT types (the extractor sometimes tags the
+   * same real-world thing as e.g. an organization in one recording and a product
+   * in another). The SURVIVOR's type is kept; the victim's names are recorded as
+   * aliases under both types so a later extraction under either type folds onto
+   * the survivor. Person-only state (voice link, personal facts) is carried over
+   * only when the survivor is a person.
    */
   async merge(userId: string, survivorId: string, victimId: string): Promise<string> {
     if (survivorId === victimId) {
@@ -80,15 +87,16 @@ export class EntitiesCorrectionService {
       const survivor = survivorId === firstId ? first : second;
       const victim = victimId === firstId ? first : second;
       if (!survivor || !victim) throw new NotFoundException('entity not found');
-      if (survivor.type !== victim.type) {
-        throw new BadRequestException(
-          'entities must be the same type to merge — change the type first, then merge',
-        );
-      }
 
       await this.repointMentions(manager, victimId, survivorId);
       await this.repointRelations(manager, victimId, survivorId);
-      await this.repointFacts(manager, userId, victimId, survivorId);
+      // Personal facts (JJ-31) are person-scoped. Only carry them over when the
+      // SURVIVOR is a person; merging a person into a non-person deliberately
+      // discards the dossier rather than keying it to a non-person subject
+      // (personEntityId has no FK, so the victim delete still succeeds).
+      if (survivor.type === 'person') {
+        await this.repointFacts(manager, userId, victimId, survivorId);
+      }
       await this.repointQuestions(manager, victimId, survivorId);
       await this.repointCommitments(manager, victimId, survivorId);
 
@@ -102,15 +110,19 @@ export class EntitiesCorrectionService {
       // origin (manual stays manual, auto stays auto). When neither is linked
       // but either side was explicitly unlinked (`suppressed`), the merged
       // entity stays suppressed — sweeps must not redo what the user undid.
-      if (!survivor.voiceProfileId && victim.voiceProfileId) {
-        survivor.voiceProfileId = victim.voiceProfileId;
-        survivor.voiceProfileLinkOrigin = victim.voiceProfileLinkOrigin;
-      } else if (
-        !survivor.voiceProfileId &&
-        (survivor.voiceProfileLinkOrigin === 'suppressed' ||
-          victim.voiceProfileLinkOrigin === 'suppressed')
-      ) {
-        survivor.voiceProfileLinkOrigin = 'suppressed';
+      // Only a person survivor may hold a voice link; a non-person survivor
+      // keeps its null link and a person victim's link is dropped on merge.
+      if (survivor.type === 'person') {
+        if (!survivor.voiceProfileId && victim.voiceProfileId) {
+          survivor.voiceProfileId = victim.voiceProfileId;
+          survivor.voiceProfileLinkOrigin = victim.voiceProfileLinkOrigin;
+        } else if (
+          !survivor.voiceProfileId &&
+          (survivor.voiceProfileLinkOrigin === 'suppressed' ||
+            victim.voiceProfileLinkOrigin === 'suppressed')
+        ) {
+          survivor.voiceProfileLinkOrigin = 'suppressed';
+        }
       }
       await manager.save(survivor);
 
@@ -124,9 +136,18 @@ export class EntitiesCorrectionService {
       });
       for (const row of victimAliasRows) row.entityId = survivorId;
       if (victimAliasRows.length > 0) await manager.save(victimAliasRows);
-      await this.recordAlias(manager, userId, survivor.type, victim.normalizedName, survivorId, own);
-      for (const alias of victim.aliases ?? []) {
-        await this.recordAlias(manager, userId, survivor.type, normalize(alias), survivorId, own);
+      // Record the victim's names under BOTH the survivor's and the victim's
+      // type. The survivor's type keeps future same-type extractions resolving
+      // here; the victim's type covers the cross-type case, so a later
+      // extraction that still emits the victim's ORIGINAL type folds onto the
+      // survivor (via the registry's cross-type alias redirect) instead of
+      // resurrecting the duplicate. `recordAlias` no-ops on the survivor's own
+      // identity and dedupes, so the shared-type case records once.
+      for (const type of new Set<EntityType>([survivor.type, victim.type])) {
+        await this.recordAlias(manager, userId, type, victim.normalizedName, survivorId, own);
+        for (const alias of victim.aliases ?? []) {
+          await this.recordAlias(manager, userId, type, normalize(alias), survivorId, own);
+        }
       }
 
       // The victim's mentions/relations/aliases are all repointed; drop it.
