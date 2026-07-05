@@ -305,4 +305,34 @@ describe('FactsRegistryService', () => {
     expect(scoped[0].personEntityId).toBe(person.id);
     expect(scoped[0].value).toBe('allergic to nuts');
   });
+
+  it('listWithCitations returns the same facts as list() plus a matching citationRefs map (JJ-75)', async () => {
+    const a = await seedItem('2026-01-01T00:00:00.000Z', new Date('2026-01-02T00:00:00Z'));
+    const b = await seedItem('2026-02-01T00:00:00.000Z', new Date('2026-02-02T00:00:00Z'));
+    await service.ingest(USER, a.itemId, a.extractionId, '2026-01-01T00:00:00.000Z', [
+      candidate({ attribute: 'city', value: 'Berlin', exclusive: true, quote: 'lives in Berlin', startSeconds: 12 }),
+    ]);
+    await service.ingest(USER, b.itemId, b.extractionId, '2026-02-01T00:00:00.000Z', [
+      candidate({ attribute: 'city', value: 'Munich', exclusive: true, quote: 'moved to Munich', startSeconds: 34 }),
+    ]);
+
+    const plainList = await service.list(USER, { includeSuperseded: true });
+    const { facts: combinedList, citationRefs } = await service.listWithCitations(USER, {
+      includeSuperseded: true,
+    });
+
+    // Same DTOs as the plain list() read model.
+    expect(combinedList).toEqual(plainList);
+
+    // The citation map matches what a separate citationRefs() call would
+    // compute for the same fact ids — but via the query path list() already ran.
+    const separatelyComputed = await service.citationRefs(combinedList.map((f) => f.id));
+    for (const fact of combinedList) {
+      expect(citationRefs.get(fact.id)).toEqual(separatelyComputed.get(fact.id));
+    }
+    const active = combinedList.find((f) => f.value === 'Munich')!;
+    expect(citationRefs.get(active.id)).toEqual([
+      { inboxItemId: b.itemId, quote: 'moved to Munich', startSeconds: 34 },
+    ]);
+  });
 });

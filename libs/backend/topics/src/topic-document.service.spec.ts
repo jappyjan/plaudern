@@ -9,7 +9,7 @@ import {
   TopicDocumentEntity,
   TopicEntity,
 } from '@plaudern/persistence';
-import { TopicDocumentService } from './topic-document.service';
+import { pruneTopicDocumentHistory, TopicDocumentService } from './topic-document.service';
 import type { TopicDocumentProvider } from './topic-document.provider';
 import type { TopicDocumentJob, TopicDocumentQueue } from './topic-document.job';
 
@@ -132,6 +132,21 @@ describe('TopicDocumentService', () => {
     const service = build();
     const topicId = await createTopic();
     const first = await service.enqueueRegeneration(USER, topicId);
+    const second = await service.enqueueRegeneration(USER, topicId);
+    expect(second).toBe(first);
+    expect(await docs().count()).toBe(1);
+    expect(enqueued).toHaveLength(1);
+  });
+
+  it('still coalesces once the queued generation flips to processing (JJ-76)', async () => {
+    const service = build();
+    const topicId = await createTopic();
+    const first = await service.enqueueRegeneration(USER, topicId);
+    // Simulate the processor picking up the job: queued -> processing. A fresh
+    // trigger arriving in this window must not stack a second generation — the
+    // in-flight one reads current items at run time, so it already covers
+    // whatever just arrived.
+    await docs().update({ id: first! }, { status: 'processing' });
     const second = await service.enqueueRegeneration(USER, topicId);
     expect(second).toBe(first);
     expect(await docs().count()).toBe(1);
@@ -290,6 +305,72 @@ describe('TopicDocumentService', () => {
       const pruned = await service.pruneOrphans();
       expect(pruned).toBe(1);
       expect(await docs().count()).toBe(0);
+    });
+  });
+
+  describe('pruneTopicDocumentHistory (JJ-73 retention)', () => {
+    /** Seed N already-succeeded versions (1..count) for a topic. */
+    async function seedSucceededVersions(topicId: string, count: number): Promise<void> {
+      for (let version = 1; version <= count; version += 1) {
+        await docs().save(
+          docs().create({
+            userId: USER,
+            topicId,
+            version,
+            status: 'succeeded',
+            markdown: `## v${version}`,
+          }),
+        );
+      }
+    }
+
+    it('is a no-op while at or under the retention window', async () => {
+      const topicId = await createTopic();
+      await seedSucceededVersions(topicId, 5);
+      const pruned = await pruneTopicDocumentHistory(docs(), topicId, 10);
+      expect(pruned).toBe(0);
+      expect(await docs().count()).toBe(5);
+    });
+
+    it('prunes everything older than the last N succeeded versions', async () => {
+      const topicId = await createTopic();
+      await seedSucceededVersions(topicId, 15);
+      const pruned = await pruneTopicDocumentHistory(docs(), topicId, 10);
+      expect(pruned).toBe(5);
+      const remaining = await docs().find({ where: { topicId }, order: { version: 'ASC' } });
+      expect(remaining.map((r) => r.version)).toEqual([6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+    });
+
+    it('never deletes the current (highest-succeeded) version', async () => {
+      const topicId = await createTopic();
+      await seedSucceededVersions(topicId, 3);
+      const pruned = await pruneTopicDocumentHistory(docs(), topicId, 1);
+      expect(pruned).toBe(2);
+      const remaining = await docs().find({ where: { topicId } });
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].version).toBe(3);
+    });
+
+    it('leaves queued/processing/failed rows untouched — only succeeded history is pruned', async () => {
+      const topicId = await createTopic();
+      await seedSucceededVersions(topicId, 12);
+      // A newer, still-in-flight attempt sits above the succeeded history.
+      await docs().save(
+        docs().create({ userId: USER, topicId, version: 13, status: 'queued' }),
+      );
+      const pruned = await pruneTopicDocumentHistory(docs(), topicId, 10);
+      expect(pruned).toBe(2); // versions 1 and 2 only
+      const remaining = await docs().find({ where: { topicId } });
+      expect(remaining.map((r) => r.version).sort((a, b) => a - b)).toEqual([
+        3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+      ]);
+    });
+
+    it('defaults the retention window to DEFAULT_HISTORY_RETENTION when unspecified', async () => {
+      const topicId = await createTopic();
+      await seedSucceededVersions(topicId, 12);
+      const pruned = await pruneTopicDocumentHistory(docs(), topicId);
+      expect(pruned).toBe(2);
     });
   });
 });

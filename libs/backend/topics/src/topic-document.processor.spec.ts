@@ -192,6 +192,30 @@ describe('TopicDocumentProcessor', () => {
     expect(row.error).toBe('llm exploded');
   });
 
+  it('prunes old succeeded history after a successful generation (JJ-73)', async () => {
+    const topicId = await createTopic();
+    await classifyItem(topicId, 'Something worth documenting.', '2026-06-01T10:00:00Z');
+    const documents = dataSource.getRepository(TopicDocumentEntity);
+
+    // 10 pre-existing succeeded versions (the retention window) plus the fresh
+    // one this run produces — the run must prune down to the 10 most recent
+    // succeeded versions, i.e. drop version 1.
+    for (let version = 1; version <= 10; version += 1) {
+      await documents.save(
+        documents.create({ userId: USER, topicId, version, status: 'succeeded', markdown: `## v${version}` }),
+      );
+    }
+    const documentId = await queuedDoc(topicId, 11);
+
+    const provider = fakeProvider(() => ({ markdown: '## v11', model: 'test-model' }));
+    await build(provider).process({ documentId, topicId, userId: USER });
+
+    const remaining = await documents.find({ where: { topicId }, order: { version: 'ASC' } });
+    expect(remaining.map((r) => r.version)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    // The current version must always survive.
+    expect(remaining.find((r) => r.version === 11)?.status).toBe('succeeded');
+  });
+
   it('fails cleanly when no classified item has usable content', async () => {
     const topicId = await createTopic();
     // An assignment with no transcription/summary content behind it.

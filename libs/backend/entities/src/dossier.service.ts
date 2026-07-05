@@ -65,12 +65,16 @@ export class DossierService {
 
     // Fan out over the per-person read models in parallel. Each is a bounded
     // query set; none is per-fact, so this stays a constant number of queries.
-    const [allFacts, commitmentsRes, questionsRes, neighborhood] = await Promise.all([
-      this.facts.list(userId, { personEntityId: entityId, includeSuperseded: true }),
-      this.commitments.list(userId, {}),
-      this.questions.list(userId, {}),
-      this.graph.neighborhood(userId, entityId),
-    ]);
+    // `listWithCitations` (JJ-75) hands back the citation map it computes
+    // internally so we don't ALSO call `citationRefs` below and pay for the
+    // same supersede-aware citation aggregation twice.
+    const [{ facts: allFacts, citationRefs: factCitationRefs }, commitmentsRes, questionsRes, neighborhood] =
+      await Promise.all([
+        this.facts.listWithCitations(userId, { personEntityId: entityId, includeSuperseded: true }),
+        this.commitments.list(userId, {}),
+        this.questions.list(userId, {}),
+        this.graph.neighborhood(userId, entityId),
+      ]);
 
     const active = allFacts.filter((f) => f.active);
     const superseded = allFacts
@@ -105,7 +109,6 @@ export class DossierService {
     const neighbors = neighborhood.neighbors.filter((n) => neighborIds.has(n.id));
 
     // Resolve every referenced inbox item to citation metadata in one batch.
-    const factCitationRefs = await this.facts.citationRefs(allFacts.map((f) => f.id));
     const referencedItemIds = new Set<string>();
     for (const refs of factCitationRefs.values()) {
       for (const ref of refs) referencedItemIds.add(ref.inboxItemId);
@@ -139,6 +142,17 @@ export class DossierService {
       // "Recent" is about when the recording happened, not when the mention row
       // was written — order the displayed list by the recording's occurredAt.
       .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+
+    // `counts.mentions` drives "View all N mentions" (JJ-75): a mention whose
+    // source item was deleted between the mention being recorded and this
+    // build (or any other reason `itemMeta` can't resolve it) silently drops
+    // out of `recentItems`, so the raw pre-cap `mentionCount` would overstate
+    // what "view all" can actually render. Reconcile it by the same amount
+    // that was just dropped out of the (already-fetched, already-capped)
+    // recent slice, without paying for an extra existence check over every
+    // mention the entity has ever had.
+    const droppedRecentMentions = recentMentions.length - recentItems.length;
+    const mentionsCount = detail.mentionCount - droppedRecentMentions;
 
     return {
       entity: {
@@ -182,7 +196,7 @@ export class DossierService {
         owedToMe: owedToMe.length,
         openQuestions: openQuestions.length,
         relations: neighborhood.relations.length,
-        mentions: detail.mentionCount,
+        mentions: mentionsCount,
       },
     };
   }

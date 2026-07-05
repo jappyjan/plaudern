@@ -14,6 +14,7 @@ import {
   usedMarkers,
 } from './topic-document-context';
 import type { TopicDocumentJob } from './topic-document.job';
+import { pruneTopicDocumentHistory } from './topic-document.service';
 
 /**
  * Executes one living-document generation job: gather the topic's classified
@@ -97,6 +98,20 @@ export class TopicDocumentProcessor {
         `generated living document v${doc.version} for topic ${job.topicId} ` +
           `(${sources.length} source(s), ${citations.length} cited)`,
       );
+
+      // JJ-73: keep the append-only history bounded now that this version
+      // succeeded. Best-effort — a prune hiccup must never turn an otherwise
+      // successful generation into a failed job.
+      try {
+        const pruned = await pruneTopicDocumentHistory(this.documents, job.topicId);
+        if (pruned > 0) {
+          this.logger.log(`pruned ${pruned} old document version(s) for topic ${job.topicId}`);
+        }
+      } catch (err) {
+        this.logger.warn(
+          `failed to prune document history for topic ${job.topicId}: ${(err as Error).message}`,
+        );
+      }
     } catch (err) {
       const message = (err as Error).message;
       this.logger.error(`topic document generation failed for topic ${job.topicId}: ${message}`);
