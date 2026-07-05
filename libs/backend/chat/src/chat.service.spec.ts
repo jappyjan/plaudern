@@ -4,8 +4,21 @@ import type { Repository } from 'typeorm';
 import type { SearchResultItem } from '@plaudern/contracts';
 import type { ChatConversationEntity, ChatMessageEntity } from '@plaudern/persistence';
 import type { SearchService } from '@plaudern/search';
+import { VerificationService } from '@plaudern/citations';
+import type { CitationVerifier } from '@plaudern/citations';
 import type { ChatCompletionMessage, ChatCompletionProvider } from './chat.provider';
 import { ChatService } from './chat.service';
+
+/** A verifier that is off by default, so verification is skipped in tests. */
+function fakeVerification(overrides: Partial<CitationVerifier> = {}): VerificationService {
+  const verifier: CitationVerifier = {
+    id: 'fake',
+    enabled: false,
+    verify: async () => ({ fields: [] }),
+    ...overrides,
+  };
+  return new VerificationService(verifier);
+}
 
 const USER = 'user-1';
 
@@ -108,18 +121,22 @@ function makeHit(overrides: Partial<SearchResultItem> = {}): SearchResultItem {
   };
 }
 
-function build(overrides: { provider?: FakeProvider; search?: FakeSearch } = {}) {
+function build(
+  overrides: { provider?: FakeProvider; search?: FakeSearch; verification?: VerificationService } = {},
+) {
   const provider = overrides.provider ?? new FakeProvider();
   const search = overrides.search ?? new FakeSearch();
+  const verification = overrides.verification ?? fakeVerification();
   const conversations = new FakeRepo<ChatConversationEntity>();
   const messages = new FakeRepo<ChatMessageEntity>();
   const service = new ChatService(
     provider,
     search as unknown as SearchService,
+    verification,
     conversations as unknown as Repository<ChatConversationEntity>,
     messages as unknown as Repository<ChatMessageEntity>,
   );
-  return { service, provider, search, conversations, messages };
+  return { service, provider, search, verification, conversations, messages };
 }
 
 describe('ChatService.status', () => {
@@ -173,6 +190,32 @@ describe('ChatService.ask', () => {
     // Highlight markup never leaks into the stored passage.
     expect(msg.citations[1].snippet).not.toContain('<mark>');
     expect(msg.confidence).toBe('high');
+  });
+
+  it('downgrades a fully-cited high answer when the verification pass flags a field', async () => {
+    // Every clause is cited (structural check passes at HIGH), but the LLM-judge
+    // finds a high-stakes value the cited passage does not support → low (JJ-20).
+    const verification = fakeVerification({
+      enabled: true,
+      verify: async () => ({ fields: [{ value: '20mg', kind: 'amount', supported: false }] }),
+    });
+    const { service, provider, search } = build({ verification });
+    search.defaultResults = [makeHit()];
+    provider.replies = ['{"answer": "The dosage is 20mg daily [1].", "confidence": "high"}'];
+    const res = await service.ask(USER, { message: 'dosage?' });
+    expect(res.assistantMessage.confidence).toBe('low');
+  });
+
+  it('keeps a fully-cited high answer high when verification finds nothing unsupported', async () => {
+    const verification = fakeVerification({
+      enabled: true,
+      verify: async () => ({ fields: [{ value: '20mg', kind: 'amount', supported: true }] }),
+    });
+    const { service, provider, search } = build({ verification });
+    search.defaultResults = [makeHit()];
+    provider.replies = ['{"answer": "The dosage is 20mg daily [1].", "confidence": "high"}'];
+    const res = await service.ask(USER, { message: 'dosage?' });
+    expect(res.assistantMessage.confidence).toBe('high');
   });
 
   it('downgrades to low confidence when a substantive claim is uncited', async () => {

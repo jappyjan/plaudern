@@ -89,6 +89,7 @@ import { CreateTopicDocuments1720000000036 } from './migrations/1720000000036-Cr
 import { VoiceProfileSelf1720000000037 } from './migrations/1720000000037-VoiceProfileSelf';
 import { CreateReminders1720000000038 } from './migrations/1720000000038-CreateReminders';
 import { CreateJournalDocuments1720000000039 } from './migrations/1720000000039-CreateJournalDocuments';
+import { SanitizeEntityAliases1720000000040 } from './migrations/1720000000040-SanitizeEntityAliases';
 import { CreateItemSensitivity1720000000043 } from './migrations/1720000000043-CreateItemSensitivity';
 
 export const ALL_ENTITIES = [
@@ -183,6 +184,7 @@ export const ALL_MIGRATIONS = [
   VoiceProfileSelf1720000000037,
   CreateReminders1720000000038,
   CreateJournalDocuments1720000000039,
+  SanitizeEntityAliases1720000000040,
   CreateItemSensitivity1720000000043,
 ];
 

@@ -75,6 +75,19 @@ describe('parseEntitiesResponse', () => {
     expect(out).toEqual([{ type: 'person', name: 'Valid', mentions: [] }]);
   });
 
+  it('drops entities whose name is a pronoun or generic role noun', () => {
+    const out = parseEntitiesResponse(
+      JSON.stringify({
+        entities: [
+          { type: 'person', name: 'Sie' },
+          { type: 'person', name: 'der Patient' },
+          { type: 'person', name: 'Jan Jaap' },
+        ],
+      }),
+    );
+    expect(out).toEqual([{ type: 'person', name: 'Jan Jaap', mentions: [] }]);
+  });
+
   it('returns an empty array for a missing/empty entities field', () => {
     expect(parseEntitiesResponse(JSON.stringify({ entities: [] }))).toEqual([]);
     expect(parseEntitiesResponse(JSON.stringify({}))).toEqual([]);

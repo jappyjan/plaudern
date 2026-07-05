@@ -7,6 +7,7 @@ export * from './speakers';
 export * from './summary';
 export * from './embedding';
 export * from './entities';
+export * from './alias-hygiene';
 export * from './topics';
 export * from './journal';
 export * from './tasks';

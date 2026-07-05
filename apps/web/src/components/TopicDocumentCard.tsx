@@ -21,6 +21,7 @@ import {
   regenerateTopicDocument,
 } from '../lib/api';
 import { Markdown } from './Markdown';
+import { ConfidenceNote } from './ConfidenceNote';
 import { formatDate, formatDateTime, formatDuration } from '../lib/format';
 import { FileIcon, LoopIcon, PlayIcon } from './icons';
 
@@ -161,6 +162,7 @@ export function TopicDocumentCard({ topicId }: { topicId: string }) {
 
         {doc?.markdown && (
           <>
+            <ConfidenceNote confidence={doc.confidence} />
             <Markdown>{doc.markdown}</Markdown>
 
             {doc.citations.length > 0 && (
@@ -300,6 +302,7 @@ function VersionBody({
 }) {
   const [markdown, setMarkdown] = useState<string | null>(null);
   const [citations, setCitations] = useState<TopicDocumentCitation[]>([]);
+  const [confidence, setConfidence] = useState<'high' | 'low' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -309,6 +312,7 @@ function VersionBody({
         if (cancelled) return;
         setMarkdown(detail.markdown);
         setCitations(detail.citations);
+        setConfidence(detail.confidence);
       })
       .catch((cause) => {
         if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
@@ -322,6 +326,7 @@ function VersionBody({
   if (markdown === null) return <Spinner size="sm" />;
   return (
     <div className="flex flex-col gap-2">
+      <ConfidenceNote confidence={confidence} />
       <Markdown>{markdown}</Markdown>
       {citations.length > 0 && (
         <div className="flex flex-wrap gap-1 border-t border-default-100 pt-2">
