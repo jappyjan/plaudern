@@ -114,6 +114,13 @@ services:
       - EMBEDDINGS_MODEL=${EMBEDDINGS_MODEL:-text-embedding-3-small}
       - EMBEDDINGS_DIMENSIONS=${EMBEDDINGS_DIMENSIONS:-1536}
       - EMBEDDINGS_ENABLED=${EMBEDDINGS_ENABLED:-false}
+      # Task extraction (JJ-35) reuses the summarization key/endpoint; a
+      # non-empty key auto-enables it. Semantic dedupe of tasks piggybacks on
+      # the embeddings provider above (EMBEDDINGS_*) when configured, else
+      # falls back to normalized-text matching.
+      - TASKS_API_KEY=${SUMMARIZATION_API_KEY}
+      - TASKS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
+      - TASKS_MODEL=${TASKS_MODEL:-deepseek-chat}
       # Transcription: the hosted ElevenLabs Scribe API — fill in
       # ELEVENLABS_API_KEY (get one at elevenlabs.io). Audio bytes are uploaded
       # to ElevenLabs directly (storage stays private).

@@ -31,6 +31,8 @@ import {
   SourcePayloadEntity,
   SpeakerOccurrenceEntity,
   SummarizationSettingsEntity,
+  TaskCitationEntity,
+  TaskEntity,
   TopicEntity,
   UserEntity,
   VoiceProfileEntity,
@@ -63,6 +65,7 @@ import { EntityContactLinkOrigin1720000000024 } from './migrations/1720000000024
 import { AddFullTextSearch1720000000026 } from './migrations/1720000000026-AddFullTextSearch';
 import { CreateEntityCorrections1720000000027 } from './migrations/1720000000027-CreateEntityCorrections';
 import { ExtractionRunTrigger1720000000028 } from './migrations/1720000000028-ExtractionRunTrigger';
+import { CreateTasks1720000000029 } from './migrations/1720000000029-CreateTasks';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -74,6 +77,8 @@ export const ALL_ENTITIES = [
   EntityMentionEntity,
   TopicEntity,
   ItemTopicEntity,
+  TaskEntity,
+  TaskCitationEntity,
   EntityRelationEntity,
   EntityAliasEntity,
   EntitySuppressionEntity,
@@ -130,6 +135,7 @@ export const ALL_MIGRATIONS = [
   AddFullTextSearch1720000000026,
   CreateEntityCorrections1720000000027,
   ExtractionRunTrigger1720000000028,
+  CreateTasks1720000000029,
 ];
 
 /**

@@ -8,6 +8,7 @@ export * from './summary';
 export * from './embedding';
 export * from './entities';
 export * from './topics';
+export * from './tasks';
 export * from './relations';
 export * from './events';
 export * from './geocode';

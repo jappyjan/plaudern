@@ -88,6 +88,13 @@ import {
   type TopicItemsResponse,
   type TopicListResponse,
   type UpdateTopicRequest,
+  itemTasksResponseSchema,
+  taskListResponseSchema,
+  taskSchema,
+  type ItemTasksResponse,
+  type TaskDto,
+  type TaskListResponse,
+  type TaskStatus,
   entityListResponseSchema,
   entityDetailWithRelationsSchema,
   entityNeighborhoodResponseSchema,
@@ -729,6 +736,31 @@ export async function getItemTopics(itemId: string): Promise<ItemTopicsResponse>
 export async function retryItemTopics(itemId: string): Promise<ItemTopicsResponse> {
   return itemTopicsResponseSchema.parse(
     await requestJson(`/inbox/${itemId}/topics/retry`, { method: 'POST' }),
+  );
+}
+
+/** The user's deduplicated tasks (JJ-35), optionally filtered by status. */
+export async function listTasks(status?: TaskStatus): Promise<TaskListResponse> {
+  const suffix = status ? `?status=${encodeURIComponent(status)}` : '';
+  return taskListResponseSchema.parse(await requestJson(`/tasks${suffix}`));
+}
+
+/** Change a task's lifecycle status (complete / dismiss / reopen). */
+export async function updateTaskStatus(id: string, status: TaskStatus): Promise<TaskDto> {
+  return taskSchema.parse(
+    await requestJson(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+  );
+}
+
+/** An item's extracted tasks plus the extraction pipeline status. */
+export async function getItemTasks(itemId: string): Promise<ItemTasksResponse> {
+  return itemTasksResponseSchema.parse(await requestJson(`/inbox/${itemId}/tasks`));
+}
+
+/** Re-run task extraction for an item; returns the refreshed read model. */
+export async function retryItemTasks(itemId: string): Promise<ItemTasksResponse> {
+  return itemTasksResponseSchema.parse(
+    await requestJson(`/inbox/${itemId}/tasks/retry`, { method: 'POST' }),
   );
 }
 
