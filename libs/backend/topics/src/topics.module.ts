@@ -6,21 +6,29 @@ import { EmbeddingModule } from '@plaudern/embeddings';
 import {
   InboxItemEntity,
   ItemTopicEntity,
+  TopicDocumentEntity,
   TopicEntity,
   TopicProposalEntity,
 } from '@plaudern/persistence';
 import { BullJobQueue, InlineJobQueue, redisConnectionFromConfig } from '@plaudern/queue';
 import { TOPIC_CLASSIFICATION_PROVIDER } from './topics.provider';
 import { TOPIC_PROPOSAL_LABEL_PROVIDER } from './topic-proposals.provider';
+import { TOPIC_DOCUMENT_PROVIDER } from './topic-document.provider';
 import { TOPICS_QUEUE } from './topics.job';
+import { TOPIC_DOCUMENT_QUEUE } from './topic-document.job';
 import { OpenAiTopicClassificationProvider } from './providers/openai.provider';
 import { OpenAiTopicProposalLabelProvider } from './providers/openai.labeler';
+import { OpenAiTopicDocumentProvider } from './providers/openai.document';
 import { TopicsProcessor } from './topics.processor';
 import { TopicsService } from './topics.service';
 import { TopicProposalsService } from './topic-proposals.service';
+import { TopicDocumentService } from './topic-document.service';
+import { TopicDocumentProcessor } from './topic-document.processor';
+import { TopicDocumentBackfillService } from './topic-document.backfill';
 import { TopicsExtractor } from './topics.extractor';
 import { ItemTopicsController, TopicsController } from './topics.controller';
 import { TopicProposalsController } from './topic-proposals.controller';
+import { TopicDocumentController } from './topic-document.controller';
 
 @Module({
   imports: [
@@ -28,7 +36,13 @@ import { TopicProposalsController } from './topic-proposals.controller';
     InboxModule,
     // Read-only use of stored embeddings (item centroids) for cluster proposals.
     EmbeddingModule,
-    TypeOrmModule.forFeature([TopicEntity, ItemTopicEntity, InboxItemEntity, TopicProposalEntity]),
+    TypeOrmModule.forFeature([
+      TopicEntity,
+      ItemTopicEntity,
+      InboxItemEntity,
+      TopicProposalEntity,
+      TopicDocumentEntity,
+    ]),
   ],
   providers: [
     OpenAiTopicClassificationProvider,
@@ -60,8 +74,38 @@ import { TopicProposalsController } from './topic-proposals.controller';
     TopicsService,
     TopicProposalsService,
     TopicsExtractor,
+    // Living topic documents (JJ-12): its own generation provider, queue,
+    // service, processor and startup backfill — a per-topic generation kind.
+    OpenAiTopicDocumentProvider,
+    {
+      provide: TOPIC_DOCUMENT_PROVIDER,
+      inject: [OpenAiTopicDocumentProvider],
+      useFactory: (openai: OpenAiTopicDocumentProvider) => openai,
+    },
+    TopicDocumentProcessor,
+    {
+      provide: TOPIC_DOCUMENT_QUEUE,
+      inject: [ConfigService, TopicDocumentProcessor],
+      useFactory: (config: ConfigService, processor: TopicDocumentProcessor) =>
+        config.get<string>('QUEUE_DRIVER', 'inline') === 'bull'
+          ? new BullJobQueue(
+              'topic-documents',
+              'generate',
+              redisConnectionFromConfig(config),
+              processor,
+              { concurrency: 1, backoffDelayMs: 2_000 },
+            )
+          : new InlineJobQueue(processor),
+    },
+    TopicDocumentService,
+    TopicDocumentBackfillService,
   ],
-  controllers: [TopicsController, ItemTopicsController, TopicProposalsController],
-  exports: [TopicsService, TopicsExtractor],
+  controllers: [
+    TopicsController,
+    ItemTopicsController,
+    TopicProposalsController,
+    TopicDocumentController,
+  ],
+  exports: [TopicsService, TopicsExtractor, TopicDocumentService],
 })
 export class TopicsModule {}

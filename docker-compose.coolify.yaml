@@ -143,6 +143,13 @@ services:
       - CHAT_API_KEY=${SUMMARIZATION_API_KEY}
       - CHAT_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
       - CHAT_MODEL=${CHAT_MODEL:-deepseek-chat}
+      # Living topic documents (JJ-12) reuse the summarization key/endpoint; a
+      # non-empty key auto-enables generation. Each topic gets an evergreen,
+      # self-updating cited Markdown document that regenerates when a new item
+      # is classified into it. Only the model is independently overridable.
+      - TOPIC_DOCS_API_KEY=${SUMMARIZATION_API_KEY}
+      - TOPIC_DOCS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
+      - TOPIC_DOCS_MODEL=${TOPIC_DOCS_MODEL:-deepseek-chat}
       # Transcription: the hosted ElevenLabs Scribe API — fill in
       # ELEVENLABS_API_KEY (get one at elevenlabs.io). Audio bytes are uploaded
       # to ElevenLabs directly (storage stays private).

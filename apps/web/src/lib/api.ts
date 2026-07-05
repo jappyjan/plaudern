@@ -83,12 +83,18 @@ import {
   topicItemsResponseSchema,
   topicSchema,
   topicProposalListResponseSchema,
+  topicDocumentResponseSchema,
+  topicDocumentVersionListResponseSchema,
+  topicDocumentVersionDetailSchema,
   type CreateTopicRequest,
   type ItemTopicsResponse,
   type TopicDto,
   type TopicItemsResponse,
   type TopicListResponse,
   type TopicProposalListResponse,
+  type TopicDocumentResponse,
+  type TopicDocumentVersionListResponse,
+  type TopicDocumentVersionDetailDto,
   type UpdateTopicRequest,
   itemTasksResponseSchema,
   taskListResponseSchema,
@@ -796,6 +802,39 @@ export async function acceptTopicProposal(id: string): Promise<TopicDto> {
 /** Dismiss a proposal so its cluster is not proposed again. */
 export async function dismissTopicProposal(id: string): Promise<void> {
   return requestVoid(`/topics/proposals/${id}/dismiss`, { method: 'POST' });
+}
+
+// ---- Living topic documents (JJ-12) ----
+
+/** The topic's evergreen, self-updating cited document (current version). */
+export async function getTopicDocument(topicId: string): Promise<TopicDocumentResponse> {
+  return topicDocumentResponseSchema.parse(await requestJson(`/topics/${topicId}/document`));
+}
+
+/** Metadata for every saved version of the document, newest first. */
+export async function listTopicDocumentVersions(
+  topicId: string,
+): Promise<TopicDocumentVersionListResponse> {
+  return topicDocumentVersionListResponseSchema.parse(
+    await requestJson(`/topics/${topicId}/document/versions`),
+  );
+}
+
+/** One historical version rendered in full. */
+export async function getTopicDocumentVersion(
+  topicId: string,
+  version: number,
+): Promise<TopicDocumentVersionDetailDto> {
+  return topicDocumentVersionDetailSchema.parse(
+    await requestJson(`/topics/${topicId}/document/versions/${version}`),
+  );
+}
+
+/** Manually (re)generate the document; returns the refreshed read model. */
+export async function regenerateTopicDocument(topicId: string): Promise<TopicDocumentResponse> {
+  return topicDocumentResponseSchema.parse(
+    await requestJson(`/topics/${topicId}/document/regenerate`, { method: 'POST' }),
+  );
 }
 
 /** An item's extracted commitments plus the extraction pipeline status. */
