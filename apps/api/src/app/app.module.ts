@@ -23,6 +23,7 @@ import { EmailIngestModule } from '@plaudern/email-ingest';
 import { NotificationsModule } from '@plaudern/notifications';
 import { McpModule } from '@plaudern/mcp';
 import { SearchModule } from '@plaudern/search';
+import { ChatModule } from '@plaudern/chat';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -53,6 +54,7 @@ import { HealthController } from './health.controller';
     NotificationsModule,
     McpModule,
     SearchModule,
+    ChatModule,
   ],
   controllers: [HealthController],
 })

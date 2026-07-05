@@ -12,7 +12,7 @@ import {
   Tabs,
 } from '@heroui/react';
 import { hasAudioPayload, type CalendarEventDto, type InboxItemDto } from '@plaudern/contracts';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   deleteCalendarLink,
   deleteInboxItem,
@@ -159,6 +159,11 @@ const REPROCESS_STEPS: {
 export function ItemDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  // Audio deep link (`?t=<seconds>`), e.g. from a memory-chat citation: the
+  // player seeks to the cited moment once the audio's duration is known.
+  const [searchParams] = useSearchParams();
+  const seekParam = Number(searchParams.get('t'));
+  const seekToSeconds = Number.isFinite(seekParam) && seekParam > 0 ? seekParam : null;
   const [item, setItem] = useState<InboxItemDto | null>(null);
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -382,7 +387,7 @@ export function ItemDetailPage() {
         <Card>
           <CardBody>
             {/* Presigned GET straight from object storage. */}
-            <AudioPlayer src={sourceUrl} className="w-full" />
+            <AudioPlayer src={sourceUrl} className="w-full" seekToSeconds={seekToSeconds} />
           </CardBody>
         </Card>
       )}

@@ -141,6 +141,15 @@ import {
   type SearchRequest,
   type SearchResponse,
   type SimilarResponse,
+  chatAskResponseSchema,
+  chatConversationDetailSchema,
+  chatConversationListResponseSchema,
+  chatStatusSchema,
+  type ChatAskRequest,
+  type ChatAskResponse,
+  type ChatConversationDetailDto,
+  type ChatConversationListResponse,
+  type ChatStatusDto,
 } from '@plaudern/contracts';
 
 /**
@@ -960,4 +969,34 @@ export async function searchMemory(req: SearchRequest): Promise<SearchResponse> 
 export async function getSimilarItems(id: string, limit = 8): Promise<SimilarResponse> {
   const query = new URLSearchParams({ limit: String(limit) });
   return similarResponseSchema.parse(await requestJson(`/inbox/${id}/similar?${query}`));
+}
+
+// ---- Memory chat (JJ-37) ----
+
+/** Whether memory chat can run (disabled until an LLM key is configured). */
+export async function getChatStatus(): Promise<ChatStatusDto> {
+  return chatStatusSchema.parse(await requestJson('/chat/status'));
+}
+
+/**
+ * Ask the memory a question (optionally continuing a conversation). Every
+ * assistant answer carries server-enforced citations that deep-link to the
+ * source item and, when known, the audio timestamp.
+ */
+export async function askChat(req: ChatAskRequest): Promise<ChatAskResponse> {
+  return chatAskResponseSchema.parse(
+    await requestJson('/chat', { method: 'POST', body: JSON.stringify(req) }),
+  );
+}
+
+export async function listChatConversations(): Promise<ChatConversationListResponse> {
+  return chatConversationListResponseSchema.parse(await requestJson('/chat/conversations'));
+}
+
+export async function getChatConversation(id: string): Promise<ChatConversationDetailDto> {
+  return chatConversationDetailSchema.parse(await requestJson(`/chat/conversations/${id}`));
+}
+
+export async function deleteChatConversation(id: string): Promise<void> {
+  return requestVoid(`/chat/conversations/${id}`, { method: 'DELETE' });
 }
