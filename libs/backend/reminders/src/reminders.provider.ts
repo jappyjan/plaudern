@@ -28,9 +28,10 @@ export interface ReminderExtractionResult {
  */
 export interface ReminderExtractionProvider {
   readonly id: string;
-  /** Whether the provider is configured enough to run (e.g. has an API key). */
-  readonly enabled: boolean;
-  extract(input: ReminderExtractionInput): Promise<ReminderExtractionResult>;
+  extract(
+    userId: string,
+    input: ReminderExtractionInput,
+  ): Promise<ReminderExtractionResult>;
 }
 
 export const REMINDER_EXTRACTION_PROVIDER = Symbol('REMINDER_EXTRACTION_PROVIDER');

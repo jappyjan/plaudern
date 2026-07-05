@@ -20,6 +20,7 @@
     "paths": {
       "@plaudern/contracts": ["libs/contracts/src/index.ts"],
       "@plaudern/persistence": ["libs/backend/persistence/src/index.ts"],
+      "@plaudern/ai-config": ["libs/backend/ai-config/src/index.ts"],
       "@plaudern/storage": ["libs/backend/storage/src/index.ts"],
       "@plaudern/inbox": ["libs/backend/inbox/src/index.ts"],
       "@plaudern/ingestion": ["libs/backend/ingestion/src/index.ts"],

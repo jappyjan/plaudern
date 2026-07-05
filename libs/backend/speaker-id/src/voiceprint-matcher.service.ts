@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { numberParam, type ResolvedAiConfig } from '@plaudern/ai-config';
 import { SpeakerOccurrenceEntity, VoiceProfileEntity } from '@plaudern/persistence';
 import { PyannoteAiClient } from './providers/pyannoteai-client';
 import { CLIP_EXTRACTOR, type ClipExtractor, type VoiceprintClip } from './clip-extractor';
@@ -33,29 +33,33 @@ export interface DiarizedSpeakerLite {
 @Injectable()
 export class VoiceprintMatcherService {
   private readonly logger = new Logger(VoiceprintMatcherService.name);
-  private readonly minEnrollSeconds: number;
-  private readonly voiceprintMaxSeconds: number;
 
   constructor(
-    config: ConfigService,
-    private readonly pyannote: PyannoteAiClient,
     @Inject(CLIP_EXTRACTOR)
     private readonly clips: ClipExtractor,
     @InjectRepository(VoiceProfileEntity)
     private readonly profiles: Repository<VoiceProfileEntity>,
     @InjectRepository(SpeakerOccurrenceEntity)
     private readonly occurrences: Repository<SpeakerOccurrenceEntity>,
-  ) {
-    this.minEnrollSeconds = Number(config.get<string>('PYANNOTEAI_MIN_ENROLL_SECONDS', '6'));
-    this.voiceprintMaxSeconds = Number(config.get<string>('PYANNOTEAI_VOICEPRINT_MAX_SECONDS', '30'));
-  }
+  ) {}
 
-  async assignSpeakers(job: SpeakerIdentificationJob, speakers: DiarizedSpeakerLite[]): Promise<void> {
+  /**
+   * Persist the diarization result. The pyannoteAI client and resolved config
+   * are passed in by the identifier (which already resolved the owning user's
+   * `speaker_id` config) so enrollment uploads reuse the same per-user endpoint
+   * and the enrollment tunables come from that config's params.
+   */
+  async assignSpeakers(
+    job: SpeakerIdentificationJob,
+    speakers: DiarizedSpeakerLite[],
+    client: PyannoteAiClient,
+    cfg: ResolvedAiConfig,
+  ): Promise<void> {
     // Queue retries after a partial failure re-run the whole assignment.
     await this.occurrences.delete({ extractionId: job.extractionId });
     if (speakers.length === 0) return;
 
-    const enrolled = await this.enrollNewSpeakers(job, speakers);
+    const enrolled = await this.enrollNewSpeakers(job, speakers, client, cfg);
 
     for (const speaker of speakers) {
       let profile = speaker.matchedProfile;
@@ -92,10 +96,14 @@ export class VoiceprintMatcherService {
   private async enrollNewSpeakers(
     job: SpeakerIdentificationJob,
     speakers: DiarizedSpeakerLite[],
+    client: PyannoteAiClient,
+    cfg: ResolvedAiConfig,
   ): Promise<Map<string, string>> {
     const enrolled = new Map<string, string>();
+    const minEnrollSeconds = numberParam(cfg, 'minEnrollSeconds', 6);
+    const voiceprintMaxSeconds = numberParam(cfg, 'voiceprintMaxSeconds', 30);
     const candidates = speakers.filter(
-      (s) => !s.matchedProfile && s.speakingSeconds >= this.minEnrollSeconds,
+      (s) => !s.matchedProfile && s.speakingSeconds >= minEnrollSeconds,
     );
     if (candidates.length === 0) return enrolled;
 
@@ -104,7 +112,7 @@ export class VoiceprintMatcherService {
       clips = await this.clips.extract(
         job.storageKey,
         candidates.map((c) => ({ label: c.label, segments: c.segments })),
-        this.voiceprintMaxSeconds,
+        voiceprintMaxSeconds,
       );
     } catch (err) {
       this.logger.warn(`voiceprint clip extraction failed, skipping enrollment: ${(err as Error).message}`);
@@ -114,8 +122,8 @@ export class VoiceprintMatcherService {
     for (const clip of clips) {
       try {
         // Upload the clip straight to pyannoteAI — no temp object in our storage.
-        const mediaUrl = await this.pyannote.upload(clip.wav, 'audio/wav', randomUUID());
-        enrolled.set(clip.label, await this.pyannote.voiceprint(mediaUrl));
+        const mediaUrl = await client.upload(clip.wav, 'audio/wav', randomUUID());
+        enrolled.set(clip.label, await client.voiceprint(mediaUrl));
       } catch (err) {
         this.logger.warn(`voiceprint enrollment failed for ${clip.label}: ${(err as Error).message}`);
       }

@@ -1,5 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable } from '@nestjs/common';
+import { AiConfigService, OpenAiChatClient } from '@plaudern/ai-config';
 import { extractedTaskSchema, type ExtractedTask } from '@plaudern/contracts';
 import type {
   TaskExtractionInput,
@@ -7,93 +7,42 @@ import type {
   TaskExtractionResult,
 } from '../tasks.provider';
 
-interface ChatChoice {
-  message?: { content?: string | null };
-}
-interface ChatResponse {
-  choices?: ChatChoice[];
-  model?: string;
-}
-
 /**
  * Extracts the user's self-directed tasks via an OpenAI-compatible
- * `/chat/completions` endpoint. Defaults to DeepSeek (`deepseek-chat`) — the
- * cheapest capable option — but any provider exposing the OpenAI schema works by
- * overriding TASKS_BASE_URL/MODEL, including a **local Ollama** server
- * (`TASKS_BASE_URL=http://localhost:11434/v1`, `TASKS_MODEL=llama3.1`,
- * `TASKS_ENABLED=true`) — the local-model tier that keeps sensitive transcripts
- * off the network, mirroring summarization/entities/topics.
+ * `/chat/completions` endpoint, resolved per-user from the `tasks` capability's
+ * DB-backed AI config. Any provider exposing the OpenAI schema works — DeepSeek,
+ * OpenAI, OpenRouter, or a keyless local Ollama/llama.cpp gateway — the same
+ * local-model tier that keeps sensitive transcripts off the network, mirroring
+ * summarization/entities/topics.
  *
  * Only text is sent to the configured endpoint; no audio ever leaves our infra.
  */
 @Injectable()
 export class OpenAiTaskExtractionProvider implements TaskExtractionProvider {
-  readonly id: string;
-  private readonly logger = new Logger(OpenAiTaskExtractionProvider.name);
-  private readonly baseUrl: string;
-  private readonly apiKey: string;
-  private readonly model: string;
-  private readonly timeoutMs: number;
-  private readonly explicitlyEnabled: boolean;
+  readonly id = 'openai';
 
-  constructor(config: ConfigService) {
-    this.baseUrl = config
-      .get<string>('TASKS_BASE_URL', 'https://api.deepseek.com/v1')
-      .replace(/\/+$/, '');
-    this.apiKey = config.get<string>('TASKS_API_KEY', '');
-    this.model = config.get<string>('TASKS_MODEL', 'deepseek-chat');
-    this.timeoutMs = Number(config.get<string>('TASKS_TIMEOUT_MS', String(2 * 60_000)));
-    // Cloud endpoints are gated on an API key — an empty key means "disabled".
-    // Keyless local OpenAI-compatible servers (Ollama, llama.cpp, …) have no key
-    // to set, so they opt in explicitly via TASKS_ENABLED=true.
-    this.explicitlyEnabled = config.get<string>('TASKS_ENABLED', 'false') === 'true';
-    this.id = `openai:${this.model}`;
-  }
+  constructor(
+    private readonly aiConfig: AiConfigService,
+    private readonly chat: OpenAiChatClient,
+  ) {}
 
-  get enabled(): boolean {
-    return this.apiKey.length > 0 || this.explicitlyEnabled;
-  }
-
-  async extract(input: TaskExtractionInput): Promise<TaskExtractionResult> {
-    if (!this.enabled) {
+  async extract(userId: string, input: TaskExtractionInput): Promise<TaskExtractionResult> {
+    const config = await this.aiConfig.resolve(userId, 'tasks');
+    if (!config) {
       throw new Error(
-        'task extraction is disabled — set TASKS_API_KEY (cloud endpoints) or ' +
-          'TASKS_ENABLED=true (keyless local endpoints such as Ollama) to enable it',
+        'task extraction is not configured — assign a provider to the tasks capability in Settings → AI',
       );
     }
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    try {
-      const headers: Record<string, string> = { 'content-type': 'application/json' };
-      // Most local servers (Ollama, llama.cpp) ignore auth entirely; only send
-      // the header when a key was actually configured.
-      if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
-      const res = await fetch(`${this.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: this.model,
-          temperature: 0,
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
-            { role: 'user', content: buildUserPrompt(input) },
-          ],
-        }),
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        throw new Error(`task extraction request failed: ${res.status} ${body.slice(0, 500)}`);
-      }
-      const json = (await res.json()) as ChatResponse;
-      const content = json.choices?.[0]?.message?.content ?? '';
-      const tasks = parseTasksResponse(content);
-      return { tasks, model: json.model ?? this.model, raw: json };
-    } finally {
-      clearTimeout(timer);
-    }
+    const response = await this.chat.chat(config, {
+      temperature: 0,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: buildUserPrompt(input) },
+      ],
+    });
+    const tasks = parseTasksResponse(this.chat.contentOf(response));
+    return { tasks, model: response.model ?? config.model, raw: response };
   }
 }
 

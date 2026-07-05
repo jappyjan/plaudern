@@ -1,11 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { AiConfigService, booleanParam, numberParam } from '@plaudern/ai-config';
 import type {
   TranscriptionInput,
-  TranscriptionProvider,
   TranscriptionResult,
 } from '../transcription.provider';
 import { downloadBytes, postMultipartForJson } from './http-helpers';
+
+const DEFAULT_MODEL = 'scribe_v2';
+/** Audio-download timeout fallback when the capability param is unset. */
+const DEFAULT_DOWNLOAD_TIMEOUT_MS = 5 * 60_000;
 
 /** One entry in ElevenLabs Scribe's `words` array (word-level granularity). */
 interface ScribeWord {
@@ -42,53 +45,41 @@ const MAX_SEGMENT_SECONDS = 14;
  * attribute.
  */
 @Injectable()
-export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
-  readonly id = 'elevenlabs-scribe';
-  private readonly baseUrl: string;
-  private readonly apiKey: string;
-  private readonly model: string;
-  private readonly tagAudioEvents: boolean;
-  private readonly timeoutMs: number;
-  private readonly downloadTimeoutMs: number;
+export class ElevenLabsTranscriptionProvider {
+  constructor(private readonly aiConfig: AiConfigService) {}
 
-  constructor(config: ConfigService) {
-    this.baseUrl = config.get<string>('ELEVENLABS_BASE_URL', 'https://api.elevenlabs.io/v1');
-    this.apiKey = config.get<string>('ELEVENLABS_API_KEY', '');
-    this.model = config.get<string>('ELEVENLABS_STT_MODEL', 'scribe_v2');
-    this.tagAudioEvents =
-      config.get<string>('ELEVENLABS_TAG_AUDIO_EVENTS', 'false') === 'true';
-    // ElevenLabs is silent until the whole transcript is ready; this bounds the
-    // total wait (default 30 min).
-    this.timeoutMs = Number(
-      config.get<string>('ELEVENLABS_STT_TIMEOUT_MS', String(30 * 60_000)),
-    );
-    this.downloadTimeoutMs = Number(
-      config.get<string>('ELEVENLABS_DOWNLOAD_TIMEOUT_MS', String(5 * 60_000)),
-    );
-  }
-
-  async transcribe(input: TranscriptionInput): Promise<TranscriptionResult> {
-    if (!this.apiKey) {
+  async transcribe(userId: string, input: TranscriptionInput): Promise<TranscriptionResult> {
+    const cfg = await this.aiConfig.resolve(userId, 'transcription');
+    if (!cfg) {
       throw new Error(
-        'ELEVENLABS_API_KEY is not set — cannot transcribe with the ElevenLabs provider',
+        'transcription is not configured — assign a provider in Settings → AI',
       );
     }
 
-    const bytes = await downloadBytes(input.audioUrl, this.downloadTimeoutMs);
+    const model = cfg.model || DEFAULT_MODEL;
+    const tagAudioEvents = booleanParam(cfg, 'tagAudioEvents', false);
+    const downloadTimeoutMs = numberParam(cfg, 'downloadTimeoutMs', DEFAULT_DOWNLOAD_TIMEOUT_MS);
+
+    const bytes = await downloadBytes(input.audioUrl, downloadTimeoutMs);
 
     const fields = [
-      { name: 'model_id', value: this.model },
+      { name: 'model_id', value: model },
       { name: 'timestamps_granularity', value: 'word' },
       // Diarization is handled elsewhere; we only need text + word timings.
       { name: 'diarize', value: 'false' },
-      { name: 'tag_audio_events', value: this.tagAudioEvents ? 'true' : 'false' },
+      { name: 'tag_audio_events', value: tagAudioEvents ? 'true' : 'false' },
     ];
     if (input.languageHint) {
       fields.push({ name: 'language_code', value: input.languageHint });
     }
 
+    // Local/self-hosted endpoints may be keyless; only send the ElevenLabs auth
+    // header when a key was actually configured.
+    const headers: Record<string, string> = {};
+    if (cfg.apiKey) headers['xi-api-key'] = cfg.apiKey;
+
     const json = await postMultipartForJson<ScribeResponse>(
-      `${this.baseUrl}/speech-to-text`,
+      `${cfg.baseUrl}/speech-to-text`,
       fields,
       {
         name: 'file',
@@ -96,8 +87,10 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
         contentType: input.contentType || 'application/octet-stream',
         bytes,
       },
-      { 'xi-api-key': this.apiKey },
-      this.timeoutMs,
+      headers,
+      // ElevenLabs is silent until the whole transcript is ready; the resolved
+      // config's timeout bounds the total wait.
+      cfg.timeoutMs,
       'ElevenLabs',
     );
 

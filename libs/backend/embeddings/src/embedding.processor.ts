@@ -39,6 +39,7 @@ export class EmbeddingProcessor {
       }
 
       const { vectors, model, dimensions } = await this.provider.embed(
+        item.userId,
         chunks.map((c) => c.text),
       );
 

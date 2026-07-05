@@ -43,9 +43,7 @@ export interface TaskExtractionResult {
  */
 export interface TaskExtractionProvider {
   readonly id: string;
-  /** Whether the provider is configured enough to run (e.g. has an API key). */
-  readonly enabled: boolean;
-  extract(input: TaskExtractionInput): Promise<TaskExtractionResult>;
+  extract(userId: string, input: TaskExtractionInput): Promise<TaskExtractionResult>;
 }
 
 export const TASK_EXTRACTION_PROVIDER = Symbol('TASK_EXTRACTION_PROVIDER');

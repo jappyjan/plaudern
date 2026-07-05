@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { AiConfigService } from '@plaudern/ai-config';
 import { hasDocumentPayload } from '@plaudern/contracts';
 import type { Extractor, ExtractorDependency } from '@plaudern/inbox';
 import type { InboxItemEntity } from '@plaudern/persistence';
@@ -20,10 +21,13 @@ export class OcrExtractor implements Extractor {
   readonly version = OCR_EXTRACTOR_VERSION;
   readonly dependsOn: ExtractorDependency[] = [];
 
-  constructor(private readonly ocr: OcrService) {}
+  constructor(
+    private readonly ocr: OcrService,
+    private readonly aiConfig: AiConfigService,
+  ) {}
 
-  enabled(): boolean {
-    return this.ocr.enabled;
+  enabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'ocr');
   }
 
   appliesTo(item: InboxItemEntity): boolean {

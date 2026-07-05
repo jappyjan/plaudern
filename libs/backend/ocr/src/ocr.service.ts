@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
 } from '@nestjs/common';
+import { AiConfigService } from '@plaudern/ai-config';
 import { hasDocumentPayload, type ItemOcrResponse } from '@plaudern/contracts';
 import { InboxService } from '@plaudern/inbox';
 import type { ExtractedPayloadEntity } from '@plaudern/persistence';
@@ -26,13 +27,14 @@ export const OCR_EXTRACTOR_VERSION = 1;
 export class OcrService {
   constructor(
     private readonly inbox: InboxService,
+    private readonly aiConfig: AiConfigService,
     @Inject(OCR_PROVIDER) private readonly provider: OcrProvider,
     @Inject(OCR_QUEUE) private readonly queue: OcrQueue,
   ) {}
 
-  /** Whether OCR is configured (a vision provider key/flag is present). */
-  get enabled(): boolean {
-    return this.provider.enabled;
+  /** Whether OCR is configured for this user. */
+  isEnabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'ocr');
   }
 
   /** Append a fresh `queued` ocr row and hand the job to the queue. */
@@ -58,9 +60,9 @@ export class OcrService {
 
   /** Manually (re)run OCR for an item — e.g. after a failure or provider change. */
   async retry(userId: string, inboxItemId: string): Promise<string> {
-    if (!this.provider.enabled) {
+    if (!(await this.aiConfig.isEnabled(userId, 'ocr'))) {
       throw new BadRequestException(
-        'OCR is not configured (set OCR_API_KEY, or OCR_ENABLED=true for keyless local vision endpoints)',
+        'OCR is not configured (assign a provider in Settings → AI)',
       );
     }
     const item = await this.inbox.getItem(userId, inboxItemId);

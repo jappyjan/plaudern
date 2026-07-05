@@ -26,9 +26,7 @@ export interface DocMetaResult {
  */
 export interface DocMetaProvider {
   readonly id: string;
-  /** Whether the provider is configured enough to run (e.g. has an API key). */
-  readonly enabled: boolean;
-  extract(input: DocMetaInput): Promise<DocMetaResult>;
+  extract(userId: string, input: DocMetaInput): Promise<DocMetaResult>;
 }
 
 export const DOCMETA_PROVIDER = Symbol('DOCMETA_PROVIDER');

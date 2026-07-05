@@ -52,7 +52,7 @@ export class CommitmentsProcessor {
       // any stale/previously mis-attributed ones) rather than guessing direction.
       const result =
         ctx.kind === 'ready'
-          ? await this.provider.extract(ctx.input)
+          ? await this.provider.extract(item.userId, ctx.input)
           : { commitments: [], model: this.provider.id };
       const commitmentCount = await this.persistence.persist(
         item.userId,

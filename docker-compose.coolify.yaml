@@ -7,7 +7,7 @@
 #   SERVICE_USER_<ID> /
 #   SERVICE_PASSWORD_<ID>      -> Coolify generates & persists a random value the
 #                                 first time it's referenced.
-# Plain ${VARS} (e.g. ELEVENLABS_API_KEY) are surfaced in the Coolify UI to fill in.
+# Plain ${VARS} (e.g. SMTP_HOST) are surfaced in the Coolify UI to fill in.
 #
 # Only `web`, `api` and `minio` are exposed; postgres/redis stay on the internal
 # network. Access is protected by passkey (WebAuthn) login — set AUTH_RP_ID to
@@ -80,149 +80,29 @@ services:
       # Startup contact resolution: on every boot, still-unlinked person
       # entities are re-resolved against the contact book from data already
       # stored (mentions, voices, knowledge graph) — no re-extraction, so it
-      # is cheap. The LLM arbiter reuses the ENTITY_EXTRACTION_* credentials
-      # (override with CONTACT_RESOLUTION_* to diverge). ON by default.
+      # is cheap. The LLM arbiter uses the per-user contact_resolution capability
+      # (Settings → AI; it inherits the entity_extraction provider). ON by default.
       # - CONTACT_RESOLUTION_STARTUP_ENABLED=${CONTACT_RESOLUTION_STARTUP_ENABLED:-true}
       # - CONTACT_RESOLUTION_STARTUP_DELAY_MS=${CONTACT_RESOLUTION_STARTUP_DELAY_MS:-20000}
-      # AI summarization (title + Markdown summary once a recording is
-      # transcribed and diarized). Empty key = disabled (UI shows the transcript
-      # only). Defaults target DeepSeek — the cheapest capable option; point
-      # BASE_URL/MODEL at any OpenAI-compatible endpoint to switch providers.
-      - SUMMARIZATION_API_KEY=${SUMMARIZATION_API_KEY}
-      - SUMMARIZATION_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
-      - SUMMARIZATION_MODEL=${SUMMARIZATION_MODEL:-deepseek-chat}
-      # Entity/relation extraction and topic classification reuse the
-      # summarization key and endpoint (same DeepSeek account) — a non-empty
-      # key auto-enables them. Only the models are independently overridable;
-      # set the *_MODEL vars in Coolify to diverge from the summarization tier.
-      - ENTITY_EXTRACTION_API_KEY=${SUMMARIZATION_API_KEY}
-      - ENTITY_EXTRACTION_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
-      - ENTITY_EXTRACTION_MODEL=${ENTITY_EXTRACTION_MODEL:-deepseek-chat}
-      - TOPICS_API_KEY=${SUMMARIZATION_API_KEY}
-      - TOPICS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
-      - TOPICS_MODEL=${TOPICS_MODEL:-deepseek-chat}
-      - COMMITMENTS_API_KEY=${SUMMARIZATION_API_KEY}
-      - COMMITMENTS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
-      - COMMITMENTS_MODEL=${COMMITMENTS_MODEL:-deepseek-chat}
-      # Open-question extraction (JJ-34) reuses the summarization key/endpoint;
-      # a non-empty key auto-enables it. Only the model is independently
-      # overridable via QUESTIONS_MODEL.
-      - QUESTIONS_API_KEY=${SUMMARIZATION_API_KEY}
-      - QUESTIONS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
-      - QUESTIONS_MODEL=${QUESTIONS_MODEL:-deepseek-chat}
-      # Embeddings power semantic recall (MCP search_memory, similarity,
-      # hybrid search). They CANNOT reuse the summarization key: DeepSeek has
-      # no embeddings API. Fill in EMBEDDINGS_API_KEY with an OpenAI key —
-      # a non-empty key auto-enables the extractor. Defaults target OpenAI
-      # text-embedding-3-small (1536 dims); for a keyless local endpoint such
-      # as Ollama set EMBEDDINGS_ENABLED=true and point BASE_URL/MODEL/
-      # DIMENSIONS at it instead. Changing model or dimensions later requires
-      # re-embedding (POST /v1/extractions/backfills {"kind":"embeddings"}).
-      - EMBEDDINGS_API_KEY=${EMBEDDINGS_API_KEY}
-      - EMBEDDINGS_BASE_URL=${EMBEDDINGS_BASE_URL:-https://api.openai.com/v1}
-      - EMBEDDINGS_MODEL=${EMBEDDINGS_MODEL:-text-embedding-3-small}
+      # --- AI configuration ---
+      # AI provider credentials and per-capability settings (summarization,
+      # transcription/ElevenLabs, diarization/pyannoteAI, embeddings, OCR, and
+      # every LLM extractor) are configured PER USER inside the app, under
+      # Settings → AI — NOT via env vars. There is nothing to fill in here.
+      #
+      # On upgrade from an older env-based deployment, the previous AI env is
+      # imported once into the DB at boot (AiConfigImportService) and owned by
+      # the pre-auth user, which the first registered account adopts.
+      #
+      # NOTE for future maintainers/agents: do NOT reintroduce AI provider env
+      # vars. Add a capability to the DB-backed registry (libs/backend/ai-config)
+      # and configure it in Settings → AI.
+      #
+      # EMBEDDINGS_DIMENSIONS is the ONE exception that remains an env var: it
+      # freezes the pgvector column width at first migration (a deploy-time,
+      # instance-wide concern, not a per-user credential). Set it BEFORE the
+      # first boot if you use a non-1536-dim embedding model.
       - EMBEDDINGS_DIMENSIONS=${EMBEDDINGS_DIMENSIONS:-1536}
-      - EMBEDDINGS_ENABLED=${EMBEDDINGS_ENABLED:-false}
-      # Task extraction (JJ-35) reuses the summarization key/endpoint; a
-      # non-empty key auto-enables it. Semantic dedupe of tasks piggybacks on
-      # the embeddings provider above (EMBEDDINGS_*) when configured, else
-      # falls back to normalized-text matching.
-      - TASKS_API_KEY=${SUMMARIZATION_API_KEY}
-      - TASKS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
-      - TASKS_MODEL=${TASKS_MODEL:-deepseek-chat}
-      # Personal-fact extraction (JJ-31) reuses the summarization key/endpoint; a
-      # non-empty key auto-enables it. Facts are scoped to registry people and
-      # accumulate append-only with supersession (newer facts replace older
-      # without deleting them).
-      - FACTS_API_KEY=${SUMMARIZATION_API_KEY}
-      - FACTS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
-      - FACTS_MODEL=${FACTS_MODEL:-deepseek-chat}
-      # Decision-log extraction (JJ-33) reuses the summarization key/endpoint; a
-      # non-empty key auto-enables it. Decisions ("we decided to go with the
-      # cheaper option") accumulate into a searchable log with context,
-      # participants, and reasoning. Only the model is independently overridable
-      # via DECISIONS_MODEL.
-      - DECISIONS_API_KEY=${SUMMARIZATION_API_KEY}
-      - DECISIONS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
-      - DECISIONS_MODEL=${DECISIONS_MODEL:-deepseek-chat}
-      # Prospective-memory reminders (JJ-25) reuse the summarization key/endpoint;
-      # a non-empty key auto-enables it. Anything with a future date ("results by
-      # the 14th", contract expiries, "let's talk again next month") becomes a
-      # calendar-visible reminder. Only the model is independently overridable
-      # via REMINDERS_MODEL.
-      - REMINDERS_API_KEY=${SUMMARIZATION_API_KEY}
-      - REMINDERS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
-      - REMINDERS_MODEL=${REMINDERS_MODEL:-deepseek-chat}
-      # Photo/scan OCR (JJ-30) — reads the full text of a scanned image or PDF.
-      # This kind needs a VISION-capable model. The (text-only) summarization tier
-      # (DeepSeek) CANNOT do vision, so OCR cannot reuse SUMMARIZATION_API_KEY. It
-      # CAN, however, reuse the OpenAI EMBEDDINGS_API_KEY: the OCR defaults already
-      # target OpenAI (gpt-4o-mini is vision-capable), so with your embeddings key
-      # set, OCR auto-enables against the same OpenAI account — no extra key needed.
-      # Override OCR_API_KEY to point vision at a different provider, or if you use
-      # a keyless local embeddings gateway (Ollama) set OCR_API_KEY to a real vision
-      # key, or OCR_ENABLED=true for a keyless local vision gateway. If neither the
-      # embeddings key nor an OCR key is set, OCR + docmeta stay disabled.
-      - OCR_API_KEY=${OCR_API_KEY:-${EMBEDDINGS_API_KEY:-}}
-      - OCR_BASE_URL=${OCR_BASE_URL:-https://api.openai.com/v1}
-      - OCR_MODEL=${OCR_MODEL:-gpt-4o-mini}
-      - OCR_ENABLED=${OCR_ENABLED:-false}
-      # Document understanding / vault (JJ-30/JJ-16) — classifies a scanned
-      # document from its OCR TEXT and pulls key fields (amount, IBAN, expiry,
-      # Kündigungsfrist), which become vault entries + deadline reminders. Reads
-      # text only, so it reuses the summarization key/endpoint like the other LLM
-      # kinds; it only runs after OCR succeeds (which requires the vision key
-      # above). Only the model is independently overridable via DOCMETA_MODEL.
-      - DOCMETA_API_KEY=${SUMMARIZATION_API_KEY}
-      - DOCMETA_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
-      - DOCMETA_MODEL=${DOCMETA_MODEL:-deepseek-chat}
-      # Memory chat (JJ-37) reuses the summarization key/endpoint; a non-empty
-      # key auto-enables it. Retrieval quality depends on the embeddings
-      # provider above (keyword search still works without it).
-      - CHAT_API_KEY=${SUMMARIZATION_API_KEY}
-      - CHAT_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
-      - CHAT_MODEL=${CHAT_MODEL:-deepseek-chat}
-      # Living topic documents (JJ-12) reuse the summarization key/endpoint; a
-      # non-empty key auto-enables generation. Each topic gets an evergreen,
-      # self-updating cited Markdown document that regenerates when a new item
-      # is classified into it. Only the model is independently overridable.
-      - TOPIC_DOCS_API_KEY=${SUMMARIZATION_API_KEY}
-      - TOPIC_DOCS_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
-      - TOPIC_DOCS_MODEL=${TOPIC_DOCS_MODEL:-deepseek-chat}
-      # Auto-journal (JJ-17) reuses the summarization key/endpoint; a non-empty
-      # key auto-enables composition. Every evening the day is composed from its
-      # signals (recordings, calendar events) into a cited narrative diary
-      # entry, and weekly/monthly/yearly reviews compose from the dailies. Only
-      # the model is independently overridable.
-      - JOURNAL_API_KEY=${SUMMARIZATION_API_KEY}
-      - JOURNAL_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
-      - JOURNAL_MODEL=${JOURNAL_MODEL:-deepseek-chat}
-      # Citation verification pass (JJ-20) reuses the summarization key/endpoint;
-      # a non-empty key auto-enables it. An LLM-judge re-checks the high-stakes
-      # fields (dates, amounts, names) of a memory-chat answer against its cited
-      # source passages and downgrades confidence when one isn't supported. With
-      # no key set the pass is skipped and the dependency-free clause-level
-      # citation-coverage check still runs. Only the model is independently
-      # overridable.
-      - VERIFICATION_API_KEY=${SUMMARIZATION_API_KEY}
-      - VERIFICATION_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
-      - VERIFICATION_MODEL=${VERIFICATION_MODEL:-deepseek-chat}
-      # Transcription: the hosted ElevenLabs Scribe API — fill in
-      # ELEVENLABS_API_KEY (get one at elevenlabs.io). Audio bytes are uploaded
-      # to ElevenLabs directly (storage stays private).
-      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
-      # Speaker diarization: the hosted pyannoteAI API — fill in
-      # PYANNOTEAI_API_KEY (get one at pyannote.ai), or set
-      # SPEAKER_ID_PROVIDER=off to disable. Audio is uploaded to pyannoteAI
-      # directly (storage stays private); voiceprints for new speakers are
-      # enrolled from clips sliced in-process with ffmpeg.
-      - SPEAKER_ID_PROVIDER=${SPEAKER_ID_PROVIDER:-pyannoteai}
-      - PYANNOTEAI_API_KEY=${PYANNOTEAI_API_KEY}
-      - PYANNOTEAI_MODEL=${PYANNOTEAI_MODEL:-precision-2}
-      # Minimum confidence (0-100) to accept a voiceprint match. 0 force-matches
-      # known voices into recordings they aren't in; 50 is pyannoteAI's
-      # recommended strict floor. Raise toward 70 for stricter matching.
-      - PYANNOTEAI_MATCH_THRESHOLD=${PYANNOTEAI_MATCH_THRESHOLD:-50}
       # Email-in (mailbox): every user gets an inbox+<token>@<domain> address;
       # mail sent there becomes an inbox item. Set EMAIL_INBOUND_DOMAIN to the
       # domain your inbound mail relay (SES, Mailgun, Postmark, a self-hosted

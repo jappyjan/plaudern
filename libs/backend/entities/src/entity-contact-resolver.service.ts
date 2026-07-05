@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { AiConfigService } from '@plaudern/ai-config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import type { EntityContactSuggestionDto } from '@plaudern/contracts';
@@ -57,6 +58,7 @@ export class EntityContactResolverService {
     private readonly profiles: Repository<VoiceProfileEntity>,
     private readonly registry: EntitiesRegistryService,
     private readonly graph: EntityGraphService,
+    private readonly aiConfig: AiConfigService,
     @Inject(CONTACT_RESOLUTION_PROVIDER)
     private readonly provider: ContactResolutionProvider,
   ) {}
@@ -175,7 +177,7 @@ export class EntityContactResolverService {
       };
     }
 
-    if (!this.provider.enabled) return null;
+    if (!(await this.aiConfig.isEnabled(userId, 'contact_resolution'))) return null;
     // Anything with a whiff of evidence goes to the model — it can bridge what
     // lexical matching can't (nicknames, diminutives), but it may only choose
     // among candidates we can substantiate.
@@ -185,7 +187,7 @@ export class EntityContactResolverService {
     if (shortlist.length === 0) return null;
 
     const mentionExamples = await this.mentionExamples(entity.id);
-    const result = await this.provider.resolve({
+    const result = await this.provider.resolve(userId, {
       entity: {
         id: entity.id,
         name: entity.canonicalName,

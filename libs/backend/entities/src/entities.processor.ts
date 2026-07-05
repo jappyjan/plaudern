@@ -42,7 +42,7 @@ export class EntitiesProcessor {
         throw new Error('no succeeded transcription to extract entities from');
       }
 
-      const result = await this.provider.extract(input);
+      const result = await this.provider.extract(item.userId, input);
       const entityCount = await this.registry.ingest(
         item.userId,
         item.id,

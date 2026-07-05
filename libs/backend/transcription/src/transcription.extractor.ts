@@ -38,8 +38,14 @@ export class TranscriptionExtractor implements Extractor {
 
   constructor(private readonly transcription: TranscriptionService) {}
 
-  enabled(): boolean {
-    return true; // transcription is always configured (hosted provider)
+  // Always enabled, independent of per-user AI config: text-bearing sources
+  // (typed notes, emails, web clips) get a passthrough transcription row with
+  // NO provider call, so the downstream DAG (summary, entities, …) must run for
+  // them even when no transcription provider is configured. For AUDIO items the
+  // provider itself throws "not configured" when the user has no transcription
+  // provider (→ a failed row), matching the pre-DB-config behavior.
+  enabled(): Promise<boolean> {
+    return Promise.resolve(true);
   }
 
   appliesTo(item: InboxItemEntity): boolean {
@@ -52,6 +58,7 @@ export class TranscriptionExtractor implements Extractor {
   async enqueue(item: InboxItemEntity): Promise<string | null> {
     if (!item.source) return null;
     return this.transcription.enqueueTranscription(item.id, {
+      userId: item.userId,
       storageKey: item.source.storageKey,
       contentType: item.source.contentType,
       filename: item.source.originalFilename ?? undefined,

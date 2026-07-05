@@ -52,10 +52,6 @@ export class JournalScheduler implements OnApplicationBootstrap, OnModuleDestroy
       this.logger.log('journal scheduler disabled (JOURNAL_SCHEDULER_ENABLED=false)');
       return;
     }
-    if (!this.journal.enabled) {
-      this.logger.log('journal scheduler skipped — composition is not configured');
-      return;
-    }
     const intervalMs = this.intervalMs();
     if (intervalMs <= 0) {
       this.logger.log('journal scheduler disabled (JOURNAL_POLL_INTERVAL_MS <= 0)');
@@ -86,7 +82,7 @@ export class JournalScheduler implements OnApplicationBootstrap, OnModuleDestroy
 
   /** Run one sweep: enqueue every missing/stale day and ended rollup. */
   async sweep(): Promise<void> {
-    if (this.destroyed || this.running || !this.journal.enabled) return;
+    if (this.destroyed || this.running) return;
     this.running = true;
     try {
       await this.withLock(async () => {

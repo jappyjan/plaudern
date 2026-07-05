@@ -3,6 +3,8 @@ import type { JobQueue } from '@plaudern/queue';
 export interface TranscriptionJob {
   extractionId: string;
   inboxItemId: string;
+  /** Owner of the item, so the processor resolves that user's AI config. */
+  userId: string;
   storageKey: string;
   contentType: string;
   filename?: string;

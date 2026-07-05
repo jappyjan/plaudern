@@ -59,8 +59,8 @@ export class ExtractionRunsService {
     if (!extractor) {
       throw new BadRequestException(`no extractor registered for kind '${req.kind}'`);
     }
-    if (!extractor.enabled()) {
-      throw new BadRequestException(`extractor '${req.kind}' is not configured on this server`);
+    if (!(await extractor.enabled(userId))) {
+      throw new BadRequestException(`extractor '${req.kind}' is not configured for this user`);
     }
     if (req.occurredFrom && req.occurredTo && req.occurredFrom > req.occurredTo) {
       throw new BadRequestException('occurredFrom must not be after occurredTo');
@@ -105,7 +105,10 @@ export class ExtractionRunsService {
    */
   async startStartupBackfill(kind: ExtractionKind): Promise<ExtractionRunDto | null> {
     const extractor = this.graph.get(kind);
-    if (!extractor || !extractor.enabled()) return null;
+    // Enablement is per-user now, so a system-wide sweep can't gate on it here;
+    // the per-item `shouldEnqueue` gate skips items whose owner has not
+    // configured the capability. We only need a registered extractor.
+    if (!extractor) return null;
 
     // Skip-if-running with a staleness lease: a live sweep (this or another
     // replica) heartbeats updatedAt per batch; only such a run blocks a new
@@ -203,7 +206,7 @@ export class ExtractionRunsService {
 
         for (const item of batch) {
           run.itemsMatched += 1;
-          if (this.shouldEnqueue(extractor, item, run)) {
+          if (await this.shouldEnqueue(extractor, item, run)) {
             try {
               await extractor.enqueue(item);
               run.itemsQueued += 1;
@@ -238,13 +241,13 @@ export class ExtractionRunsService {
    * is currently in flight, and (unless forced) the latest succeeded row is
    * still below the target version.
    */
-  private shouldEnqueue(
+  private async shouldEnqueue(
     extractor: Extractor,
     item: InboxItemEntity,
     run: ExtractionRunEntity,
-  ): boolean {
-    if (!extractor.enabled() || !extractor.appliesTo(item)) return false;
-    if (!evaluateReadiness(extractor, item, this.graph).ready) return false;
+  ): Promise<boolean> {
+    if (!(await extractor.enabled(item.userId)) || !extractor.appliesTo(item)) return false;
+    if (!(await evaluateReadiness(extractor, item, this.graph)).ready) return false;
 
     const extractions = item.extractions ?? [];
     const latest = latestOfKind(extractions, run.kind);

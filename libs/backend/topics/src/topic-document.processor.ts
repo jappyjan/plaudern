@@ -74,7 +74,7 @@ export class TopicDocumentProcessor {
         order: { version: 'DESC' },
       });
 
-      const result = await this.provider.generate({
+      const result = await this.provider.generate(job.userId, {
         topicName: topic.name,
         topicDescription: topic.description,
         sources: sources.map((s) => ({

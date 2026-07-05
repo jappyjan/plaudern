@@ -44,8 +44,7 @@ export interface EntityJudgeResult {
 
 export interface EntityJudgeProvider {
   readonly id: string;
-  readonly enabled: boolean;
-  judge(input: EntityJudgeInput): Promise<EntityJudgeResult>;
+  judge(userId: string, input: EntityJudgeInput): Promise<EntityJudgeResult>;
 }
 
 /** Accept the judge's "same thing" verdict at or above this confidence. */

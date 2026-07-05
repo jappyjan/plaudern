@@ -86,7 +86,7 @@ export class JournalProcessor {
         order: { version: 'DESC' },
       });
 
-      const result = await this.provider.generate({
+      const result = await this.provider.generate(job.userId, {
         periodType: job.periodType,
         periodKey: job.periodKey,
         periodLabel: periodLabel(job.periodType, job.periodKey),

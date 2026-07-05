@@ -49,7 +49,7 @@ export class RelationsProcessor {
       let relationCount = 0;
       let model = this.provider.id;
       if (entities.length >= 2) {
-        const result = await this.provider.extract(input);
+        const result = await this.provider.extract(item.userId, input);
         model = result.model ?? this.provider.id;
         relationCount = await this.graph.ingest(
           item.userId,

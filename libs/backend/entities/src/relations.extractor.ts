@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { AiConfigService } from '@plaudern/ai-config';
 import type { Extractor, ExtractorDependency } from '@plaudern/inbox';
 import type { InboxItemEntity } from '@plaudern/persistence';
 import { RelationsService, RELATIONS_EXTRACTOR_VERSION } from './relations.service';
@@ -17,10 +18,13 @@ export class RelationsExtractor implements Extractor {
     { kind: 'entities', requires: 'succeeded' },
   ];
 
-  constructor(private readonly relations: RelationsService) {}
+  constructor(
+    private readonly relations: RelationsService,
+    private readonly aiConfig: AiConfigService,
+  ) {}
 
-  enabled(): boolean {
-    return this.relations.enabled;
+  enabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'entity_relations');
   }
 
   appliesTo(item: InboxItemEntity): boolean {

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { AiConfigService } from '@plaudern/ai-config';
 import type { Extractor, ExtractorDependency } from '@plaudern/inbox';
 import type { InboxItemEntity } from '@plaudern/persistence';
 import { EmbeddingService, EMBEDDING_EXTRACTOR_VERSION } from './embedding.service';
@@ -20,10 +21,13 @@ export class EmbeddingExtractor implements Extractor {
     { kind: 'summary', requires: 'settled' },
   ];
 
-  constructor(private readonly embeddings: EmbeddingService) {}
+  constructor(
+    private readonly embeddings: EmbeddingService,
+    private readonly aiConfig: AiConfigService,
+  ) {}
 
-  enabled(): boolean {
-    return this.embeddings.enabled;
+  enabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'embeddings');
   }
 
   appliesTo(item: InboxItemEntity): boolean {

@@ -45,7 +45,7 @@ export class SummarizationProcessor {
       const targetLanguage =
         language === 'auto' ? undefined : SUMMARY_LANGUAGE_LABELS[language];
 
-      const result = await this.provider.summarize({ ...input, targetLanguage });
+      const result = await this.provider.summarize(item.userId, { ...input, targetLanguage });
       const payload: SummaryPayload = {
         title: result.title,
         layout: result.layout,

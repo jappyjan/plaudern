@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
+import { AiConfigService } from '@plaudern/ai-config';
 import { InboxService } from '@plaudern/inbox';
 import type { ExtractionStatus } from '@plaudern/contracts';
 import type { ExtractedPayloadEntity } from '@plaudern/persistence';
@@ -32,18 +33,16 @@ export const FACTS_EXTRACTOR_VERSION = 1;
 export class FactsService {
   constructor(
     private readonly inbox: InboxService,
+    private readonly aiConfig: AiConfigService,
     @Inject(FACT_EXTRACTION_PROVIDER)
     private readonly provider: FactExtractionProvider,
     @Inject(FACT_EXTRACTION_QUEUE)
     private readonly queue: FactExtractionQueue,
   ) {}
 
-  /**
-   * Whether personal-fact extraction is configured (FACTS_API_KEY present, or
-   * FACTS_ENABLED=true for keyless local endpoints such as Ollama).
-   */
-  get enabled(): boolean {
-    return this.provider.enabled;
+  /** Whether personal-fact extraction is configured for this user. */
+  isEnabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'facts');
   }
 
   /**
@@ -52,9 +51,9 @@ export class FactsService {
    * history); the registry supersedes old citations on success.
    */
   async retry(userId: string, inboxItemId: string): Promise<string> {
-    if (!this.provider.enabled) {
+    if (!(await this.aiConfig.isEnabled(userId, 'facts'))) {
       throw new BadRequestException(
-        'personal-fact extraction is not configured (set FACTS_API_KEY, or FACTS_ENABLED=true for keyless local endpoints such as Ollama)',
+        'personal-fact extraction is not configured — assign a provider to the facts capability in Settings → AI',
       );
     }
     const item = await this.inbox.getItem(userId, inboxItemId);

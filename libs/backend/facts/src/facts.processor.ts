@@ -47,7 +47,7 @@ export class FactsProcessor {
         throw new Error('no succeeded transcription or summary to extract facts from');
       }
 
-      const result = await this.provider.extract(input);
+      const result = await this.provider.extract(item.userId, input);
       const segments = transcriptionSegments(item);
       const candidates: FactCandidate[] = result.facts.map((fact) => {
         const located = fact.quote ? locateQuote(segments, fact.quote) : null;

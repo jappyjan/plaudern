@@ -1,11 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { AiConfigService, numberParam } from '@plaudern/ai-config';
 import type {
   TranscriptionInput,
-  TranscriptionProvider,
   TranscriptionResult,
 } from '../transcription.provider';
 import { downloadBytes, postMultipartForJson } from './http-helpers';
+
+const DEFAULT_MODEL = 'Systran/faster-whisper-small';
+/** Audio-download timeout fallback when the capability param is unset. */
+const DEFAULT_DOWNLOAD_TIMEOUT_MS = 5 * 60_000;
 
 interface WhisperSegment {
   start: number;
@@ -25,48 +28,40 @@ interface WhisperResponse {
  * the OpenAI `/v1/audio/transcriptions` contract — e.g.
  * [faster-whisper-server](https://github.com/speaches-ai/speaches) or
  * whisper.cpp's built-in server. No model weights or binaries ship with this
- * app; point WHISPER_BASE_URL at wherever that server runs (same box, a LAN
- * machine with a GPU, …) and it does the actual decoding.
+ * app; the user's resolved `transcription` config (base URL/model/timeout)
+ * points at wherever that server runs (same box, a LAN machine with a GPU, …)
+ * and it does the actual decoding.
  *
- * This is the "local model tier": selected via TRANSCRIPTION_PROVIDER=whisper,
- * audio never leaves the operator's own infrastructure, which is what the
- * sensitivity-routing feature (ATT-687) needs for content that must stay
- * local. We still download the audio from the presigned INTERNAL storage URL
- * and push the bytes to the configured server, mirroring the ElevenLabs
- * provider's push model.
+ * This is the "local model tier": selected per user when the resolved provider
+ * connection's protocol is `whisper`, audio never leaves the operator's own
+ * infrastructure, which is what the sensitivity-routing feature (ATT-687) needs
+ * for content that must stay local. We still download the audio from the
+ * presigned INTERNAL storage URL and push the bytes to the configured server,
+ * mirroring the ElevenLabs provider's push model.
  */
 @Injectable()
-export class WhisperTranscriptionProvider implements TranscriptionProvider {
-  readonly id: string;
-  private readonly baseUrl: string;
-  private readonly apiKey: string;
-  private readonly model: string;
-  private readonly timeoutMs: number;
-  private readonly downloadTimeoutMs: number;
+export class WhisperTranscriptionProvider {
+  constructor(private readonly aiConfig: AiConfigService) {}
 
-  constructor(config: ConfigService) {
-    this.baseUrl = config
-      .get<string>('WHISPER_BASE_URL', 'http://localhost:8000/v1')
-      .replace(/\/+$/, '');
-    this.apiKey = config.get<string>('WHISPER_API_KEY', '');
+  async transcribe(userId: string, input: TranscriptionInput): Promise<TranscriptionResult> {
+    const cfg = await this.aiConfig.resolve(userId, 'transcription');
+    if (!cfg) {
+      throw new Error(
+        'transcription is not configured — assign a provider in Settings → AI',
+      );
+    }
+
     // Must match a model the server actually has loaded/can load; the default
     // is what faster-whisper-server/speaches ship as a small CPU-friendly
     // model. whisper.cpp servers generally ignore this field.
-    this.model = config.get<string>('WHISPER_MODEL', 'Systran/faster-whisper-small');
-    // Local CPU inference can be much slower than a hosted API; default higher
-    // than ElevenLabs' timeout.
-    this.timeoutMs = Number(config.get<string>('WHISPER_TIMEOUT_MS', String(20 * 60_000)));
-    this.downloadTimeoutMs = Number(
-      config.get<string>('WHISPER_DOWNLOAD_TIMEOUT_MS', String(5 * 60_000)),
-    );
-    this.id = `whisper:${this.model}`;
-  }
+    const model = cfg.model || DEFAULT_MODEL;
+    const baseUrl = cfg.baseUrl.replace(/\/+$/, '');
+    const downloadTimeoutMs = numberParam(cfg, 'downloadTimeoutMs', DEFAULT_DOWNLOAD_TIMEOUT_MS);
 
-  async transcribe(input: TranscriptionInput): Promise<TranscriptionResult> {
-    const bytes = await downloadBytes(input.audioUrl, this.downloadTimeoutMs);
+    const bytes = await downloadBytes(input.audioUrl, downloadTimeoutMs);
 
     const fields = [
-      { name: 'model', value: this.model },
+      { name: 'model', value: model },
       { name: 'response_format', value: 'verbose_json' },
     ];
     if (input.languageHint) {
@@ -77,10 +72,10 @@ export class WhisperTranscriptionProvider implements TranscriptionProvider {
     // when a key was actually configured, so we don't hand a strict server a
     // malformed `Bearer ` value.
     const headers: Record<string, string> = {};
-    if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
+    if (cfg.apiKey) headers.authorization = `Bearer ${cfg.apiKey}`;
 
     const json = await postMultipartForJson<WhisperResponse>(
-      `${this.baseUrl}/audio/transcriptions`,
+      `${baseUrl}/audio/transcriptions`,
       fields,
       {
         name: 'file',
@@ -89,7 +84,7 @@ export class WhisperTranscriptionProvider implements TranscriptionProvider {
         bytes,
       },
       headers,
-      this.timeoutMs,
+      cfg.timeoutMs,
       'Whisper',
     );
 

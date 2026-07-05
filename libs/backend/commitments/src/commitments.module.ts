@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AiConfigService, OpenAiEmbeddingsClient } from '@plaudern/ai-config';
 import { InboxModule } from '@plaudern/inbox';
 import { OpenAiEmbeddingProvider } from '@plaudern/embeddings';
 import {
@@ -46,12 +47,12 @@ import { InboxCommitmentsController } from './inbox-commitments.controller';
     OpenAiCommitmentExtractionProvider,
     // Reconciles owed_by_me commitments against the item's tasks so one
     // intention isn't shown as both a task and a commitment; reuses the shared
-    // embeddings provider (EMBEDDINGS_*), exactly like the task dedupe.
-    OpenAiEmbeddingProvider,
+    // per-user embeddings provider, exactly like the task dedupe.
     {
       provide: COMMITMENT_DEDUPE_EMBEDDING_PROVIDER,
-      inject: [OpenAiEmbeddingProvider],
-      useFactory: (openai: OpenAiEmbeddingProvider) => openai,
+      inject: [AiConfigService, OpenAiEmbeddingsClient],
+      useFactory: (aiConfig: AiConfigService, client: OpenAiEmbeddingsClient) =>
+        new OpenAiEmbeddingProvider(aiConfig, client),
     },
     CommitmentTaskDedupeService,
     // Only one provider for now (any OpenAI-compatible /chat/completions

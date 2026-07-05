@@ -6,6 +6,7 @@ import { TRANSCRIPTION_PROVIDER } from './transcription.provider';
 import { TRANSCRIPTION_QUEUE } from './transcription.job';
 import { ElevenLabsTranscriptionProvider } from './providers/elevenlabs.provider';
 import { WhisperTranscriptionProvider } from './providers/whisper.provider';
+import { DispatchingTranscriptionProvider } from './providers/transcription-dispatch.provider';
 import { TranscriptionProcessor } from './transcription.processor';
 import { TranscriptionService } from './transcription.service';
 import { TranscriptionExtractor } from './transcription.extractor';
@@ -16,26 +17,12 @@ import { TranscriptionController } from './transcription.controller';
   providers: [
     ElevenLabsTranscriptionProvider,
     WhisperTranscriptionProvider,
-    // TRANSCRIPTION_PROVIDER selects the backend: 'elevenlabs' (default, hosted
-    // Scribe API) or 'whisper' (self-hosted Whisper-compatible HTTP server —
-    // the local-model tier that keeps sensitive audio off the network, see
-    // ATT-662/ATT-687). Tests override this DI token with fakes.
-    {
-      provide: TRANSCRIPTION_PROVIDER,
-      inject: [ConfigService, ElevenLabsTranscriptionProvider, WhisperTranscriptionProvider],
-      useFactory: (
-        config: ConfigService,
-        elevenlabs: ElevenLabsTranscriptionProvider,
-        whisper: WhisperTranscriptionProvider,
-      ) => {
-        const selected = config.get<string>('TRANSCRIPTION_PROVIDER', 'elevenlabs');
-        if (selected === 'whisper') return whisper;
-        if (selected === 'elevenlabs') return elevenlabs;
-        throw new Error(
-          `unknown TRANSCRIPTION_PROVIDER '${selected}' (expected 'elevenlabs' or 'whisper')`,
-        );
-      },
-    },
+    // TRANSCRIPTION_PROVIDER now dispatches PER USER by the resolved AI config's
+    // protocol ('elevenlabs' hosted Scribe API, or 'whisper' — the self-hosted
+    // Whisper-compatible tier that keeps sensitive audio off the network, see
+    // ATT-662/ATT-687), rather than a boot-time env selection. Tests override
+    // this DI token with fakes.
+    { provide: TRANSCRIPTION_PROVIDER, useClass: DispatchingTranscriptionProvider },
     TranscriptionProcessor,
     {
       provide: TRANSCRIPTION_QUEUE,

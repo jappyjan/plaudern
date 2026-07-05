@@ -41,9 +41,12 @@ export interface TopicDocumentResult {
  */
 export interface TopicDocumentProvider {
   readonly id: string;
-  /** Whether the provider is configured enough to run (e.g. has an API key). */
-  readonly enabled: boolean;
-  generate(input: TopicDocumentInput): Promise<TopicDocumentResult>;
+  /**
+   * Generate for a specific user — the user's DB-backed AI config
+   * (`@plaudern/ai-config`, capability `topic_docs`) decides the endpoint/model.
+   * Throws if the user has not configured the topic_docs capability.
+   */
+  generate(userId: string, input: TopicDocumentInput): Promise<TopicDocumentResult>;
 }
 
 export const TOPIC_DOCUMENT_PROVIDER = Symbol('TOPIC_DOCUMENT_PROVIDER');

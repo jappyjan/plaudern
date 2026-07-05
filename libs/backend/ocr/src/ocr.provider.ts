@@ -26,9 +26,7 @@ export interface OcrResult {
  */
 export interface OcrProvider {
   readonly id: string;
-  /** Whether the provider is configured enough to run (has a key or is opted in). */
-  readonly enabled: boolean;
-  recognize(input: OcrInput): Promise<OcrResult>;
+  recognize(userId: string, input: OcrInput): Promise<OcrResult>;
 }
 
 export const OCR_PROVIDER = Symbol('OCR_PROVIDER');

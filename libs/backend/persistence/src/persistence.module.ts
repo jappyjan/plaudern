@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
+  AiCapabilitySettingEntity,
+  AiProviderEntity,
   AuthSessionEntity,
   CalendarEventEntity,
   CalendarFeedEntity,
@@ -93,6 +95,7 @@ import { CreateJournalDocuments1720000000039 } from './migrations/1720000000039-
 import { SanitizeEntityAliases1720000000040 } from './migrations/1720000000040-SanitizeEntityAliases';
 import { CreateDocumentMetadata1720000000042 } from './migrations/1720000000042-CreateDocumentMetadata';
 import { CreateEntityMergeSuggestions1720000000043 } from './migrations/1720000000043-CreateEntityMergeSuggestions';
+import { CreateAiConfig1720000000044 } from './migrations/1720000000044-CreateAiConfig';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -142,6 +145,8 @@ export const ALL_ENTITIES = [
   NotificationCategoryPreferenceEntity,
   PushSubscriptionEntity,
   NotificationDeliveryEntity,
+  AiProviderEntity,
+  AiCapabilitySettingEntity,
 ];
 
 // Referenced as classes (not a glob) so migrations load identically under
@@ -190,6 +195,7 @@ export const ALL_MIGRATIONS = [
   SanitizeEntityAliases1720000000040,
   CreateDocumentMetadata1720000000042,
   CreateEntityMergeSuggestions1720000000043,
+  CreateAiConfig1720000000044,
 ];
 
 /**

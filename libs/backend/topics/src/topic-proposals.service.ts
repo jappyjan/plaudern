@@ -9,6 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import { AiConfigService } from '@plaudern/ai-config';
 import { InboxService } from '@plaudern/inbox';
 import { EmbeddingSearchService } from '@plaudern/embeddings';
 import type { TopicDto, TopicProposalDto, TopicProposalListResponse } from '@plaudern/contracts';
@@ -64,6 +65,7 @@ export class TopicProposalsService {
     private readonly inbox: InboxService,
     private readonly topics: TopicsService,
     private readonly embeddings: EmbeddingSearchService,
+    private readonly aiConfig: AiConfigService,
     @Inject(TOPIC_PROPOSAL_LABEL_PROVIDER)
     private readonly labeler: TopicProposalLabelProvider,
     @InjectRepository(TopicProposalEntity)
@@ -83,8 +85,11 @@ export class TopicProposalsService {
   }
 
   /** Feature runs only when embeddings AND the labeling LLM are both configured. */
-  get enabled(): boolean {
-    return this.embeddings.enabled && this.labeler.enabled;
+  async isEnabled(userId: string): Promise<boolean> {
+    return (
+      (await this.embeddings.isEnabled(userId)) &&
+      (await this.aiConfig.isEnabled(userId, 'topics'))
+    );
   }
 
   /** The pending proposals surfaced in the topics UI, newest first. */
@@ -93,7 +98,7 @@ export class TopicProposalsService {
       where: { userId, status: 'pending' },
       order: { createdAt: 'DESC' },
     });
-    return { proposals: rows.map(toProposalDto), enabled: this.enabled };
+    return { proposals: rows.map(toProposalDto), enabled: await this.isEnabled(userId) };
   }
 
   /** Users with a generate run in flight — a double-click coalesces, not duplicates. */
@@ -107,7 +112,7 @@ export class TopicProposalsService {
    * flight for the user. Returns the refreshed list.
    */
   async generate(userId: string): Promise<TopicProposalListResponse> {
-    if (!this.enabled) return this.listProposals(userId);
+    if (!(await this.isEnabled(userId))) return this.listProposals(userId);
     if (this.generating.has(userId)) return this.listProposals(userId);
     this.generating.add(userId);
     try {
@@ -209,9 +214,9 @@ export class TopicProposalsService {
     if (proposal.status !== 'pending') {
       throw new ConflictException('proposal has already been resolved');
     }
-    if (!this.topics.enabled) {
+    if (!(await this.topics.isEnabled(userId))) {
       throw new BadRequestException(
-        'topic classification is not configured (set TOPICS_API_KEY, or TOPICS_ENABLED=true for keyless local endpoints such as Ollama)',
+        'topic classification is not configured (assign a provider to the topics capability in Settings → AI)',
       );
     }
 
@@ -320,7 +325,7 @@ export class TopicProposalsService {
     if (samples.length === 0) return null;
 
     try {
-      const result = await this.labeler.label({ samples, language });
+      const result = await this.labeler.label(userId, { samples, language });
       const label = result.label.trim();
       if (!label) return null;
       return { label, description: result.description };

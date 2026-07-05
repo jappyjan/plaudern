@@ -84,7 +84,7 @@ export class RecordingMergeProcessor {
     // From here on the merge exists; extraction problems are recoverable via
     // the ordinary retry/reprocess endpoints, so log-and-continue.
     try {
-      await this.synthesizeExtractions(mergedItemId, storageKey, contentType, ordered, durationsSeconds);
+      await this.synthesizeExtractions(userId, mergedItemId, storageKey, contentType, ordered, durationsSeconds);
     } catch (cause) {
       this.logger.error(
         `stitching extractions for merged item ${mergedItemId} failed: ${(cause as Error).message}`,
@@ -105,6 +105,7 @@ export class RecordingMergeProcessor {
    * completion.
    */
   private async synthesizeExtractions(
+    userId: string,
     mergedItemId: string,
     storageKey: string,
     contentType: string,
@@ -172,7 +173,7 @@ export class RecordingMergeProcessor {
     } else {
       // No-op (returns null) when speaker identification is turned off —
       // matching how the sources were processed.
-      await this.speakerId.enqueueDiarization(mergedItemId, { storageKey, contentType });
+      await this.speakerId.enqueueDiarization(userId, mergedItemId, { storageKey, contentType });
     }
 
     if (transcriptionRow) {
@@ -184,7 +185,7 @@ export class RecordingMergeProcessor {
         language: language ?? undefined,
       });
     } else {
-      await this.transcription.enqueueTranscription(mergedItemId, { storageKey, contentType });
+      await this.transcription.enqueueTranscription(mergedItemId, { userId, storageKey, contentType });
     }
   }
 }

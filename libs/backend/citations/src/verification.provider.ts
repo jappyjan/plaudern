@@ -42,9 +42,7 @@ export interface VerificationResult {
 
 export interface CitationVerifier {
   readonly id: string;
-  /** Whether the verifier is configured enough to run (e.g. has an API key). */
-  readonly enabled: boolean;
-  verify(input: VerificationInput): Promise<VerificationResult>;
+  verify(userId: string, input: VerificationInput): Promise<VerificationResult>;
 }
 
 export const CITATION_VERIFIER = Symbol('CITATION_VERIFIER');

@@ -23,9 +23,12 @@ export interface TopicProposalLabelResult {
  */
 export interface TopicProposalLabelProvider {
   readonly id: string;
-  /** Whether the labeling LLM is configured enough to run (e.g. has an API key). */
-  readonly enabled: boolean;
-  label(input: TopicProposalLabelInput): Promise<TopicProposalLabelResult>;
+  /**
+   * Label a cluster for a specific user — the user's DB-backed AI config
+   * (`@plaudern/ai-config`, capability `topics`) decides the endpoint/model.
+   * Throws if the user has not configured the topics capability.
+   */
+  label(userId: string, input: TopicProposalLabelInput): Promise<TopicProposalLabelResult>;
 }
 
 export const TOPIC_PROPOSAL_LABEL_PROVIDER = Symbol('TOPIC_PROPOSAL_LABEL_PROVIDER');

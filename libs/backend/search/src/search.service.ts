@@ -74,7 +74,9 @@ export class SearchService {
       return {
         results: [],
         legs: {
-          semantic: query ? statusForSemantic(this.embeddingSearch.enabled) : 'skipped',
+          semantic: query
+            ? statusForSemantic(await this.embeddingSearch.isEnabled(userId))
+            : 'skipped',
           keyword: query ? 'ran' : 'skipped',
           notes: ['no items match the given filters'],
         },
@@ -103,7 +105,7 @@ export class SearchService {
     // --- semantic leg (degrades gracefully) ---
     let semanticHits: EmbeddingSearchHit[] = [];
     let semanticStatus: SearchLegStatus;
-    if (!this.embeddingSearch.enabled) {
+    if (!(await this.embeddingSearch.isEnabled(userId))) {
       semanticStatus = 'unavailable';
       notes.push(
         'semantic search unavailable: embeddings provider not configured — returning keyword + filter results only',
@@ -170,12 +172,12 @@ export class SearchService {
    * unconfigured or the item has no embeddings yet.
    */
   async similar(userId: string, itemId: string, limit = 10): Promise<SimilarResponse> {
-    if (!this.embeddingSearch.enabled) {
+    if (!(await this.embeddingSearch.isEnabled(userId))) {
       return {
         results: [],
         available: false,
         reason:
-          'semantic search is unavailable because embeddings are not configured (set EMBEDDINGS_API_KEY, or EMBEDDINGS_ENABLED=true for keyless local endpoints such as Ollama)',
+          'semantic search is unavailable because embeddings are not configured — add an AI provider and assign it to the embeddings capability in Settings → AI',
       };
     }
 

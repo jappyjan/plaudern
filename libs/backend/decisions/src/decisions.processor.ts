@@ -45,7 +45,7 @@ export class DecisionsProcessor {
         throw new Error('no succeeded transcription to extract decisions from');
       }
 
-      const result = await this.provider.extract(input);
+      const result = await this.provider.extract(item.userId, input);
       const decisionCount = await this.persistence.persist(
         item.userId,
         item.id,

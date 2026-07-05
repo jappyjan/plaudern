@@ -42,7 +42,7 @@ export class RemindersProcessor {
         throw new Error('no succeeded transcription to extract reminders from');
       }
 
-      const result = await this.provider.extract(input);
+      const result = await this.provider.extract(item.userId, input);
       const occurredAt = input.occurredAt ?? toIso(item.occurredAt);
       const reminderCount = await this.persistence.persist(
         item.userId,

@@ -25,4 +25,6 @@ export const USER_OWNED_DATA_TABLES = [
   'calendar_events',
   'recording_event_links',
   'inbox_tombstones',
+  'ai_providers',
+  'ai_capability_settings',
 ] as const;

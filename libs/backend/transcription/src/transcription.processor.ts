@@ -40,7 +40,7 @@ export class TranscriptionProcessor {
       // Presign at run time (not enqueue time) so queue retries never hold an
       // expired URL. The provider downloads the URL itself.
       const audioUrl = await this.storage.createInternalPresignedGetUrl(job.storageKey);
-      const result = await this.provider.transcribe({
+      const result = await this.provider.transcribe(job.userId, {
         audioUrl,
         contentType: job.contentType,
         filename: job.filename,

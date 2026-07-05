@@ -13,6 +13,8 @@ import {
 import { TRANSCRIPTION_QUEUE, type TranscriptionQueue } from './transcription.job';
 
 export interface EnqueueParams {
+  /** Owner of the item; selects the per-user transcription provider/config. */
+  userId: string;
   storageKey: string;
   contentType: string;
   filename?: string;
@@ -43,15 +45,19 @@ export class TranscriptionService {
   ) {}
 
   async enqueueTranscription(inboxItemId: string, params: EnqueueParams): Promise<string> {
+    const provider = params.passthrough
+      ? TEXT_PASSTHROUGH_PROVIDER_ID
+      : await this.provider.providerId(params.userId);
     const extraction = await this.inbox.addExtraction(
       inboxItemId,
       'transcription',
-      params.passthrough ? TEXT_PASSTHROUGH_PROVIDER_ID : this.provider.id,
+      provider,
       TRANSCRIPTION_EXTRACTOR_VERSION,
     );
     await this.queue.enqueue({
       extractionId: extraction.id,
       inboxItemId,
+      userId: params.userId,
       storageKey: params.storageKey,
       contentType: params.contentType,
       filename: params.filename,
@@ -83,6 +89,7 @@ export class TranscriptionService {
       throw new ConflictException('a transcription is already in progress');
     }
     return this.enqueueTranscription(item.id, {
+      userId,
       storageKey: source.storageKey,
       contentType: source.contentType,
       filename: source.originalFilename ?? undefined,

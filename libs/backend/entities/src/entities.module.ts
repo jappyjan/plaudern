@@ -22,7 +22,7 @@ import { ENTITY_EXTRACTION_PROVIDER } from './entities.provider';
 import { ENTITY_EXTRACTION_QUEUE } from './entities.job';
 import { CONTACT_RESOLUTION_PROVIDER } from './contact-resolution.provider';
 import { ENTITY_JUDGE_PROVIDER } from './entity-judge.provider';
-import { WEB_RESEARCH_FETCH, WEB_RESEARCH_PROVIDER } from './web-research.provider';
+import { WEB_RESEARCH_PROVIDER } from './web-research.provider';
 import { RELATION_EXTRACTION_PROVIDER } from './relations.provider';
 import { RELATION_EXTRACTION_QUEUE } from './relations.job';
 import { OpenAiEntityExtractionProvider } from './providers/openai.provider';
@@ -99,17 +99,14 @@ import { RelationsExtractor } from './relations.extractor';
       inject: [OpenAiEntityJudgeProvider],
       useFactory: (openai: OpenAiEntityJudgeProvider) => openai,
     },
-    // Injectable fetch for web research; plain global fetch in production, a fake
-    // in tests. Web research is OFF unless WEB_RESEARCH_ENABLED=true.
-    { provide: WEB_RESEARCH_FETCH, useValue: (url: string, init?: RequestInit) => fetch(url, init) },
+    // Web research is opt-in per user: callers gate on
+    // `aiConfig.isEnabled(userId, 'web_research')` before invoking, and the
+    // provider resolves the user's DB-backed config (returning empty when
+    // unset), so the real provider can be bound unconditionally.
     {
       provide: WEB_RESEARCH_PROVIDER,
-      inject: [ConfigService, OpenAiWebResearchProvider, DisabledWebResearchProvider],
-      useFactory: (
-        config: ConfigService,
-        openai: OpenAiWebResearchProvider,
-        disabled: DisabledWebResearchProvider,
-      ) => (config.get<string>('WEB_RESEARCH_ENABLED', 'false') === 'true' ? openai : disabled),
+      inject: [OpenAiWebResearchProvider],
+      useFactory: (openai: OpenAiWebResearchProvider) => openai,
     },
     EntitiesRegistryService,
     EntitiesCorrectionService,

@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
+import { AiConfigService } from '@plaudern/ai-config';
 import { InboxService } from '@plaudern/inbox';
 import type { ExtractionStatus } from '@plaudern/contracts';
 import type { ExtractedPayloadEntity } from '@plaudern/persistence';
@@ -27,19 +28,16 @@ export const RELATIONS_EXTRACTOR_VERSION = 1;
 export class RelationsService {
   constructor(
     private readonly inbox: InboxService,
+    private readonly aiConfig: AiConfigService,
     @Inject(RELATION_EXTRACTION_PROVIDER)
     private readonly provider: RelationExtractionProvider,
     @Inject(RELATION_EXTRACTION_QUEUE)
     private readonly queue: RelationExtractionQueue,
   ) {}
 
-  /**
-   * Whether relation extraction is configured. Shares the entity-extraction
-   * configuration (ENTITY_EXTRACTION_API_KEY / ENTITY_EXTRACTION_ENABLED) —
-   * relations only ever run downstream of entities.
-   */
-  get enabled(): boolean {
-    return this.provider.enabled;
+  /** Whether relation extraction is configured for this user. */
+  isEnabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'entity_relations');
   }
 
   /**
@@ -48,9 +46,9 @@ export class RelationsService {
    * history); the graph supersedes old evidence on success.
    */
   async retry(userId: string, inboxItemId: string): Promise<string> {
-    if (!this.provider.enabled) {
+    if (!(await this.aiConfig.isEnabled(userId, 'entity_relations'))) {
       throw new BadRequestException(
-        'relation extraction is not configured (set ENTITY_EXTRACTION_API_KEY, or ENTITY_EXTRACTION_ENABLED=true for keyless local endpoints such as Ollama)',
+        'relation extraction is not configured (assign a provider in Settings → AI)',
       );
     }
     const item = await this.inbox.getItem(userId, inboxItemId);

@@ -44,9 +44,10 @@ export interface QuestionExtractionResult {
  */
 export interface QuestionExtractionProvider {
   readonly id: string;
-  /** Whether the provider is configured enough to run (e.g. has an API key). */
-  readonly enabled: boolean;
-  extract(input: QuestionExtractionInput): Promise<QuestionExtractionResult>;
+  extract(
+    userId: string,
+    input: QuestionExtractionInput,
+  ): Promise<QuestionExtractionResult>;
 }
 
 export const QUESTION_EXTRACTION_PROVIDER = Symbol('QUESTION_EXTRACTION_PROVIDER');

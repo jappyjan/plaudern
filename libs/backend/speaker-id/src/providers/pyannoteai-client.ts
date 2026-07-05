@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { numberParam, type ResolvedAiConfig } from '@plaudern/ai-config';
 
 /** A stored voiceprint keyed by the label /identify should report on a match. */
 export interface PyannoteAiVoiceprint {
@@ -37,6 +38,21 @@ export class PyannoteAiClient {
     private readonly pollIntervalMs: number,
     private readonly timeoutMs: number,
   ) {}
+
+  /**
+   * Build a client from a user's resolved `speaker_id` config (DB-backed AI
+   * settings). Endpoint, key, model and timeout come straight off the resolved
+   * config; the poll interval is a capability param.
+   */
+  static fromResolvedConfig(cfg: ResolvedAiConfig): PyannoteAiClient {
+    return new PyannoteAiClient(
+      cfg.baseUrl,
+      cfg.apiKey ?? '',
+      cfg.model,
+      numberParam(cfg, 'pollIntervalMs', 3_000),
+      cfg.timeoutMs,
+    );
+  }
 
   /**
    * Upload audio bytes to pyannoteAI's own temporary storage and return the
@@ -112,7 +128,7 @@ export class PyannoteAiClient {
     // configured still starts; the job then fails with a clear message.
     if (!this.apiKey) {
       throw new Error(
-        'PYANNOTEAI_API_KEY is not set — cannot use pyannoteAI (get a key at pyannote.ai, or set SPEAKER_ID_PROVIDER=off)',
+        'speaker identification is not configured — assign a pyannoteAI provider (with an API key) in Settings → AI',
       );
     }
     return { 'content-type': 'application/json', authorization: `Bearer ${this.apiKey}` };

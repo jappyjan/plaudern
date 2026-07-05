@@ -45,7 +45,7 @@ export class QuestionsProcessor {
         throw new Error('no succeeded transcription to extract questions from');
       }
 
-      const result = await this.provider.extract(input);
+      const result = await this.provider.extract(item.userId, input);
       const questionCount = await this.persistence.persist(
         item.userId,
         item.id,

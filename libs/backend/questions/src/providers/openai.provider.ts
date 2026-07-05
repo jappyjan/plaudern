@@ -1,5 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable } from '@nestjs/common';
+import { AiConfigService, OpenAiChatClient } from '@plaudern/ai-config';
 import { extractedQuestionSchema, type ExtractedQuestion } from '@plaudern/contracts';
 import type {
   QuestionExtractionInput,
@@ -7,95 +7,45 @@ import type {
   QuestionExtractionResult,
 } from '../questions.provider';
 
-interface ChatChoice {
-  message?: { content?: string | null };
-}
-interface ChatResponse {
-  choices?: ChatChoice[];
-  model?: string;
-}
-
 /**
  * Extracts open questions via an OpenAI-compatible `/chat/completions`
- * endpoint. Defaults to DeepSeek (`deepseek-chat`) — the cheapest capable
- * option — but any provider exposing the OpenAI schema works by overriding
- * QUESTIONS_BASE_URL/MODEL, including a **local Ollama** server
- * (`QUESTIONS_BASE_URL=http://localhost:11434/v1`) — the local-model tier that
- * keeps sensitive transcripts off the network, mirroring the commitments and
- * topics extractors.
- *
- * Only text is sent to the configured endpoint; no audio ever leaves our infra.
+ * endpoint. The endpoint/model come from the user's DB-backed AI config
+ * (`@plaudern/ai-config`, capability `questions`) — any provider exposing the
+ * OpenAI schema works (DeepSeek, OpenAI, OpenRouter, a local Ollama/llama.cpp
+ * server, …), the local-model tier that keeps sensitive transcripts off the
+ * network. Only text is sent to the configured endpoint; no audio ever leaves
+ * our infra.
  */
 @Injectable()
 export class OpenAiQuestionExtractionProvider implements QuestionExtractionProvider {
-  readonly id: string;
-  private readonly logger = new Logger(OpenAiQuestionExtractionProvider.name);
-  private readonly baseUrl: string;
-  private readonly apiKey: string;
-  private readonly model: string;
-  private readonly timeoutMs: number;
-  private readonly explicitlyEnabled: boolean;
+  readonly id = 'openai';
 
-  constructor(config: ConfigService) {
-    this.baseUrl = config
-      .get<string>('QUESTIONS_BASE_URL', 'https://api.deepseek.com/v1')
-      .replace(/\/+$/, '');
-    this.apiKey = config.get<string>('QUESTIONS_API_KEY', '');
-    this.model = config.get<string>('QUESTIONS_MODEL', 'deepseek-chat');
-    this.timeoutMs = Number(config.get<string>('QUESTIONS_TIMEOUT_MS', String(2 * 60_000)));
-    // Cloud endpoints are gated on an API key — an empty key means "disabled".
-    // Keyless local OpenAI-compatible servers (Ollama, llama.cpp, …) opt in
-    // explicitly via QUESTIONS_ENABLED=true.
-    this.explicitlyEnabled = config.get<string>('QUESTIONS_ENABLED', 'false') === 'true';
-    this.id = `openai:${this.model}`;
-  }
+  constructor(
+    private readonly aiConfig: AiConfigService,
+    private readonly chat: OpenAiChatClient,
+  ) {}
 
-  get enabled(): boolean {
-    return this.apiKey.length > 0 || this.explicitlyEnabled;
-  }
-
-  async extract(input: QuestionExtractionInput): Promise<QuestionExtractionResult> {
-    if (!this.enabled) {
+  async extract(
+    userId: string,
+    input: QuestionExtractionInput,
+  ): Promise<QuestionExtractionResult> {
+    const config = await this.aiConfig.resolve(userId, 'questions');
+    if (!config) {
       throw new Error(
-        'question extraction is disabled — set QUESTIONS_API_KEY (cloud endpoints) or ' +
-          'QUESTIONS_ENABLED=true (keyless local endpoints such as Ollama) to enable it',
+        'question extraction is not configured — assign a provider to the questions capability in Settings → AI',
       );
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    try {
-      const headers: Record<string, string> = { 'content-type': 'application/json' };
-      // Most local servers (Ollama, llama.cpp) ignore auth entirely; only send
-      // the header when a key was actually configured.
-      if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
-      const res = await fetch(`${this.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: this.model,
-          temperature: 0,
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
-            { role: 'user', content: buildUserPrompt(input) },
-          ],
-        }),
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        throw new Error(
-          `question extraction request failed: ${res.status} ${body.slice(0, 500)}`,
-        );
-      }
-      const json = (await res.json()) as ChatResponse;
-      const content = json.choices?.[0]?.message?.content ?? '';
-      const questions = parseQuestionsResponse(content);
-      return { questions, model: json.model ?? this.model, raw: json };
-    } finally {
-      clearTimeout(timer);
-    }
+    const response = await this.chat.chat(config, {
+      temperature: 0,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: buildUserPrompt(input) },
+      ],
+    });
+    const questions = parseQuestionsResponse(this.chat.contentOf(response));
+    return { questions, model: response.model ?? config.model, raw: response };
   }
 }
 

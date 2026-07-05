@@ -60,7 +60,7 @@ export class TopicsProcessor {
       // no assignments rather than calling the model for a guaranteed empty
       // answer.
       if (activeTopics.length > 0) {
-        const result = await this.provider.classify({
+        const result = await this.provider.classify(item.userId, {
           content: content.content,
           language: content.language,
           topics: activeTopics.map((t) => ({

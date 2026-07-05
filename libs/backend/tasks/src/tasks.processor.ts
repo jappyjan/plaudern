@@ -47,7 +47,7 @@ export class TasksProcessor {
       // any stale/mis-attributed ones) rather than guessing whose tasks these are.
       const result =
         ctx.kind === 'ready'
-          ? await this.provider.extract(ctx.input)
+          ? await this.provider.extract(item.userId, ctx.input)
           : { tasks: [], model: this.provider.id };
       const segments = transcriptionSegments(item);
       const candidates: TaskCandidate[] = result.tasks.map((task) => {

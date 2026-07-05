@@ -1,5 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Checkbox, Input, Select, SelectItem, Spinner, Switch } from '@heroui/react';
+import {
+  Button,
+  Checkbox,
+  Input,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  Select,
+  SelectItem,
+  Spinner,
+  Switch,
+} from '@heroui/react';
 import {
   NOTIFICATION_CATEGORY_DESCRIPTIONS,
   NOTIFICATION_CATEGORY_LABELS,
@@ -11,6 +24,11 @@ import {
   type QuietHours,
   SUMMARY_LANGUAGE_LABELS,
   summaryLanguagePreferenceSchema,
+  aiProviderProtocolSchema,
+  type AiProviderDto,
+  type AiProviderProtocol,
+  type AiCapabilityCatalogEntry,
+  type AiCapabilitySettingDto,
   type CalendarFeedsResponse,
   type EmailSettingsDto,
   type GooglePendingResponse,
@@ -23,9 +41,12 @@ import {
 import { useAuth } from '../auth/AuthContext';
 import { addPasskey, deletePasskey, listPasskeys } from '../lib/auth';
 import {
+  createAiProvider,
   createCalendarFeed,
   createGoogleFeeds,
+  deleteAiProvider,
   deleteCalendarFeed,
+  getAiCapabilities,
   getConsentSettings,
   getEmailSettings,
   getMcpTokenStatus,
@@ -34,6 +55,7 @@ import {
   getGooglePending,
   getPlaudSettings,
   getSummarizationSettings,
+  listAiProviders,
   listCalendarFeeds,
   mintMcpToken,
   purgeAllData,
@@ -45,6 +67,8 @@ import {
   testPlaudConnection,
   triggerCalendarSync,
   triggerPlaudSync,
+  updateAiCapability,
+  updateAiProvider,
   updateCalendarFeed,
   updateConsentSettings,
   updateEmailSettings,
@@ -305,6 +329,10 @@ export function SettingsPage({
 
       <SummarizationSection />
 
+      <AiProvidersSection />
+
+      <AiCapabilitiesSection />
+
       <ConsentSection />
 
       <NotificationsSection />
@@ -496,6 +524,560 @@ function SummarizationSection() {
         <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">{error}</div>
       )}
       {saved && !error && <span className="text-sm text-success">Saved.</span>}
+    </div>
+  );
+}
+
+const AI_PROTOCOL_LABELS: Record<AiProviderProtocol, string> = {
+  'openai-compatible': 'OpenAI-compatible (chat / embeddings)',
+  elevenlabs: 'ElevenLabs (speech-to-text)',
+  whisper: 'Whisper (self-hosted transcription)',
+  pyannoteai: 'pyannoteAI (diarization)',
+};
+
+const NO_PROVIDER_KEY = '__none__';
+
+/**
+ * Add or edit an AI provider *connection* (credentials). The API key is
+ * write-only: on edit, leaving it blank keeps the stored key, so we never
+ * prefill it — mirroring the Plaud password field.
+ */
+function AiProviderModal({
+  isOpen,
+  provider,
+  onClose,
+  onSaved,
+}: {
+  isOpen: boolean;
+  provider?: AiProviderDto | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const editing = Boolean(provider);
+  const [name, setName] = useState('');
+  const [protocol, setProtocol] = useState<AiProviderProtocol>('openai-compatible');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setName(provider?.name ?? '');
+    setProtocol(provider?.protocol ?? 'openai-compatible');
+    setBaseUrl(provider?.baseUrl ?? '');
+    setApiKey('');
+    setError(null);
+  }, [isOpen, provider]);
+
+  const close = () => {
+    if (saving) return;
+    onClose();
+  };
+
+  const save = async () => {
+    const trimmedName = name.trim();
+    const trimmedBaseUrl = baseUrl.trim();
+    if (!trimmedName || !trimmedBaseUrl) return;
+    setSaving(true);
+    setError(null);
+    try {
+      if (provider) {
+        // Empty apiKey => omit (keep stored key). Editing the key needs an
+        // explicit value; clearing a key uses the dedicated "Clear key" button.
+        await updateAiProvider(provider.id, {
+          name: trimmedName,
+          protocol,
+          baseUrl: trimmedBaseUrl,
+          ...(apiKey ? { apiKey } : {}),
+        });
+      } else {
+        await createAiProvider({
+          name: trimmedName,
+          protocol,
+          baseUrl: trimmedBaseUrl,
+          ...(apiKey ? { apiKey } : {}),
+        });
+      }
+      onSaved();
+      onClose();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={close} placement="center" isDismissable={!saving}>
+      <ModalContent>
+        <ModalHeader>{editing ? 'Edit provider' : 'Add provider'}</ModalHeader>
+        <ModalBody className="gap-4 py-6">
+          <Input
+            label="Name"
+            placeholder="e.g. DeepSeek, local Ollama"
+            value={name}
+            onValueChange={setName}
+            isDisabled={saving}
+            maxLength={120}
+            autoFocus
+          />
+          <Select
+            label="Protocol"
+            selectedKeys={[protocol]}
+            isDisabled={saving}
+            onSelectionChange={(keys) => {
+              const key = Array.from(keys)[0];
+              if (typeof key === 'string') setProtocol(key as AiProviderProtocol);
+            }}
+            disallowEmptySelection
+          >
+            {aiProviderProtocolSchema.options.map((p) => (
+              <SelectItem key={p}>{AI_PROTOCOL_LABELS[p]}</SelectItem>
+            ))}
+          </Select>
+          <Input
+            label="Base URL"
+            placeholder="https://api.deepseek.com/v1"
+            value={baseUrl}
+            onValueChange={setBaseUrl}
+            isDisabled={saving}
+            maxLength={2000}
+            autoComplete="off"
+          />
+          <Input
+            label="API key"
+            type="password"
+            value={apiKey}
+            onValueChange={setApiKey}
+            isDisabled={saving}
+            maxLength={4000}
+            placeholder={
+              editing && provider?.hasApiKey ? '••••••••  (unchanged)' : 'Leave blank for keyless local endpoints'
+            }
+            description={
+              editing && provider?.hasApiKey
+                ? 'Leave empty to keep the stored key.'
+                : 'Optional — leave blank for keyless local endpoints (Ollama, llama.cpp, …).'
+            }
+            autoComplete="new-password"
+          />
+          {error && <p className="text-sm text-danger">{error}</p>}
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="light" onPress={close} isDisabled={saving}>
+            Cancel
+          </Button>
+          <Button
+            color="primary"
+            onPress={() => void save()}
+            isLoading={saving}
+            isDisabled={!name.trim() || !baseUrl.trim()}
+          >
+            {editing ? 'Save' : 'Add'}
+          </Button>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
+  );
+}
+
+/**
+ * AI provider connections (JJ AI-config): the per-user list of endpoints +
+ * credentials the app's AI capabilities draw on. Keys are write-only — the
+ * list only ever shows a masked hint. Capabilities are wired to these
+ * connections in the section below.
+ */
+function AiProvidersSection() {
+  const [providers, setProviders] = useState<AiProviderDto[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<AiProviderDto | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<AiProviderDto | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      setProviders((await listAiProviders()).providers);
+      setLoadError(null);
+    } catch (cause) {
+      setLoadError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const remove = async () => {
+    if (!confirmDelete) return;
+    setDeleting(true);
+    setActionError(null);
+    try {
+      await deleteAiProvider(confirmDelete.id);
+      setConfirmDelete(null);
+      await refresh();
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4 border-t border-default-200 pt-6">
+      <div>
+        <h2 className="text-lg font-semibold">AI providers</h2>
+        <p className="text-sm text-default-500">
+          Connect the AI endpoints that power summaries, transcription, extraction and chat — any
+          OpenAI-compatible server, ElevenLabs, a self-hosted Whisper, or pyannoteAI. Keys are
+          stored encrypted and never shown again. Assign them to capabilities below.
+        </p>
+      </div>
+
+      {loadError && (
+        <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">
+          Failed to load providers: {loadError}
+        </div>
+      )}
+      {actionError && (
+        <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">{actionError}</div>
+      )}
+
+      {providers && providers.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {providers.map((p) => (
+            <div
+              key={p.id}
+              className="flex items-center justify-between gap-2 rounded-medium bg-default-50 p-3 text-sm"
+            >
+              <div className="min-w-0">
+                <p className="truncate font-medium">{p.name}</p>
+                <p className="truncate text-xs text-default-500">
+                  {AI_PROTOCOL_LABELS[p.protocol]} · {p.baseUrl}
+                </p>
+                <p className="truncate text-xs text-default-400">
+                  {p.hasApiKey ? `Key ···${p.apiKeyHint ?? ''}` : 'Keyless'}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="flat"
+                  onPress={() => {
+                    setEditing(p);
+                    setModalOpen(true);
+                  }}
+                >
+                  Edit
+                </Button>
+                <Button
+                  size="sm"
+                  variant="light"
+                  color="danger"
+                  onPress={() => {
+                    setActionError(null);
+                    setConfirmDelete(p);
+                  }}
+                >
+                  Remove
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {providers && providers.length === 0 && (
+        <p className="text-sm text-default-500">No providers connected yet.</p>
+      )}
+
+      <Button
+        color="primary"
+        variant="flat"
+        className="self-start"
+        onPress={() => {
+          setEditing(null);
+          setModalOpen(true);
+        }}
+      >
+        Add provider
+      </Button>
+
+      <AiProviderModal
+        isOpen={modalOpen}
+        provider={editing}
+        onClose={() => setModalOpen(false)}
+        onSaved={() => void refresh()}
+      />
+
+      <ConfirmDeleteModal
+        isOpen={confirmDelete !== null}
+        title="Remove provider?"
+        message={
+          confirmDelete
+            ? `Remove “${confirmDelete.name}”? Any capability using it will fall back to unconfigured until you reassign it.`
+            : ''
+        }
+        confirmLabel="Remove"
+        isDeleting={deleting}
+        error={actionError}
+        onConfirm={() => void remove()}
+        onClose={() => setConfirmDelete(null)}
+      />
+    </div>
+  );
+}
+
+/**
+ * One capability row: assign a provider connection (filtered to compatible
+ * protocols), override the model, toggle it on/off, and set any
+ * capability-specific params. Saves independently through `updateAiCapability`.
+ */
+function AiCapabilityRow({
+  entry,
+  setting,
+  providers,
+  onSaved,
+}: {
+  entry: AiCapabilityCatalogEntry;
+  setting: AiCapabilitySettingDto;
+  providers: AiProviderDto[];
+  onSaved: (next: AiCapabilitySettingDto) => void;
+}) {
+  const [providerId, setProviderId] = useState<string | null>(setting.providerId);
+  const [model, setModel] = useState(setting.model ?? '');
+  const [enabled, setEnabled] = useState(setting.enabled);
+  const [params, setParams] = useState<Record<string, unknown>>(setting.params);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  const compatible = providers.filter((p) => entry.compatibleProtocols.includes(p.protocol));
+
+  const setParam = (key: string, value: unknown) => {
+    setParams((prev) => ({ ...prev, [key]: value }));
+    setSaved(false);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const next = await updateAiCapability(entry.capability, {
+        providerId,
+        model: model.trim() === '' ? null : model.trim(),
+        enabled,
+        params,
+      });
+      onSaved(next);
+      setSaved(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3 rounded-medium border border-default-200 p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="flex items-center gap-2 font-medium">
+            {entry.label}
+            {entry.optIn && (
+              <span className="rounded bg-default-100 px-1.5 py-0.5 text-xs font-normal text-default-500">
+                opt-in
+              </span>
+            )}
+          </p>
+          <p className="text-sm text-default-500">{entry.description}</p>
+        </div>
+        <span
+          className={
+            setting.active
+              ? 'shrink-0 rounded-full bg-success-100 px-2 py-0.5 text-xs text-success-700'
+              : 'shrink-0 rounded-full bg-default-100 px-2 py-0.5 text-xs text-default-500'
+          }
+        >
+          {setting.active ? 'Active' : 'Inactive'}
+        </span>
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <Select
+          label="Provider"
+          className="sm:flex-1"
+          selectedKeys={[providerId ?? NO_PROVIDER_KEY]}
+          isDisabled={saving}
+          onSelectionChange={(keys) => {
+            const key = Array.from(keys)[0];
+            setProviderId(key === NO_PROVIDER_KEY || key === undefined ? null : String(key));
+            setSaved(false);
+          }}
+          disallowEmptySelection
+          description={
+            compatible.length === 0 ? 'No compatible provider connected — add one above.' : undefined
+          }
+        >
+          {[
+            <SelectItem key={NO_PROVIDER_KEY}>None (disabled)</SelectItem>,
+            ...compatible.map((p) => <SelectItem key={p.id}>{p.name}</SelectItem>),
+          ]}
+        </Select>
+        <Input
+          label="Model"
+          className="sm:flex-1"
+          value={model}
+          onValueChange={(v) => {
+            setModel(v);
+            setSaved(false);
+          }}
+          isDisabled={saving}
+          placeholder={entry.defaultModel ?? 'Provider default'}
+          autoComplete="off"
+        />
+      </div>
+
+      {entry.params.length > 0 && (
+        <div className="flex flex-col gap-3">
+          {entry.params.map((param) => {
+            const value = params[param.key];
+            if (param.type === 'boolean') {
+              return (
+                <Switch
+                  key={param.key}
+                  size="sm"
+                  isSelected={Boolean(value)}
+                  isDisabled={saving}
+                  onValueChange={(on) => setParam(param.key, on)}
+                >
+                  {param.label}
+                </Switch>
+              );
+            }
+            return (
+              <Input
+                key={param.key}
+                type={param.type === 'number' ? 'number' : 'text'}
+                label={param.label}
+                description={param.description ?? undefined}
+                placeholder={param.placeholder ?? undefined}
+                isDisabled={saving}
+                value={value === undefined || value === null ? '' : String(value)}
+                onValueChange={(v) => {
+                  if (param.type === 'number') {
+                    setParam(param.key, v.trim() === '' ? null : Number(v));
+                  } else {
+                    setParam(param.key, v);
+                  }
+                }}
+              />
+            );
+          })}
+        </div>
+      )}
+
+      <div className="flex items-center gap-3">
+        <Switch
+          size="sm"
+          isSelected={enabled}
+          isDisabled={saving}
+          onValueChange={(on) => {
+            setEnabled(on);
+            setSaved(false);
+          }}
+        >
+          Enabled
+        </Switch>
+        <Button
+          size="sm"
+          color="primary"
+          className="ml-auto"
+          isLoading={saving}
+          onPress={() => void save()}
+        >
+          Save
+        </Button>
+      </div>
+
+      {error && <div className="rounded-medium bg-danger-50 p-2 text-xs text-danger">{error}</div>}
+      {saved && !error && <span className="text-xs text-success">Saved.</span>}
+    </div>
+  );
+}
+
+/**
+ * AI capabilities: every AI task the app performs (summaries, transcription,
+ * extraction, chat, …), each wired to one provider connection + model. Filters
+ * the provider dropdown to protocols each capability can actually speak.
+ */
+function AiCapabilitiesSection() {
+  const [catalog, setCatalog] = useState<AiCapabilityCatalogEntry[] | null>(null);
+  const [settings, setSettings] = useState<AiCapabilitySettingDto[]>([]);
+  const [providers, setProviders] = useState<AiProviderDto[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const [caps, providerList] = await Promise.all([getAiCapabilities(), listAiProviders()]);
+      setCatalog(caps.catalog);
+      setSettings(caps.settings);
+      setProviders(providerList.providers);
+      setLoadError(null);
+    } catch (cause) {
+      setLoadError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const applySetting = (next: AiCapabilitySettingDto) => {
+    setSettings((prev) => prev.map((s) => (s.capability === next.capability ? next : s)));
+  };
+
+  const settingFor = (capability: string): AiCapabilitySettingDto | undefined =>
+    settings.find((s) => s.capability === capability);
+
+  return (
+    <div className="flex flex-col gap-4 border-t border-default-200 pt-6">
+      <div>
+        <h2 className="text-lg font-semibold">AI capabilities</h2>
+        <p className="text-sm text-default-500">
+          Route each AI task to one of your provider connections above and pick the model it uses. A
+          capability with no provider assigned stays off.
+        </p>
+      </div>
+
+      {loadError && (
+        <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">
+          Failed to load capabilities: {loadError}
+        </div>
+      )}
+
+      {catalog === null && !loadError ? (
+        <Spinner size="sm" />
+      ) : (
+        <div className="flex flex-col gap-4">
+          {catalog?.map((entry) => {
+            const setting = settingFor(entry.capability);
+            if (!setting) return null;
+            return (
+              <AiCapabilityRow
+                key={entry.capability}
+                entry={entry}
+                setting={setting}
+                providers={providers}
+                onSaved={applySetting}
+              />
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

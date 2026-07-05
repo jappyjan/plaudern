@@ -1,5 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable } from '@nestjs/common';
+import { AiConfigService, OpenAiChatClient } from '@plaudern/ai-config';
 import { relationTypeSchema, type ExtractedRelation } from '@plaudern/contracts';
 import type {
   RelationExtractionInput,
@@ -8,93 +8,47 @@ import type {
 } from '../relations.provider';
 import { extractJsonObject } from './openai.provider';
 
-interface ChatChoice {
-  message?: { content?: string | null };
-}
-interface ChatResponse {
-  choices?: ChatChoice[];
-  model?: string;
-}
-
 /**
  * Extracts typed relations between an item's entities via an OpenAI-compatible
- * `/chat/completions` endpoint. Deliberately reuses the ENTITY_EXTRACTION_*
- * configuration (endpoint, key, model): relations only ever run downstream of
- * entities, so one knob configures the whole knowledge-graph tier — including
- * the local-Ollama option that keeps sensitive transcripts off the network.
+ * `/chat/completions` endpoint. The endpoint/model come from the user's
+ * DB-backed AI config (`@plaudern/ai-config`, capability `entity_relations`):
+ * relations only ever run downstream of entities, so this is its own tier of the
+ * knowledge graph — including the local-Ollama option that keeps sensitive
+ * transcripts off the network.
  *
  * Only text is sent to the configured endpoint; no audio ever leaves our infra.
  */
 @Injectable()
 export class OpenAiRelationExtractionProvider implements RelationExtractionProvider {
-  readonly id: string;
-  private readonly logger = new Logger(OpenAiRelationExtractionProvider.name);
-  private readonly baseUrl: string;
-  private readonly apiKey: string;
-  private readonly model: string;
-  private readonly timeoutMs: number;
-  private readonly explicitlyEnabled: boolean;
+  readonly id = 'openai';
 
-  constructor(config: ConfigService) {
-    this.baseUrl = config
-      .get<string>('ENTITY_EXTRACTION_BASE_URL', 'https://api.deepseek.com/v1')
-      .replace(/\/+$/, '');
-    this.apiKey = config.get<string>('ENTITY_EXTRACTION_API_KEY', '');
-    this.model = config.get<string>('ENTITY_EXTRACTION_MODEL', 'deepseek-chat');
-    this.timeoutMs = Number(
-      config.get<string>('ENTITY_EXTRACTION_TIMEOUT_MS', String(2 * 60_000)),
-    );
-    // Same gating as entity extraction: cloud endpoints need a key, keyless
-    // local servers (Ollama, llama.cpp, …) opt in via ENTITY_EXTRACTION_ENABLED.
-    this.explicitlyEnabled =
-      config.get<string>('ENTITY_EXTRACTION_ENABLED', 'false') === 'true';
-    this.id = `openai:${this.model}`;
-  }
+  constructor(
+    private readonly aiConfig: AiConfigService,
+    private readonly chat: OpenAiChatClient,
+  ) {}
 
-  get enabled(): boolean {
-    return this.apiKey.length > 0 || this.explicitlyEnabled;
-  }
-
-  async extract(input: RelationExtractionInput): Promise<RelationExtractionResult> {
-    if (!this.enabled) {
+  async extract(
+    userId: string,
+    input: RelationExtractionInput,
+  ): Promise<RelationExtractionResult> {
+    const config = await this.aiConfig.resolve(userId, 'entity_relations');
+    if (!config) {
       throw new Error(
-        'relation extraction is disabled — set ENTITY_EXTRACTION_API_KEY (cloud endpoints) or ' +
-          'ENTITY_EXTRACTION_ENABLED=true (keyless local endpoints such as Ollama) to enable it',
+        'relation extraction is not configured — assign a provider to the ' +
+          'entity_relations capability in Settings → AI',
       );
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    try {
-      const headers: Record<string, string> = { 'content-type': 'application/json' };
-      // Most local servers (Ollama, llama.cpp) ignore auth entirely; only send
-      // the header when a key was actually configured.
-      if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
-      const res = await fetch(`${this.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: this.model,
-          temperature: 0,
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: RELATIONS_SYSTEM_PROMPT },
-            { role: 'user', content: buildRelationsUserPrompt(input) },
-          ],
-        }),
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        throw new Error(`relation extraction request failed: ${res.status} ${body.slice(0, 500)}`);
-      }
-      const json = (await res.json()) as ChatResponse;
-      const content = json.choices?.[0]?.message?.content ?? '';
-      const relations = parseRelationsResponse(content);
-      return { relations, model: json.model ?? this.model, raw: json };
-    } finally {
-      clearTimeout(timer);
-    }
+    const response = await this.chat.chat(config, {
+      temperature: 0,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: RELATIONS_SYSTEM_PROMPT },
+        { role: 'user', content: buildRelationsUserPrompt(input) },
+      ],
+    });
+    const relations = parseRelationsResponse(this.chat.contentOf(response));
+    return { relations, model: response.model ?? config.model, raw: response };
   }
 }
 

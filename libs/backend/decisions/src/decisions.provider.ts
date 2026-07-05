@@ -38,9 +38,10 @@ export interface DecisionExtractionResult {
  */
 export interface DecisionExtractionProvider {
   readonly id: string;
-  /** Whether the provider is configured enough to run (e.g. has an API key). */
-  readonly enabled: boolean;
-  extract(input: DecisionExtractionInput): Promise<DecisionExtractionResult>;
+  extract(
+    userId: string,
+    input: DecisionExtractionInput,
+  ): Promise<DecisionExtractionResult>;
 }
 
 export const DECISION_EXTRACTION_PROVIDER = Symbol('DECISION_EXTRACTION_PROVIDER');
