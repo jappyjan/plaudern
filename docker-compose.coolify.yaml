@@ -77,6 +77,13 @@ services:
       # disable, or to change the settle delay (ms) before the sweep starts.
       # - STARTUP_BACKFILL_ENABLED=${STARTUP_BACKFILL_ENABLED:-true}
       # - STARTUP_BACKFILL_DELAY_MS=${STARTUP_BACKFILL_DELAY_MS:-15000}
+      # Startup contact resolution: on every boot, still-unlinked person
+      # entities are re-resolved against the contact book from data already
+      # stored (mentions, voices, knowledge graph) — no re-extraction, so it
+      # is cheap. The LLM arbiter reuses the ENTITY_EXTRACTION_* credentials
+      # (override with CONTACT_RESOLUTION_* to diverge). ON by default.
+      # - CONTACT_RESOLUTION_STARTUP_ENABLED=${CONTACT_RESOLUTION_STARTUP_ENABLED:-true}
+      # - CONTACT_RESOLUTION_STARTUP_DELAY_MS=${CONTACT_RESOLUTION_STARTUP_DELAY_MS:-20000}
       # AI summarization (title + Markdown summary once a recording is
       # transcribed and diarized). Empty key = disabled (UI shows the transcript
       # only). Defaults target DeepSeek — the cheapest capable option; point
