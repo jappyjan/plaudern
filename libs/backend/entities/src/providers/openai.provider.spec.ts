@@ -1,4 +1,5 @@
-import type { ConfigService } from '@nestjs/config';
+import type { AiConfigService, ResolvedAiConfig } from '@plaudern/ai-config';
+import { OpenAiChatClient } from '@plaudern/ai-config';
 import {
   buildUserPrompt,
   OpenAiEntityExtractionProvider,
@@ -7,12 +8,31 @@ import {
 } from './openai.provider';
 import type { EntityExtractionInput } from '../entities.provider';
 
-/** Minimal ConfigService stand-in — the provider only ever calls `.get(key, default)`. */
-function fakeConfig(values: Record<string, string>): ConfigService {
+const USER = 'user-1';
+
+/** A ready-to-use resolved config for the entity_extraction capability. */
+function resolved(overrides: Partial<ResolvedAiConfig> = {}): ResolvedAiConfig {
   return {
-    get: (key: string, defaultValue?: unknown) =>
-      key in values ? values[key] : defaultValue,
-  } as unknown as ConfigService;
+    capability: 'entity_extraction',
+    protocol: 'openai-compatible',
+    baseUrl: 'http://localhost:11434/v1',
+    apiKey: null,
+    model: 'llama3.1',
+    timeoutMs: 30000,
+    params: {},
+    providerId: 'p1',
+    providerName: 'test',
+    ...overrides,
+  };
+}
+
+/** Minimal AiConfigService stand-in — resolve/isEnabled/invalidate is all the provider touches. */
+function fakeAiConfig(cfg: ResolvedAiConfig | null): AiConfigService {
+  return {
+    resolve: async () => cfg,
+    isEnabled: async () => cfg !== null,
+    invalidate() {},
+  } as unknown as AiConfigService;
 }
 
 const minimalInput: EntityExtractionInput = { text: 'hello' };
@@ -105,28 +125,10 @@ describe('parseEntitiesResponse', () => {
   });
 });
 
-describe('OpenAiEntityExtractionProvider.enabled', () => {
-  it('is disabled with neither an API key nor ENTITY_EXTRACTION_ENABLED', () => {
-    expect(new OpenAiEntityExtractionProvider(fakeConfig({})).enabled).toBe(false);
-  });
-
-  it('is enabled when ENTITY_EXTRACTION_API_KEY is set (cloud default)', () => {
-    const provider = new OpenAiEntityExtractionProvider(
-      fakeConfig({ ENTITY_EXTRACTION_API_KEY: 'sk-test' }),
-    );
-    expect(provider.enabled).toBe(true);
-  });
-
-  it('is enabled via ENTITY_EXTRACTION_ENABLED=true even without a key (keyless local servers e.g. Ollama)', () => {
-    const provider = new OpenAiEntityExtractionProvider(
-      fakeConfig({ ENTITY_EXTRACTION_ENABLED: 'true' }),
-    );
-    expect(provider.enabled).toBe(true);
-  });
-
-  it('throws a descriptive error from extract() when disabled', async () => {
-    const provider = new OpenAiEntityExtractionProvider(fakeConfig({}));
-    await expect(provider.extract(minimalInput)).rejects.toThrow(/ENTITY_EXTRACTION_ENABLED/);
+describe('OpenAiEntityExtractionProvider without a resolved config', () => {
+  it('throws a descriptive error from extract() when the capability is unconfigured', async () => {
+    const provider = new OpenAiEntityExtractionProvider(fakeAiConfig(null), new OpenAiChatClient());
+    await expect(provider.extract(USER, minimalInput)).rejects.toThrow(/entity_extraction/);
   });
 });
 
@@ -148,13 +150,10 @@ describe('OpenAiEntityExtractionProvider request behavior', () => {
     global.fetch = fetchMock as unknown as typeof fetch;
 
     const provider = new OpenAiEntityExtractionProvider(
-      fakeConfig({
-        ENTITY_EXTRACTION_ENABLED: 'true',
-        ENTITY_EXTRACTION_BASE_URL: 'http://localhost:11434/v1',
-        ENTITY_EXTRACTION_MODEL: 'llama3.1',
-      }),
+      fakeAiConfig(resolved({ baseUrl: 'http://localhost:11434/v1', model: 'llama3.1', apiKey: null })),
+      new OpenAiChatClient(),
     );
-    const result = await provider.extract(minimalInput);
+    const result = await provider.extract(USER, minimalInput);
 
     expect(result.entities).toEqual([{ type: 'person', name: 'Bob', mentions: [] }]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -176,9 +175,10 @@ describe('OpenAiEntityExtractionProvider request behavior', () => {
     global.fetch = fetchMock as unknown as typeof fetch;
 
     const provider = new OpenAiEntityExtractionProvider(
-      fakeConfig({ ENTITY_EXTRACTION_API_KEY: 'sk-test' }),
+      fakeAiConfig(resolved({ apiKey: 'sk-test' })),
+      new OpenAiChatClient(),
     );
-    await provider.extract(minimalInput);
+    await provider.extract(USER, minimalInput);
 
     const [, init] = fetchMock.mock.calls[0];
     expect((init?.headers as Record<string, string>).authorization).toBe('Bearer sk-test');

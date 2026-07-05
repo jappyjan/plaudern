@@ -1,4 +1,5 @@
-import type { ConfigService } from '@nestjs/config';
+import type { AiConfigService, ResolvedAiConfig } from '@plaudern/ai-config';
+import { OpenAiChatClient } from '@plaudern/ai-config';
 import {
   buildRelationsUserPrompt,
   OpenAiRelationExtractionProvider,
@@ -7,12 +8,15 @@ import {
 } from './openai-relations.provider';
 import type { RelationExtractionInput } from '../relations.provider';
 
-/** Minimal ConfigService stand-in — the provider only ever calls `.get(key, default)`. */
-function fakeConfig(values: Record<string, string>): ConfigService {
+const USER = 'user-1';
+
+/** Minimal AiConfigService stand-in — resolve/isEnabled/invalidate is all the provider touches. */
+function fakeAiConfig(cfg: ResolvedAiConfig | null): AiConfigService {
   return {
-    get: (key: string, defaultValue?: unknown) =>
-      key in values ? values[key] : defaultValue,
-  } as unknown as ConfigService;
+    resolve: async () => cfg,
+    isEnabled: async () => cfg !== null,
+    invalidate() {},
+  } as unknown as AiConfigService;
 }
 
 const baseInput: RelationExtractionInput = {
@@ -131,24 +135,10 @@ describe('parseRelationsResponse', () => {
   });
 });
 
-describe('OpenAiRelationExtractionProvider.enabled', () => {
-  it('shares the entity-extraction gating (disabled without key or flag)', () => {
-    expect(new OpenAiRelationExtractionProvider(fakeConfig({})).enabled).toBe(false);
-    expect(
-      new OpenAiRelationExtractionProvider(
-        fakeConfig({ ENTITY_EXTRACTION_API_KEY: 'sk-test' }),
-      ).enabled,
-    ).toBe(true);
-    expect(
-      new OpenAiRelationExtractionProvider(
-        fakeConfig({ ENTITY_EXTRACTION_ENABLED: 'true' }),
-      ).enabled,
-    ).toBe(true);
-  });
-
-  it('throws a descriptive error from extract() when disabled', async () => {
-    const provider = new OpenAiRelationExtractionProvider(fakeConfig({}));
-    await expect(provider.extract(baseInput)).rejects.toThrow(/ENTITY_EXTRACTION_ENABLED/);
+describe('OpenAiRelationExtractionProvider without a resolved config', () => {
+  it('throws a descriptive error from extract() when the capability is unconfigured', async () => {
+    const provider = new OpenAiRelationExtractionProvider(fakeAiConfig(null), new OpenAiChatClient());
+    await expect(provider.extract(USER, baseInput)).rejects.toThrow(/entity_relations/);
   });
 });
 
