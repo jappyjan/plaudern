@@ -7,6 +7,7 @@ import {
 } from './commitments.provider';
 import { CommitmentContextService } from './commitment-context';
 import { CommitmentsPersistenceService } from './commitments-persistence.service';
+import { CommitmentTaskDedupeService } from './commitment-task-dedupe.service';
 import type { CommitmentExtractionJob } from './commitments.job';
 
 /**
@@ -31,6 +32,7 @@ export class CommitmentsProcessor {
     private readonly inbox: InboxService,
     private readonly context: CommitmentContextService,
     private readonly persistence: CommitmentsPersistenceService,
+    private readonly dedupe: CommitmentTaskDedupeService,
     @Inject(COMMITMENT_EXTRACTION_PROVIDER)
     private readonly provider: CommitmentExtractionProvider,
   ) {}
@@ -54,6 +56,18 @@ export class CommitmentsProcessor {
         input.occurredAt,
         result.commitments,
       );
+
+      // Best-effort: collapse owed_by_me commitments that duplicate one of the
+      // item's tasks (its `tasks: settled` dependency guarantees they exist by
+      // now). A dedupe failure must not fail the extraction — the commitments
+      // are already persisted; the only cost is a duplicate lingering.
+      try {
+        await this.dedupe.reconcile(item.userId, item.id);
+      } catch (err) {
+        this.logger.warn(
+          `commitment/task dedupe failed for ${job.inboxItemId}: ${(err as Error).message}`,
+        );
+      }
 
       const payload: CommitmentExtractionPayload = {
         model: result.model ?? this.provider.id,

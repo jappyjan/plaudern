@@ -78,6 +78,7 @@ import { CreateQuestions1720000000030 } from './migrations/1720000000030-CreateQ
 import { CreatePersonalFacts1720000000031 } from './migrations/1720000000031-CreatePersonalFacts';
 import { CreateTopicProposals1720000000032 } from './migrations/1720000000032-CreateTopicProposals';
 import { CreateChatTables1720000000033 } from './migrations/1720000000033-CreateChatTables';
+import { AddCommitmentDuplicatesTask1720000000034 } from './migrations/1720000000034-AddCommitmentDuplicatesTask';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -160,6 +161,7 @@ export const ALL_MIGRATIONS = [
   CreatePersonalFacts1720000000031,
   CreateTopicProposals1720000000032,
   CreateChatTables1720000000033,
+  AddCommitmentDuplicatesTask1720000000034,
 ];
 
 /**

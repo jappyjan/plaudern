@@ -8,6 +8,7 @@
   "dependencies": {
     "@plaudern/auth": "workspace:*",
     "@plaudern/contracts": "workspace:*",
+    "@plaudern/embeddings": "workspace:*",
     "@plaudern/inbox": "workspace:*",
     "@plaudern/persistence": "workspace:*",
     "@plaudern/queue": "workspace:*"

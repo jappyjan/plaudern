@@ -2,11 +2,15 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { InboxModule } from '@plaudern/inbox';
+import { OpenAiEmbeddingProvider } from '@plaudern/embeddings';
 import {
   CommitmentEntity,
   EntityRegistryEntity,
+  ExtractedPayloadEntity,
   InboxItemEntity,
   SpeakerOccurrenceEntity,
+  TaskCitationEntity,
+  TaskEntity,
 } from '@plaudern/persistence';
 import { BullJobQueue, InlineJobQueue, redisConnectionFromConfig } from '@plaudern/queue';
 import { COMMITMENT_EXTRACTION_PROVIDER } from './commitments.provider';
@@ -14,6 +18,10 @@ import { COMMITMENTS_QUEUE } from './commitments.job';
 import { OpenAiCommitmentExtractionProvider } from './providers/openai.provider';
 import { CommitmentContextService } from './commitment-context';
 import { CommitmentsPersistenceService } from './commitments-persistence.service';
+import {
+  COMMITMENT_DEDUPE_EMBEDDING_PROVIDER,
+  CommitmentTaskDedupeService,
+} from './commitment-task-dedupe.service';
 import { CommitmentsProcessor } from './commitments.processor';
 import { CommitmentsService } from './commitments.service';
 import { CommitmentsExtractor } from './commitments.extractor';
@@ -27,12 +35,25 @@ import { InboxCommitmentsController } from './inbox-commitments.controller';
     TypeOrmModule.forFeature([
       CommitmentEntity,
       EntityRegistryEntity,
+      ExtractedPayloadEntity,
       InboxItemEntity,
       SpeakerOccurrenceEntity,
+      TaskCitationEntity,
+      TaskEntity,
     ]),
   ],
   providers: [
     OpenAiCommitmentExtractionProvider,
+    // Reconciles owed_by_me commitments against the item's tasks so one
+    // intention isn't shown as both a task and a commitment; reuses the shared
+    // embeddings provider (EMBEDDINGS_*), exactly like the task dedupe.
+    OpenAiEmbeddingProvider,
+    {
+      provide: COMMITMENT_DEDUPE_EMBEDDING_PROVIDER,
+      inject: [OpenAiEmbeddingProvider],
+      useFactory: (openai: OpenAiEmbeddingProvider) => openai,
+    },
+    CommitmentTaskDedupeService,
     // Only one provider for now (any OpenAI-compatible /chat/completions
     // endpoint); the token keeps the seam for future providers and test fakes.
     {
