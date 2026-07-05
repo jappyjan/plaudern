@@ -173,8 +173,7 @@ describe('AI summarization pipeline (e2e, Path A)', () => {
       .expect(400);
   });
 
-  it('returns an empty summary (status null) for an item that has none', async () => {
-    // A text item is never transcribed, so it never gets summarized.
+  it('summarizes a text note via its passthrough transcription', async () => {
     const text = await request(app.getHttpServer())
       .post('/api/v1/ingest/text')
       .send({
@@ -184,8 +183,26 @@ describe('AI summarization pipeline (e2e, Path A)', () => {
       })
       .expect(201);
 
+    const summary = await waitForSummary(text.body.id);
+    expect(summary.status).toBe('succeeded');
+    expect(summary.title).toBe('Test summary title');
+  });
+
+  it('returns an empty summary (status null) for an item that has none', async () => {
+    // A pending (never committed) upload enters no extraction at all.
+    const init = await request(app.getHttpServer())
+      .post('/api/v1/ingest/init')
+      .send({
+        sourceType: 'audio',
+        contentType: 'audio/mpeg',
+        byteSize: 10,
+        occurredAt: '2026-07-01T09:30:00.000Z',
+        idempotencyKey: 'e2e-summary-pending',
+      })
+      .expect(201);
+
     const res = await request(app.getHttpServer())
-      .get(`/api/v1/inbox/${text.body.id}/summary`)
+      .get(`/api/v1/inbox/${init.body.inboxItemId}/summary`)
       .expect(200);
     const summary = res.body as SummaryDto;
     expect(summary.status).toBeNull();

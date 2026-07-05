@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Button, Chip } from '@heroui/react';
-import { summaryPayloadSchema, type InboxItemDto } from '@plaudern/contracts';
+import { isTextBearing, summaryPayloadSchema, type InboxItemDto } from '@plaudern/contracts';
 import { useNavigate } from 'react-router-dom';
 import { deleteInboxItem } from '../lib/api';
 import { formatDateTime, formatDuration } from '../lib/format';
@@ -25,6 +25,17 @@ function summaryTitle(item: InboxItemDto): string | null {
   }
 }
 
+/** First line of a text-bearing item's own body, as a stand-in title. */
+function textSnippet(item: InboxItemDto): string | null {
+  if (!isTextBearing(item.sourceType)) return null;
+  const passthrough = item.extractions.find(
+    (e) => e.kind === 'transcription' && e.status === 'succeeded',
+  );
+  const firstLine = passthrough?.content?.trim().split('\n', 1)[0]?.trim();
+  if (!firstLine) return null;
+  return firstLine.length > 60 ? `${firstLine.slice(0, 60)}…` : firstLine;
+}
+
 function itemTitle(item: InboxItemDto): string {
   // Prefer the AI-generated descriptive title once it's available.
   const aiTitle = summaryTitle(item);
@@ -33,6 +44,9 @@ function itemTitle(item: InboxItemDto): string {
   if (typeof tags?.title === 'string' && tags.title) return tags.title;
   if (item.source?.originalFilename) return item.source.originalFilename;
   if (item.metadata?.capturedVia === 'browser-recording') return 'Browser recording';
+  const snippet = textSnippet(item);
+  if (snippet) return snippet;
+  if (item.sourceType === 'text') return 'Text note';
   return `${item.sourceType} note`;
 }
 
