@@ -18,12 +18,15 @@ import { z } from 'zod';
  * pyannoteAI diarization, the embeddings provider, and the OpenAI-compatible LLM
  * extractors/generators — summary, entities, relations, topics, topic-document,
  * facts, tasks, questions, decisions, commitments, reminders, journal, and
- * memory chat. Known deferred call sites (a follow-up ticket tracks full
- * coverage): the secondary entity contact-resolution LLM call, the entity
- * registry-correction LLM call, and the topic-proposals clustering call.
- * Geocoding (Nominatim) is deliberately OUT of scope — it is a maps lookup that
- * sends only coordinates, never transcript-derived content, and is not an AI
- * provider.
+ * memory chat. Known deferred external-LLM call sites, NOT yet audited (a
+ * follow-up ticket tracks full coverage): the secondary entity
+ * contact-resolution LLM call, the entity registry-correction LLM call, the
+ * topic-proposals clustering call, the `sensitivity` sentinel classifier, the
+ * `docmeta` document-metadata extractor, the `ocr` vision OCR call (which
+ * auto-enables from the OpenAI embeddings key, so it is a live path), and the
+ * `citations` LLM-judge verifier. Geocoding (Nominatim) is deliberately OUT of
+ * scope — it is a maps lookup that sends only coordinates, never
+ * transcript-derived content, and is not an AI provider.
  */
 
 /**
