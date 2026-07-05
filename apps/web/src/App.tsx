@@ -17,10 +17,12 @@ import { GraphViewPage } from './pages/GraphViewPage';
 import { SearchPage } from './pages/SearchPage';
 import { ChatPage } from './pages/ChatPage';
 import { SharePage } from './pages/SharePage';
+import { OpenLoopsPage } from './pages/OpenLoopsPage';
 import {
   CalendarIcon,
   EntitiesIcon,
   GearIcon,
+  LoopIcon,
   MoonIcon,
   PeopleIcon,
   SunIcon,
@@ -96,6 +98,16 @@ export function App() {
               {themeToggle}
               <Button
                 as={Link}
+                to="/open-loops"
+                isIconOnly
+                variant="light"
+                size="sm"
+                aria-label="Open loops"
+              >
+                <LoopIcon className="h-5 w-5" />
+              </Button>
+              <Button
+                as={Link}
                 to="/calendar"
                 isIconOnly
                 variant="light"
@@ -149,6 +161,7 @@ export function App() {
           <main className="flex-1 pt-4 pb-[calc(5rem+env(safe-area-inset-bottom))] md:pt-0 md:pb-0">
             <Routes>
               <Route path="/" element={<InboxPage />} />
+              <Route path="/open-loops" element={<OpenLoopsPage />} />
               <Route path="/search" element={<SearchPage />} />
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/items/:id" element={<ItemDetailPage />} />
