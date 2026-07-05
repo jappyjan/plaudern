@@ -232,3 +232,13 @@ export function ArchiveIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+/** Open loops / Zeigarnik list — an open (unclosed) circular loop. */
+export function LoopIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 12a9 9 0 1 1-3-6.7" />
+      <path d="M21 4v5h-5" />
+    </svg>
+  );
+}

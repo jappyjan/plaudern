@@ -12,6 +12,7 @@ export * from './tasks';
 export * from './relations';
 export * from './commitments';
 export * from './questions';
+export * from './open-loops';
 export * from './events';
 export * from './geocode';
 export * from './calendar';

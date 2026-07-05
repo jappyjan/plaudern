@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { IngestInitRequest } from '@plaudern/contracts';
 import type { InboxItemEntity } from '@plaudern/persistence';
+import { ExtractionPipelineService } from '@plaudern/extraction';
 import type { SourceAdapter } from '../source-adapter';
 
 /**
@@ -11,13 +12,15 @@ import type { SourceAdapter } from '../source-adapter';
  * rejects: the only reason it would run is a client mistakenly (or
  * maliciously) calling `POST /ingest/init` with `sourceType: 'email'`.
  *
- * No derived extraction runs on commit today (like `text`): the subject/body
- * is stored as-is and attachments are stored as opaque blobs referenced from
+ * The subject/body payload enters the DAG as a passthrough transcription;
+ * attachments are stored as opaque blobs referenced from
  * `metadata.attachments`. Future work (plan §1) can OCR/transcribe those.
  */
 @Injectable()
 export class EmailAdapter implements SourceAdapter {
   readonly sourceType = 'email' as const;
+
+  constructor(private readonly pipeline: ExtractionPipelineService) {}
 
   validateInit(_req: IngestInitRequest): void {
     throw new BadRequestException(
@@ -25,7 +28,7 @@ export class EmailAdapter implements SourceAdapter {
     );
   }
 
-  async onCommitted(_item: InboxItemEntity): Promise<void> {
-    /* no derived extraction for email bodies yet */
+  async onCommitted(item: InboxItemEntity): Promise<void> {
+    await this.pipeline.processCommitted(item);
   }
 }

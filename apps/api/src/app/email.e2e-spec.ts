@@ -150,6 +150,15 @@ describe('Email-in settings + webhook (e2e)', () => {
     const stored = await storage.headObject(attachmentMeta.storageKey);
     expect(stored.exists).toBe(true);
     expect(stored.byteSize).toBe(Buffer.from('PDF-BYTES').byteLength);
+
+    // The email body enters the extraction DAG as a passthrough transcription,
+    // so emails get the same downstream processing as every other source.
+    const transcription = item.extractions.find(
+      (e: { kind: string }) => e.kind === 'transcription',
+    );
+    expect(transcription.status).toBe('succeeded');
+    expect(transcription.provider).toBe('text-passthrough');
+    expect(transcription.content).toContain('Please find the invoice attached.');
   });
 
   it('redelivering the same Message-ID is idempotent (no duplicate item, no re-upload)', async () => {

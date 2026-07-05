@@ -115,7 +115,7 @@ export class OpenAiSummarizationProvider implements SummarizationProvider {
 }
 
 export const SYSTEM_PROMPT = [
-  'You summarize a transcribed audio recording for a note-taking app.',
+  'You summarize a transcribed audio recording or a typed note for a note-taking app.',
   'Always respond with a single JSON object and nothing else, with keys:',
   '  "title": a short, specific, descriptive title (max ~8 words, no trailing punctuation),',
   '  "layout": one of the layout ids listed by the user,',
@@ -140,6 +140,8 @@ export const SYSTEM_PROMPT = [
 
 /** Build the user message: roster + metadata + the transcript, plus layout menu. */
 export function buildUserPrompt(input: SummarizationInput): string {
+  const isNote = input.sourceKind === 'note';
+  const noun = isNote ? 'note' : 'recording';
   const parts: string[] = [];
 
   parts.push(
@@ -149,19 +151,26 @@ export function buildUserPrompt(input: SummarizationInput): string {
     '',
   );
 
-  parts.push('Choose the single best layout for this recording:');
+  if (isNote) {
+    parts.push(
+      'The content below is text content (a typed note, web-page snapshot or email), not an audio transcript — there is no recording and there are no speakers.',
+      '',
+    );
+  }
+
+  parts.push(`Choose the single best layout for this ${noun}:`);
   for (const layout of summaryLayoutSchema.options) {
     parts.push(`- ${layout}: ${LAYOUT_GUIDE[layout]}`);
   }
 
   const meta: string[] = [];
   if (input.language) meta.push(`language: ${input.language}`);
-  if (input.occurredAt) meta.push(`recorded at: ${input.occurredAt}`);
+  if (input.occurredAt) meta.push(`${isNote ? 'written' : 'recorded'} at: ${input.occurredAt}`);
   if (typeof input.durationSeconds === 'number') {
     meta.push(`duration: ${Math.round(input.durationSeconds)}s`);
   }
   if (meta.length > 0) {
-    parts.push('', `Recording metadata — ${meta.join(', ')}.`);
+    parts.push('', `${isNote ? 'Note' : 'Recording'} metadata — ${meta.join(', ')}.`);
   }
 
   if (input.speakers.length > 0) {
@@ -174,7 +183,7 @@ export function buildUserPrompt(input: SummarizationInput): string {
     );
   }
 
-  parts.push('', 'Transcript:', '"""', input.transcript.trim(), '"""');
+  parts.push('', isNote ? 'Note content:' : 'Transcript:', '"""', input.transcript.trim(), '"""');
   return parts.join('\n');
 }
 
