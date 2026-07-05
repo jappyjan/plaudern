@@ -160,6 +160,13 @@ import {
   type ReminderListResponse,
   type ReminderStatus,
   type ItemRemindersResponse,
+  documentListResponseSchema,
+  itemDocMetaResponseSchema,
+  itemOcrResponseSchema,
+  type DocumentListResponse,
+  type DocumentType,
+  type ItemDocMetaResponse,
+  type ItemOcrResponse,
   type UpdateEntityRequest,
   searchResponseSchema,
   similarResponseSchema,
@@ -1065,6 +1072,44 @@ export async function getItemReminders(itemId: string): Promise<ItemRemindersRes
 export async function retryItemReminders(itemId: string): Promise<ItemRemindersResponse> {
   return itemRemindersResponseSchema.parse(
     await requestJson(`/inbox/${itemId}/reminders/retry`, { method: 'POST' }),
+  );
+}
+
+// ---- Document vault: photo/scan OCR + docmeta (JJ-30 / JJ-16) ----
+
+/**
+ * The user's document vault: every scanned/uploaded document, newest first,
+ * optionally scoped to a single document type. The vault page groups them by
+ * type client-side and surfaces expiry / Kündigungsfrist dates.
+ */
+export async function listVaultDocuments(
+  documentType?: DocumentType,
+): Promise<DocumentListResponse> {
+  const suffix = documentType ? `?documentType=${encodeURIComponent(documentType)}` : '';
+  return documentListResponseSchema.parse(await requestJson(`/documents${suffix}`));
+}
+
+/** An item's structured document metadata plus the extraction pipeline status. */
+export async function getItemDocMeta(itemId: string): Promise<ItemDocMetaResponse> {
+  return itemDocMetaResponseSchema.parse(await requestJson(`/inbox/${itemId}/docmeta`));
+}
+
+/** Re-run document-metadata extraction for an item; returns the refreshed read model. */
+export async function retryItemDocMeta(itemId: string): Promise<ItemDocMetaResponse> {
+  return itemDocMetaResponseSchema.parse(
+    await requestJson(`/inbox/${itemId}/docmeta/retry`, { method: 'POST' }),
+  );
+}
+
+/** An item's recognized OCR text plus the extraction pipeline status. */
+export async function getItemOcr(itemId: string): Promise<ItemOcrResponse> {
+  return itemOcrResponseSchema.parse(await requestJson(`/inbox/${itemId}/ocr`));
+}
+
+/** Re-run OCR for an item; returns the refreshed read model. */
+export async function retryItemOcr(itemId: string): Promise<ItemOcrResponse> {
+  return itemOcrResponseSchema.parse(
+    await requestJson(`/inbox/${itemId}/ocr/retry`, { method: 'POST' }),
   );
 }
 

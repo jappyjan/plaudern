@@ -11,10 +11,37 @@ export const SourceType = {
   Plaud: 'plaud',
   Web: 'web',
   Email: 'email',
+  /**
+   * A photo or scan of the physical world (paper mail, whiteboard, receipt,
+   * business card, handwritten note) or an uploaded document (PDF). Its payload
+   * is an image/* or application/pdf blob that flows into the OCR + docmeta
+   * extraction pipeline (JJ-30/JJ-16) rather than transcription.
+   */
+  Image: 'image',
 } as const;
 
-export const sourceTypeSchema = z.enum(['audio', 'text', 'file', 'plaud', 'web', 'email']);
+export const sourceTypeSchema = z.enum([
+  'audio',
+  'text',
+  'file',
+  'plaud',
+  'web',
+  'email',
+  'image',
+]);
 export type SourceType = z.infer<typeof sourceTypeSchema>;
+
+/**
+ * Content types whose payload is a document/image and therefore get OCR +
+ * document-understanding (docmeta) on commit instead of transcription: photos,
+ * scans and PDFs. Keyed off the content type (not just the `image` source type)
+ * so a PDF uploaded as a generic `file` flows into the same pipeline (JJ-16).
+ */
+export function hasDocumentPayload(contentType?: string | null): boolean {
+  if (!contentType) return false;
+  const ct = contentType.toLowerCase();
+  return ct.startsWith('image/') || ct === 'application/pdf';
+}
 
 /** Source types whose payload is audio and therefore get transcribed on commit. */
 export const AUDIO_BEARING_SOURCE_TYPES: readonly SourceType[] = ['audio', 'plaud'];

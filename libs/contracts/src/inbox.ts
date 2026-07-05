@@ -60,6 +60,12 @@ export const extractionKindSchema = z.enum([
   // LLM extractors may send the content to an external provider or must route
   // to a local model tier / be held.
   'sentinel',
+  // Vision/LLM document-understanding of a scanned image or PDF (JJ-30/JJ-16):
+  // classifies the document type (invoice, contract, letter, prescription,
+  // business card, ...) and pulls key fields (amount, IBAN, due/expiry dates,
+  // Kündigungsfrist). Depends on `ocr`; feeds the vault view, deadline
+  // reminders, and business-card contact enrichment.
+  'docmeta',
 ]);
 export type ExtractionKind = z.infer<typeof extractionKindSchema>;
 

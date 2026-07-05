@@ -10,6 +10,7 @@ import {
   CommitmentEntity,
   ConsentSettingsEntity,
   DecisionEntity,
+  DocumentMetadataEntity,
   EmailSettingsEntity,
   EmbeddingChunkEntity,
   EntityAliasEntity,
@@ -90,6 +91,7 @@ import { VoiceProfileSelf1720000000037 } from './migrations/1720000000037-VoiceP
 import { CreateReminders1720000000038 } from './migrations/1720000000038-CreateReminders';
 import { CreateJournalDocuments1720000000039 } from './migrations/1720000000039-CreateJournalDocuments';
 import { SanitizeEntityAliases1720000000040 } from './migrations/1720000000040-SanitizeEntityAliases';
+import { CreateDocumentMetadata1720000000042 } from './migrations/1720000000042-CreateDocumentMetadata';
 import { CreateItemSensitivity1720000000043 } from './migrations/1720000000043-CreateItemSensitivity';
 
 export const ALL_ENTITIES = [
@@ -110,6 +112,7 @@ export const ALL_ENTITIES = [
   DecisionEntity,
   ReminderEntity,
   ItemSensitivityEntity,
+  DocumentMetadataEntity,
   TaskEntity,
   TaskCitationEntity,
   PersonalFactEntity,
@@ -185,6 +188,7 @@ export const ALL_MIGRATIONS = [
   CreateReminders1720000000038,
   CreateJournalDocuments1720000000039,
   SanitizeEntityAliases1720000000040,
+  CreateDocumentMetadata1720000000042,
   CreateItemSensitivity1720000000043,
 ];
 

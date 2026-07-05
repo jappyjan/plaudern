@@ -54,6 +54,9 @@ import { InboxRemindersController } from './inbox-reminders.controller';
     RemindersExtractor,
   ],
   controllers: [RemindersController, InboxRemindersController],
-  exports: [RemindersService, RemindersExtractor],
+  // RemindersPersistenceService is exported so the docmeta lib (JJ-30/JJ-16) can
+  // reuse the same dedup/upsert + user-owned-status durability when turning a
+  // document's expiry/Kündigungsfrist into deadline reminders.
+  exports: [RemindersService, RemindersExtractor, RemindersPersistenceService],
 })
 export class RemindersModule {}
