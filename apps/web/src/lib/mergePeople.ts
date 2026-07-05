@@ -31,6 +31,8 @@ export interface UnifiedPerson {
   mentionCount: number;
   consentStatus: ConsentStatus | null;
   redacted: boolean;
+  /** True when this person's voice profile is marked as the account owner. */
+  isSelf: boolean;
   /** True for a heard person still awaiting review/confirmation. */
   unconfirmed: boolean;
   /** Most recent activity across heard + mentioned, for sorting. ISO or null. */
@@ -57,6 +59,7 @@ function fromProfile(profile: VoiceProfileDto, entity: RegistryEntityDto | null)
     mentionCount: entity?.mentionCount ?? 0,
     consentStatus: profile.consentStatus,
     redacted: profile.redacted,
+    isSelf: profile.isSelf,
     unconfirmed: profile.status === 'unconfirmed',
     lastActivityAt: laterOf(profile.lastHeardAt, entity?.lastSeenAt ?? null),
   };
@@ -74,6 +77,7 @@ function fromEntity(entity: RegistryEntityDto): UnifiedPerson {
     mentionCount: entity.mentionCount,
     consentStatus: null,
     redacted: false,
+    isSelf: false,
     unconfirmed: false,
     lastActivityAt: entity.lastSeenAt,
   };

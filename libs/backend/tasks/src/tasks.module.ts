@@ -5,6 +5,7 @@ import { InboxModule } from '@plaudern/inbox';
 import { OpenAiEmbeddingProvider } from '@plaudern/embeddings';
 import {
   ExtractedPayloadEntity,
+  SpeakerOccurrenceEntity,
   TaskCitationEntity,
   TaskEntity,
 } from '@plaudern/persistence';
@@ -19,13 +20,19 @@ import {
 import { TasksProcessor } from './tasks.processor';
 import { TasksService } from './tasks.service';
 import { TasksExtractor } from './tasks.extractor';
+import { TaskContextService } from './task-context';
 import { InboxTasksController, TasksController } from './tasks.controller';
 
 @Module({
   imports: [
     ConfigModule,
     InboxModule,
-    TypeOrmModule.forFeature([TaskEntity, TaskCitationEntity, ExtractedPayloadEntity]),
+    TypeOrmModule.forFeature([
+      TaskEntity,
+      TaskCitationEntity,
+      ExtractedPayloadEntity,
+      SpeakerOccurrenceEntity,
+    ]),
   ],
   providers: [
     OpenAiTaskExtractionProvider,
@@ -45,6 +52,7 @@ import { InboxTasksController, TasksController } from './tasks.controller';
       useFactory: (openai: OpenAiEmbeddingProvider) => openai,
     },
     TasksRegistryService,
+    TaskContextService,
     TasksProcessor,
     {
       provide: TASK_EXTRACTION_QUEUE,

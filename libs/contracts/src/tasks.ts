@@ -95,6 +95,8 @@ export type TaskListQuery = z.infer<typeof taskListQuerySchema>;
 
 export const taskListResponseSchema = z.object({
   tasks: z.array(taskSchema),
+  /** True when no account owner ("This is me") is set — the list is empty until one is. */
+  needsOwner: z.boolean().default(false),
 });
 export type TaskListResponse = z.infer<typeof taskListResponseSchema>;
 
@@ -116,5 +118,11 @@ export const itemTasksResponseSchema = z.object({
   error: z.string().nullable(),
   createdAt: z.string().datetime().nullable(),
   completedAt: z.string().datetime().nullable(),
+  /**
+   * True when the user has not designated an account owner ("This is me").
+   * Only the owner's tasks are extracted, so the tab is empty and prompts the
+   * user to set one until then.
+   */
+  needsOwner: z.boolean().default(false),
 });
 export type ItemTasksResponse = z.infer<typeof itemTasksResponseSchema>;

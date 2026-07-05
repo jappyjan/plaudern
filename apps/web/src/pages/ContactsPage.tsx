@@ -183,6 +183,11 @@ function PersonCard({ person }: { person: UnifiedPerson }) {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          {person.isSelf && (
+            <Chip size="sm" variant="flat" color="primary">
+              You
+            </Chip>
+          )}
           {person.provenance === 'mentioned' && (
             <Chip size="sm" variant="flat" title="Mentioned in recordings; not matched to a voice yet">
               mentioned

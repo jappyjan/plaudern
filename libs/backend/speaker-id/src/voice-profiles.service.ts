@@ -13,6 +13,7 @@ import {
   SpeakerOccurrenceEntity,
   VoiceProfileEntity,
 } from '@plaudern/persistence';
+import { OwnerEventsService } from '@plaudern/inbox';
 import { SummarizationService } from '@plaudern/summarization';
 
 interface OccurrenceWithItem extends SpeakerOccurrenceEntity {
@@ -36,6 +37,7 @@ export class VoiceProfilesService {
     @InjectRepository(RecordingMergeEntity)
     private readonly merges: Repository<RecordingMergeEntity>,
     private readonly summarization: SummarizationService,
+    private readonly ownerEvents: OwnerEventsService,
   ) {}
 
   async list(userId: string): Promise<VoiceProfileDto[]> {
@@ -86,7 +88,20 @@ export class VoiceProfilesService {
     const redactionChanged = req.redacted !== undefined && req.redacted !== profile.redacted;
     if (req.redacted !== undefined) profile.redacted = req.redacted;
 
-    await this.profiles.save(profile);
+    // "This is me": at most one self profile per user. Setting it here clears
+    // every other profile's flag in the same transaction so the invariant holds
+    // even without the Postgres partial unique index (sqlite tests rely on this).
+    const selfChanged = req.isSelf !== undefined && req.isSelf !== profile.isSelf;
+    if (req.isSelf === true && !profile.isSelf) {
+      await this.profiles.manager.transaction(async (manager) => {
+        await manager.update(VoiceProfileEntity, { userId, isSelf: true }, { isSelf: false });
+        profile.isSelf = true;
+        await manager.save(profile);
+      });
+    } else {
+      if (req.isSelf === false) profile.isSelf = false;
+      await this.profiles.save(profile);
+    }
 
     // Redaction affects every summary this speaker appears in. The transcript
     // read model recomputes at read time, but stored summaries do not — so
@@ -95,6 +110,11 @@ export class VoiceProfilesService {
       const itemIds = await this.itemIdsForProfile(id);
       await this.summarization.regenerateForItems(itemIds);
     }
+
+    // Changing who "me" is flips the meaning of every owner-relative extraction
+    // (commitment direction, the owner's tasks, summary attribution), so the
+    // extraction lib reprocesses this user's items on this event.
+    if (selfChanged) this.ownerEvents.emit({ userId });
 
     return this.detail(userId, id);
   }
@@ -123,6 +143,9 @@ export class VoiceProfilesService {
       // when the target has none.
       if (!target.voiceprint && source.voiceprint) target.voiceprint = source.voiceprint;
       if (!target.name && source.name) target.name = source.name;
+      // If the account owner ("me") was the source, the identity survives on the
+      // target. Only one profile is ever self, so this can't collide.
+      if (source.isSelf) target.isSelf = true;
       // Consent is a safety property: the merged person inherits the stricter
       // of the two states so a merge never silently un-redacts a declined voice.
       if (source.redacted) target.redacted = true;
@@ -134,6 +157,9 @@ export class VoiceProfilesService {
       await manager.save(target);
       await manager.delete(VoiceProfileEntity, { id: source.id });
     });
+    // The self profile's id changed (source folded into target), so re-resolve
+    // owner attribution across this user's items.
+    if (source.isSelf) this.ownerEvents.emit({ userId });
     return this.detail(userId, targetId);
   }
 
@@ -153,6 +179,7 @@ export class VoiceProfilesService {
       id: profile.id,
       name: profile.name,
       status: profile.status,
+      isSelf: profile.isSelf,
       consentStatus: profile.consentStatus,
       redacted: profile.redacted,
       recordingCount: itemIds.size,

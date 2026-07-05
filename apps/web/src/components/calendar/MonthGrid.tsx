@@ -5,6 +5,7 @@ import { BackIcon } from '../icons';
 export interface DayMarkers {
   hasEvents: boolean;
   hasRecordings: boolean;
+  hasReminders: boolean;
 }
 
 interface MonthGridProps {
@@ -94,6 +95,11 @@ export function MonthGrid({
                     className={`h-1.5 w-1.5 rounded-full ${isSelected ? 'bg-primary-foreground/60' : 'bg-success'}`}
                   />
                 )}
+                {mark?.hasReminders && (
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${isSelected ? 'bg-primary-foreground/80' : 'bg-warning'}`}
+                  />
+                )}
               </span>
             </button>
           );
@@ -106,6 +112,9 @@ export function MonthGrid({
         </span>
         <span className="flex items-center gap-1">
           <span className="h-1.5 w-1.5 rounded-full bg-success" /> Recordings
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="h-1.5 w-1.5 rounded-full bg-warning" /> Reminders
         </span>
       </div>
     </div>

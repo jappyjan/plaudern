@@ -104,6 +104,8 @@ export const summarySpeakerSchema = z.object({
   name: z.string().nullable(),
   label: z.string(),
   status: voiceProfileStatusSchema,
+  /** True when this speaker is the account owner ("me"). */
+  isSelf: z.boolean().default(false),
 });
 export type SummarySpeakerDto = z.infer<typeof summarySpeakerSchema>;
 

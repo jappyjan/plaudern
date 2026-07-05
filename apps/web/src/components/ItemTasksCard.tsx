@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Card, CardBody, CardHeader, Chip, Spinner, Tooltip } from '@heroui/react';
+import { Link } from 'react-router-dom';
 import type { ItemTasksResponse, TaskStatus } from '@plaudern/contracts';
 import { getItemTasks, retryItemTasks, updateTaskStatus } from '../lib/api';
 
@@ -104,7 +105,26 @@ export function ItemTasksCard({ itemId }: { itemId: string }) {
           </div>
         )}
 
-        {data && (status === 'queued' || status === 'processing') && (
+        {data?.needsOwner && (
+          <div className="flex flex-col gap-2">
+            <p className="text-default-500">
+              Tell Plaudern which contact is you to extract your tasks — only your own tasks are
+              listed, never other people's.
+            </p>
+            <Button
+              as={Link}
+              to="/contacts"
+              size="sm"
+              color="primary"
+              variant="flat"
+              className="self-start"
+            >
+              Choose “me” in Contacts
+            </Button>
+          </div>
+        )}
+
+        {data && !data.needsOwner && (status === 'queued' || status === 'processing') && (
           <div className="flex items-center gap-2 text-default-500">
             <Spinner size="sm" /> Extracting tasks…
           </div>
@@ -127,7 +147,7 @@ export function ItemTasksCard({ itemId }: { itemId: string }) {
           </div>
         )}
 
-        {data && status === null && (
+        {data && !data.needsOwner && status === null && (
           <div className="flex flex-col gap-2">
             <p className="text-default-500">This item has not been processed for tasks yet.</p>
             <Button

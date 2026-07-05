@@ -23,8 +23,8 @@ const minimalInput: SummarizationInput = {
 const baseInput: SummarizationInput = {
   transcript: 'SPEAKER_00: hello there\nSPEAKER_01: hi',
   speakers: [
-    { label: 'SPEAKER_00', displayName: 'Alex', confirmed: true },
-    { label: 'SPEAKER_01', displayName: 'Speaker 2', confirmed: false },
+    { label: 'SPEAKER_00', displayName: 'Alex', confirmed: true, isSelf: false },
+    { label: 'SPEAKER_01', displayName: 'Speaker 2', confirmed: false, isSelf: false },
   ],
   language: 'en',
 };

@@ -17,6 +17,7 @@ const alice: TranscriptSpeakerDto = {
   name: 'Alice',
   label: 'SPEAKER_00',
   status: 'confirmed',
+  isSelf: false,
   consentStatus: 'consented',
 };
 const bob: TranscriptSpeakerDto = {
@@ -24,6 +25,7 @@ const bob: TranscriptSpeakerDto = {
   name: null,
   label: 'SPEAKER_01',
   status: 'unconfirmed',
+  isSelf: false,
   consentStatus: 'unknown',
 };
 const speakerByLabel = new Map([
@@ -136,6 +138,7 @@ describe('SpeakerTranscriptService.getSpeakerTranscript', () => {
       id: 'p-alice',
       name: 'Alice',
       status: 'confirmed',
+      isSelf: false,
       consentStatus: 'consented',
       redacted: false,
     },
@@ -203,6 +206,7 @@ describe('SpeakerTranscriptService.getSpeakerTranscript', () => {
         id: 'p-bob',
         name: 'Bob',
         status: 'confirmed',
+        isSelf: false,
         consentStatus: 'declined',
         redacted: true,
       },

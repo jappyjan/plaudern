@@ -37,6 +37,6 @@ export class CommitmentsExtractor implements Extractor {
   }
 
   async enqueue(item: InboxItemEntity): Promise<string | null> {
-    return this.commitments.enqueueCommitments(item.id);
+    return this.commitments.enqueueCommitments(item.id, item.userId);
   }
 }
