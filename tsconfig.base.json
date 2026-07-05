@@ -32,6 +32,7 @@
       "@plaudern/topics": ["libs/backend/topics/src/index.ts"],
       "@plaudern/commitments": ["libs/backend/commitments/src/index.ts"],
       "@plaudern/tasks": ["libs/backend/tasks/src/index.ts"],
+      "@plaudern/open-loops": ["libs/backend/open-loops/src/index.ts"],
       "@plaudern/plaud-sync": ["libs/backend/plaud-sync/src/index.ts"],
       "@plaudern/email-ingest": ["libs/backend/email-ingest/src/index.ts"],
       "@plaudern/geocoding": ["libs/backend/geocoding/src/index.ts"],

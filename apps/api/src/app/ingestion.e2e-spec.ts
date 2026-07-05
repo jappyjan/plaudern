@@ -106,7 +106,7 @@ describe('Ingestion pipeline (e2e, Path A)', () => {
     expect(second.body.inboxItemId).toBe(first.body.inboxItemId);
   });
 
-  it('ingests inline text as an immediately-committed item', async () => {
+  it('ingests inline text as an immediately-committed item with a passthrough transcription', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/v1/ingest/text')
       .send({
@@ -117,7 +117,19 @@ describe('Ingestion pipeline (e2e, Path A)', () => {
       .expect(201);
     expect(res.body.sourceType).toBe('text');
     expect(res.body.source.uploadStatus).toBe('committed');
-    expect(res.body.extractions).toHaveLength(0);
+
+    // The note body enters the extraction DAG as a passthrough transcription
+    // row, so downstream steps (summary, entities, ...) treat typed notes the
+    // same as recordings.
+    const get = await request(app.getHttpServer())
+      .get(`/api/v1/inbox/${res.body.id}`)
+      .expect(200);
+    const transcription = get.body.extractions.find(
+      (e: { kind: string }) => e.kind === 'transcription',
+    );
+    expect(transcription.status).toBe('succeeded');
+    expect(transcription.provider).toBe('text-passthrough');
+    expect(transcription.content).toBe('a quick captured thought');
   });
 
   it('lists inbox items newest-first', async () => {

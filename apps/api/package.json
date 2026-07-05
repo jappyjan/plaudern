@@ -25,6 +25,7 @@
     "@plaudern/ingestion": "workspace:*",
     "@plaudern/mcp": "workspace:*",
     "@plaudern/notifications": "workspace:*",
+    "@plaudern/open-loops": "workspace:*",
     "@plaudern/persistence": "workspace:*",
     "@plaudern/plaud-sync": "workspace:*",
     "@plaudern/search": "workspace:*",

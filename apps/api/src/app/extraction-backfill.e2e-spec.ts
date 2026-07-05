@@ -163,12 +163,12 @@ describe('Extraction DAG & backfill runs (e2e, Path A)', () => {
     const run = await awaitRun(started.body.id);
     expect(run.status).toBe('completed');
     expect(run.itemsMatched).toBe(3);
-    expect(run.itemsQueued).toBe(2); // both audio items
-    expect(run.itemsSkipped).toBe(1); // the text item — transcription doesn't apply
+    expect(run.itemsQueued).toBe(3); // audio items re-transcribed, text re-copied (passthrough)
+    expect(run.itemsSkipped).toBe(0);
     expect(run.itemsFailed).toBe(0);
     expect(run.completedAt).not.toBeNull();
 
-    for (const itemId of [audioA, audioB]) {
+    for (const itemId of [audioA, audioB, textC]) {
       const item = await getItem(itemId);
       const transcriptions = byKind(item.extractions, 'transcription');
       expect(transcriptions).toHaveLength(2); // append-only: fresh row, old kept
@@ -187,9 +187,11 @@ describe('Extraction DAG & backfill runs (e2e, Path A)', () => {
       expect(byKind(cascaded.extractions, 'summary').length).toBeGreaterThanOrEqual(2);
     });
 
-    // The text item got nothing.
+    // The text item's fresh passthrough row carries the note body verbatim.
     const text = await getItem(textC);
-    expect(text.extractions).toHaveLength(0);
+    const passthroughs = byKind(text.extractions, 'transcription');
+    expect(passthroughs.every((t) => t.status === 'succeeded')).toBe(true);
+    expect((passthroughs[0] as Extraction & { content: string }).content).toBe('plain note');
   });
 
   it('skips items already at the target version when not forced', async () => {
