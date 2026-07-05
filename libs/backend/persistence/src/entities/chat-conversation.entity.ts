@@ -14,7 +14,9 @@ import {
  * Deleting a conversation deletes its messages (cascade) and nothing else.
  */
 @Entity({ name: 'chat_conversations' })
-@Index(['userId'])
+// Composite: the only list query is "this user's conversations, most recently
+// active first" (ORDER BY updatedAt DESC), which this index serves directly.
+@Index(['userId', 'updatedAt'])
 export class ChatConversationEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

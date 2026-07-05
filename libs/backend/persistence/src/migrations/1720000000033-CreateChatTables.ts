@@ -22,8 +22,10 @@ export class CreateChatTables1720000000033 implements MigrationInterface {
         "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
         CONSTRAINT "PK_chat_conversations" PRIMARY KEY ("id")
       )`);
+    // Composite: the conversation list is "this user's conversations ordered
+    // by updatedAt DESC", which this index serves directly.
     await queryRunner.query(
-      `CREATE INDEX "IDX_chat_conversations_userId" ON "chat_conversations" ("userId")`,
+      `CREATE INDEX "IDX_chat_conversations_user_updatedAt" ON "chat_conversations" ("userId", "updatedAt")`,
     );
 
     await queryRunner.query(`

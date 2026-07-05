@@ -47,6 +47,33 @@ describe('enforceCitations', () => {
     const result = enforceCitations('It was Tuesday [8] , according to notes [1].', valid);
     expect(result.content).toBe('It was Tuesday, according to notes [1].');
   });
+
+  it('leaves identifier-adjacent brackets untouched even when the index is a valid marker', () => {
+    // `data[3]` is array indexing, not a citation — no chip, no renumbering.
+    const result = enforceCitations('The value lives in data[3] per the config [1].', valid);
+    expect(result.content).toBe('The value lives in data[3] per the config [1].');
+    expect(result.usedMarkers).toEqual([1]);
+  });
+
+  it('never strips identifier-adjacent brackets whose index is out of range', () => {
+    // `foo[15]` with only 3 sources must NOT be corrupted to `foo`; the real
+    // citation [2] is still renumbered densely (it is the only one → [1]).
+    const result = enforceCitations('Call foo[15] to read it, as captured [2].', valid);
+    expect(result.content).toBe('Call foo[15] to read it, as captured [1].');
+    expect(result.usedMarkers).toEqual([2]);
+  });
+
+  it('still treats punctuation/start-of-string-adjacent markers as citations', () => {
+    const result = enforceCitations('[2] Karsten said so. [3]', valid);
+    expect(result.usedMarkers).toEqual([2, 3]);
+    expect(result.content).toBe('[1] Karsten said so. [2]');
+  });
+
+  it('leaves chained array indexing untouched while keeping citation chains', () => {
+    const result = enforceCitations('Use arr[1][2] here; the doctor confirmed it [1][2].', valid);
+    expect(result.content).toBe('Use arr[1][2] here; the doctor confirmed it [1][2].');
+    expect(result.usedMarkers).toEqual([1, 2]);
+  });
 });
 
 describe('countUncitedClaims', () => {

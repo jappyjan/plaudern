@@ -275,24 +275,35 @@ function AnswerText({
   byMarker: Map<number, ChatCitation>;
   onOpen: (citation: ChatCitation) => void;
 }) {
-  const parts = content.split(/(\[\d{1,3}\])/g);
+  // Mirrors the server's citation-enforcer positioning rule: only runs of
+  // `[n]` groups NOT immediately preceded by an identifier character or a
+  // closing bracket/paren are citations — `data[3]` / `arr[1][2]` stay plain
+  // text, so a chip never lands on unrelated code/array indices.
+  const parts = content.split(/((?<![A-Za-z0-9_\])])(?:\[\d{1,3}\])+)/g);
   return (
     <>
       {parts.map((part, index) => {
-        const match = /^\[(\d{1,3})\]$/.exec(part);
-        const citation = match ? byMarker.get(Number(match[1])) : undefined;
-        if (!citation) return <Fragment key={index}>{part}</Fragment>;
+        if (!/^(?:\[\d{1,3}\])+$/.test(part)) return <Fragment key={index}>{part}</Fragment>;
+        const markers = [...part.matchAll(/\[(\d{1,3})\]/g)].map((m) => Number(m[1]));
         return (
-          <sup key={index}>
-            <button
-              type="button"
-              className="px-0.5 font-medium text-primary hover:underline"
-              onClick={() => onOpen(citation)}
-              aria-label={`Open source ${citation.marker}`}
-            >
-              [{citation.marker}]
-            </button>
-          </sup>
+          <Fragment key={index}>
+            {markers.map((marker, j) => {
+              const citation = byMarker.get(marker);
+              if (!citation) return <Fragment key={j}>[{marker}]</Fragment>;
+              return (
+                <sup key={j}>
+                  <button
+                    type="button"
+                    className="px-0.5 font-medium text-primary hover:underline"
+                    onClick={() => onOpen(citation)}
+                    aria-label={`Open source ${citation.marker}`}
+                  >
+                    [{citation.marker}]
+                  </button>
+                </sup>
+              );
+            })}
+          </Fragment>
         );
       })}
     </>
