@@ -8,13 +8,15 @@ import {
 } from './transcription.service';
 
 /**
- * Is this a text-bearing source whose payload is the note text itself? Gating
- * on sourceType (not just contentType) keeps text/plain payloads of other
- * sources (file uploads, emails) out until their adapters opt in.
+ * Is this a text-bearing source whose payload is the content itself (typed
+ * note, web-clip snapshot, email body, plain-text file upload)? Audio-bearing
+ * sources are excluded via the sourceType gate; non-text payloads (PDFs,
+ * images, ...) via the contentType gate.
  */
 function isPassthroughSource(item: InboxItemEntity): boolean {
   return (
-    isTextBearing(item.sourceType) && item.source?.contentType === 'text/plain'
+    isTextBearing(item.sourceType) &&
+    (item.source?.contentType.startsWith('text/') ?? false)
   );
 }
 

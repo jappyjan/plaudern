@@ -153,7 +153,7 @@ export function buildUserPrompt(input: SummarizationInput): string {
 
   if (isNote) {
     parts.push(
-      'The content below is a typed text note, not an audio transcript — there is no recording and there are no speakers.',
+      'The content below is text content (a typed note, web-page snapshot or email), not an audio transcript — there is no recording and there are no speakers.',
       '',
     );
   }

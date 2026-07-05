@@ -24,12 +24,31 @@ export function isAudioBearing(sourceType: SourceType): boolean {
 }
 
 /**
- * Source types whose payload is the note text itself. Their content enters the
- * extraction DAG via a passthrough "transcription" row instead of a speech
- * provider. Extend with 'web'/'email' once those adapters derive extractions.
+ * Source types whose payload (when it is a text/* blob) is the content itself:
+ * typed notes, web-clip snapshots, email bodies and plain-text file uploads.
+ * Their content enters the extraction DAG via a passthrough "transcription"
+ * row instead of a speech provider.
  */
-export const TEXT_BEARING_SOURCE_TYPES: readonly SourceType[] = ['text'];
+export const TEXT_BEARING_SOURCE_TYPES: readonly SourceType[] = [
+  'text',
+  'web',
+  'email',
+  'file',
+];
 
 export function isTextBearing(sourceType: SourceType): boolean {
   return TEXT_BEARING_SOURCE_TYPES.includes(sourceType);
+}
+
+/**
+ * Whether an item's payload is audio — either an audio-bearing source type or
+ * an audio blob behind a generic source (e.g. an mp3 uploaded as a 'file').
+ * The UI keys the player/transcript affordances off this, matching the
+ * backend's transcription gate.
+ */
+export function hasAudioPayload(
+  sourceType: SourceType,
+  contentType?: string | null,
+): boolean {
+  return isAudioBearing(sourceType) || (contentType?.startsWith('audio/') ?? false);
 }

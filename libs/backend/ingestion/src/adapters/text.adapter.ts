@@ -6,9 +6,9 @@ import type { SourceAdapter } from '../source-adapter';
 
 /**
  * Direct text notes. Stored as an immutable source payload but never uploaded
- * via presigned URL (see IngestionService.ingestText). The extraction DAG is
- * still consulted on commit — today no extractor applies to text/plain, but a
- * future one (e.g. text summarization) only has to declare itself.
+ * via presigned URL (see IngestionService.ingestText). On commit the note body
+ * enters the DAG as a passthrough transcription, which cascades the same
+ * summary/entities/... chain as recordings.
  */
 @Injectable()
 export class TextAdapter implements SourceAdapter {

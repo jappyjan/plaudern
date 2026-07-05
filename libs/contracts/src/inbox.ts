@@ -39,6 +39,14 @@ export const extractionKindSchema = z.enum([
 export type ExtractionKind = z.infer<typeof extractionKindSchema>;
 
 /**
+ * Provider id recorded on passthrough "transcription" rows: for text-bearing
+ * sources the row's content is the stored text itself (typed note, web
+ * snapshot, email body) — no speech provider involved. Consumers use it to
+ * tell typed content apart from real speech-to-text output.
+ */
+export const TEXT_PASSTHROUGH_PROVIDER_ID = 'text-passthrough';
+
+/**
  * A timed slice of a derived artifact. Transcription rows carry `text`
  * (whisper verbose_json segments), diarization rows carry `speaker`
  * (per-recording labels like SPEAKER_00).

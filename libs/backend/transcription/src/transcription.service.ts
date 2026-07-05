@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
 } from '@nestjs/common';
+import { TEXT_PASSTHROUGH_PROVIDER_ID } from '@plaudern/contracts';
 import { InboxService } from '@plaudern/inbox';
 import {
   TRANSCRIPTION_PROVIDER,
@@ -19,12 +20,6 @@ export interface EnqueueParams {
   /** Copy the stored text blob into the row instead of calling the provider. */
   passthrough?: boolean;
 }
-
-/**
- * Provider id recorded on passthrough rows so the history distinguishes typed
- * notes from real speech-to-text runs.
- */
-export const TEXT_PASSTHROUGH_PROVIDER_ID = 'text-passthrough';
 
 /**
  * Version of the transcription extractor (kind@version), recorded on every

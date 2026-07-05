@@ -11,7 +11,7 @@ import {
   Tab,
   Tabs,
 } from '@heroui/react';
-import { isAudioBearing, type CalendarEventDto, type InboxItemDto } from '@plaudern/contracts';
+import { hasAudioPayload, type CalendarEventDto, type InboxItemDto } from '@plaudern/contracts';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   deleteCalendarLink,
@@ -282,9 +282,10 @@ export function ItemDetailPage() {
   }
 
   const transcription = latestTranscription(item);
-  // Audio-bearing items get the player + Transcript tab; everything else (text
-  // notes, web clips, ...) shows its content as a plain "Note" tab.
-  const audio = isAudioBearing(item.sourceType);
+  // Items with an audio payload (audio-bearing source, or an audio blob
+  // uploaded as a generic file) get the player + Transcript tab; everything
+  // else (text notes, web clips, emails, ...) shows a plain "Note" tab.
+  const audio = hasAudioPayload(item.sourceType, item.source?.contentType);
   const device = item.metadata?.device as Record<string, string> | undefined;
   const tags = item.metadata?.tags as Record<string, unknown> | undefined;
   const reprocessSteps = REPROCESS_STEPS.filter(

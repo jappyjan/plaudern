@@ -90,6 +90,18 @@ describe('Web clipper ingestion (e2e, Path A)', () => {
     const payload = await readPayload(res.body.source.storageKey);
     expect(payload).toContain('https://client.example.com/page');
     expect(payload).toContain('Readable text captured on the client.');
+
+    // The snapshot enters the extraction DAG as a passthrough transcription,
+    // so web clips get the same downstream processing as every other source.
+    const get = await request(app.getHttpServer())
+      .get(`/api/v1/inbox/${res.body.id}`)
+      .expect(200);
+    const transcription = get.body.extractions.find(
+      (e: { kind: string }) => e.kind === 'transcription',
+    );
+    expect(transcription.status).toBe('succeeded');
+    expect(transcription.provider).toBe('text-passthrough');
+    expect(transcription.content).toContain('Readable text captured on the client.');
   });
 
   it('extracts a readable snapshot server-side when only a URL is shared', async () => {

@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { IngestInitRequest } from '@plaudern/contracts';
 import type { InboxItemEntity } from '@plaudern/persistence';
+import { ExtractionPipelineService } from '@plaudern/extraction';
 import type { SourceAdapter } from '../source-adapter';
 
 /**
@@ -14,13 +15,17 @@ import type { SourceAdapter } from '../source-adapter';
 export class WebAdapter implements SourceAdapter {
   readonly sourceType = 'web' as const;
 
+  constructor(private readonly pipeline: ExtractionPipelineService) {}
+
   validateInit(_req: IngestInitRequest): void {
     throw new BadRequestException(
       "web clips use POST /ingest/web, not the presigned init/commit flow",
     );
   }
 
-  async onCommitted(_item: InboxItemEntity): Promise<void> {
-    /* no derived extraction for web clips yet (future: summary/embedding) */
+  async onCommitted(item: InboxItemEntity): Promise<void> {
+    // The snapshot text enters the DAG as a passthrough transcription, so web
+    // clips get the same summary/entities/... cascade as every other source.
+    await this.pipeline.processCommitted(item);
   }
 }

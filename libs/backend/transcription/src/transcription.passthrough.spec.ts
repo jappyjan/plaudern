@@ -3,13 +3,11 @@ import type { InboxService } from '@plaudern/inbox';
 import type { InboxItemEntity } from '@plaudern/persistence';
 import type { StorageService } from '@plaudern/storage';
 import type { TranscriptionProvider } from './transcription.provider';
+import { TEXT_PASSTHROUGH_PROVIDER_ID } from '@plaudern/contracts';
 import type { TranscriptionJob, TranscriptionQueue } from './transcription.job';
 import { TranscriptionExtractor } from './transcription.extractor';
 import { TranscriptionProcessor } from './transcription.processor';
-import {
-  TEXT_PASSTHROUGH_PROVIDER_ID,
-  TranscriptionService,
-} from './transcription.service';
+import { TranscriptionService } from './transcription.service';
 
 function fakeItem(overrides: {
   sourceType: string;
@@ -41,11 +39,14 @@ describe('TranscriptionExtractor.appliesTo', () => {
     ['committed text note', 'text', 'text/plain', 'committed', true],
     ['pending text note', 'text', 'text/plain', 'pending', false],
     ['pending audio source', 'audio', 'audio/mpeg', 'pending', false],
-    // text/plain payloads of other sources stay out until their adapters opt in
-    ['text/plain file upload', 'file', 'text/plain', 'committed', false],
-    ['text/plain email', 'email', 'text/plain', 'committed', false],
-    ['web clip', 'web', 'text/plain', 'committed', false],
-    ['non-plain text source', 'text', 'text/markdown', 'committed', false],
+    // Every text-bearing source's text payload is processed by default.
+    ['text/plain file upload', 'file', 'text/plain', 'committed', true],
+    ['markdown file upload', 'file', 'text/markdown', 'committed', true],
+    ['text/plain email', 'email', 'text/plain', 'committed', true],
+    ['web clip', 'web', 'text/plain', 'committed', true],
+    // Non-text, non-audio payloads have no applicable extractor (yet).
+    ['pdf file upload', 'file', 'application/pdf', 'committed', false],
+    ['image file upload', 'file', 'image/png', 'committed', false],
   ])('%s → %s', (_name, sourceType, contentType, uploadStatus, expected) => {
     expect(
       extractor.appliesTo(fakeItem({ sourceType, contentType, uploadStatus })),

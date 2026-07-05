@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Button, Chip } from '@heroui/react';
-import { summaryPayloadSchema, type InboxItemDto } from '@plaudern/contracts';
+import { isTextBearing, summaryPayloadSchema, type InboxItemDto } from '@plaudern/contracts';
 import { useNavigate } from 'react-router-dom';
 import { deleteInboxItem } from '../lib/api';
 import { formatDateTime, formatDuration } from '../lib/format';
@@ -25,9 +25,9 @@ function summaryTitle(item: InboxItemDto): string | null {
   }
 }
 
-/** First line of a text note's own body, as a stand-in title. */
+/** First line of a text-bearing item's own body, as a stand-in title. */
 function textSnippet(item: InboxItemDto): string | null {
-  if (item.sourceType !== 'text') return null;
+  if (!isTextBearing(item.sourceType)) return null;
   const passthrough = item.extractions.find(
     (e) => e.kind === 'transcription' && e.status === 'succeeded',
   );
