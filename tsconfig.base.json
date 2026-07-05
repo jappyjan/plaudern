@@ -30,6 +30,7 @@
       "@plaudern/embeddings": ["libs/backend/embeddings/src/index.ts"],
       "@plaudern/entities": ["libs/backend/entities/src/index.ts"],
       "@plaudern/topics": ["libs/backend/topics/src/index.ts"],
+      "@plaudern/journal": ["libs/backend/journal/src/index.ts"],
       "@plaudern/commitments": ["libs/backend/commitments/src/index.ts"],
       "@plaudern/questions": ["libs/backend/questions/src/index.ts"],
       "@plaudern/tasks": ["libs/backend/tasks/src/index.ts"],

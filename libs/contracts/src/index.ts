@@ -8,6 +8,7 @@ export * from './summary';
 export * from './embedding';
 export * from './entities';
 export * from './topics';
+export * from './journal';
 export * from './tasks';
 export * from './facts';
 export * from './relations';

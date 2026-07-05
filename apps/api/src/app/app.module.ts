@@ -10,6 +10,7 @@ import { ExtractionModule } from '@plaudern/extraction';
 import { EmbeddingModule } from '@plaudern/embeddings';
 import { EntitiesModule } from '@plaudern/entities';
 import { TopicsModule } from '@plaudern/topics';
+import { JournalModule } from '@plaudern/journal';
 import { CommitmentsModule } from '@plaudern/commitments';
 import { QuestionsModule } from '@plaudern/questions';
 import { TasksModule } from '@plaudern/tasks';
@@ -43,6 +44,7 @@ import { HealthController } from './health.controller';
     EmbeddingModule,
     EntitiesModule,
     TopicsModule,
+    JournalModule,
     CommitmentsModule,
     QuestionsModule,
     TasksModule,
