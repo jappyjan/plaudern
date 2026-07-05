@@ -50,6 +50,10 @@ export const extractionKindSchema = z.enum([
   // cheaper option") into a searchable decision log with context, participants,
   // and reasoning (JJ-33).
   'decisions',
+  // LLM extraction of prospective-memory events: anything anchored to a FUTURE
+  // date ("the results should be in by the 14th", a contract expiry, "let's
+  // talk again next month") becomes a calendar-visible reminder (JJ-25).
+  'reminders',
 ]);
 export type ExtractionKind = z.infer<typeof extractionKindSchema>;
 
