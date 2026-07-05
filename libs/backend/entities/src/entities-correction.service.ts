@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager } from 'typeorm';
-import type { EntityType, RelationType } from '@plaudern/contracts';
+import { type EntityType, type RelationType, sanitizeAliases } from '@plaudern/contracts';
 import {
   CommitmentEntity,
   EntityAliasEntity,
@@ -97,7 +97,7 @@ export class EntitiesCorrectionService {
       const aliases = new Set(survivor.aliases ?? []);
       for (const alias of victim.aliases ?? []) aliases.add(alias);
       aliases.add(victim.canonicalName);
-      survivor.aliases = [...aliases];
+      survivor.aliases = sanitizeAliases(survivor.canonicalName, [...aliases]);
       // Contact link: an unlinked survivor adopts the victim's link WITH its
       // origin (manual stays manual, auto stays auto). When neither is linked
       // but either side was explicitly unlinked (`suppressed`), the merged
@@ -201,7 +201,7 @@ export class EntitiesCorrectionService {
         if (nameChanged) {
           const aliases = new Set(row.aliases ?? []);
           aliases.add(oldCanonical);
-          row.aliases = [...aliases];
+          row.aliases = sanitizeAliases(newCanonical, [...aliases]);
         }
         if (typeChanged) {
           // Names merged into this entity earlier carry the old type on their

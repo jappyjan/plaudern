@@ -1,11 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import type {
-  EntityDetailDto,
-  EntityType,
-  ExtractedEntity,
-  RegistryEntityDto,
+import {
+  type EntityDetailDto,
+  type EntityType,
+  type ExtractedEntity,
+  type RegistryEntityDto,
+  sanitizeAliases,
 } from '@plaudern/contracts';
 import {
   EntityAliasEntity,
@@ -286,9 +287,12 @@ export class EntitiesRegistryService {
 
     const aliases = new Set(row.aliases ?? []);
     for (const form of surfaceForms) if (form) aliases.add(form);
-    row.aliases = [...aliases];
     // Adopt the longer spelling as canonical (e.g. "Angela Merkel" over "Angela").
     if (name.length > row.canonicalName.length) row.canonicalName = name;
+    // Drop grammar the model dumped as surface forms (pronouns, articles,
+    // generic role nouns) and the canonical name itself before it becomes a
+    // displayed "Also known as" alias.
+    row.aliases = sanitizeAliases(row.canonicalName, [...aliases]);
 
     // Guarded on the ROW's type (not the requested one) so a voice link can
     // never be written onto a non-person, whatever path resolved the row.
@@ -314,7 +318,7 @@ export class EntitiesRegistryService {
       });
       if (!winner) throw new Error('failed to upsert entity');
       const merged = new Set([...(winner.aliases ?? []), ...row.aliases]);
-      winner.aliases = [...merged];
+      winner.aliases = sanitizeAliases(winner.canonicalName, [...merged]);
       if (!winner.voiceProfileId && row.voiceProfileId) {
         winner.voiceProfileId = row.voiceProfileId;
         winner.voiceProfileLinkOrigin = row.voiceProfileLinkOrigin;
