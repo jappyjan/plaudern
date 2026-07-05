@@ -9,8 +9,9 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * `status` (open / answered / dropped), and the source segment timestamp.
  *
  * Deduped on (inboxItemId, direction, normalizedQuestion) so re-runs and
- * backfills upsert onto the same row instead of duplicating. Additive only —
- * safe on existing installs.
+ * backfills upsert onto the same row instead of duplicating (only still-open
+ * rows are reaped on re-runs; answered/dropped rows are durable). Additive
+ * only — safe on existing installs.
  */
 export class CreateQuestions1720000000030 implements MigrationInterface {
   name = 'CreateQuestions1720000000030';

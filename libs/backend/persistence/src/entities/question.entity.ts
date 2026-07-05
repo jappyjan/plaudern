@@ -23,8 +23,10 @@ import { InboxItemEntity } from './inbox-item.entity';
  * profile or a registry entity. Deduped on (inboxItemId, direction,
  * normalizedQuestion) so re-runs and backfills upsert onto the same row rather
  * than duplicating; `extractionId` is repointed to the latest generation on
- * each run for provenance. `open`/`answered` are extraction-owned (re-derived
- * every run); a user `dropped` decision is never overwritten by the pipeline.
+ * each run for provenance. Status ownership: `open` is extraction-owned (a
+ * re-run reaps open rows it no longer stands behind); `answered` is durable
+ * once set (by user or model — a re-run may promote open → answered but never
+ * demotes or reaps answered); `dropped` is user-owned and never overwritten.
  */
 @Entity({ name: 'questions' })
 @Index(['userId'])

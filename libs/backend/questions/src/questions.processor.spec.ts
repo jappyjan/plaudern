@@ -190,7 +190,7 @@ describe('QuestionsProcessor + persistence', () => {
     expect(await questionsRepo().count()).toBe(50);
   });
 
-  it('re-run upserts on the same row, refreshes open↔answered, and reaps stale rows', async () => {
+  it('re-run upserts on the same row, promotes open → answered, and reaps stale OPEN rows', async () => {
     const job = await seedJob('two questions');
     await buildProcessor(
       fakeProvider(() => ({
@@ -203,7 +203,8 @@ describe('QuestionsProcessor + persistence', () => {
     ).process({ extractionId: job.extractionId, inboxItemId: job.inboxItemId });
     expect(await questionsRepo().count()).toBe(2);
 
-    // Re-run: q one now answered, q two no longer produced (should be reaped).
+    // Re-run: q one now answered (model-driven promotion), q two still open
+    // and no longer produced (should be reaped).
     const second = await createExtraction(job.inboxItemId, 'questions', 'queued', new Date('2026-07-01T11:00:00Z'));
     await buildProcessor(
       fakeProvider(() => ({
@@ -219,6 +220,80 @@ describe('QuestionsProcessor + persistence', () => {
     expect(rows[0].question).toBe('q one');
     expect(rows[0].status).toBe('answered');
     expect(rows[0].extractionId).toBe(second);
+  });
+
+  it('never demotes a user-answered question back to open on re-extraction', async () => {
+    const job = await seedJob('one question');
+    await buildProcessor(
+      fakeProvider(() => ({
+        questions: [
+          { direction: 'asked_by_me', counterparty: '', question: 'q one', answered: false, sourceQuote: null, sourceTimestamp: null },
+        ],
+        model: 'm',
+      })),
+    ).process({ extractionId: job.extractionId, inboxItemId: job.inboxItemId });
+
+    // User marks it answered (the PATCH path).
+    const row = await questionsRepo().findOneByOrFail({ inboxItemId: job.inboxItemId });
+    row.status = 'answered';
+    await questionsRepo().save(row);
+
+    // Re-run re-produces the SAME normalizedQuestion with answered=false — the
+    // user's resolution must survive (answered is durable once set).
+    const second = await createExtraction(job.inboxItemId, 'questions', 'queued', new Date('2026-07-01T11:00:00Z'));
+    await buildProcessor(
+      fakeProvider(() => ({
+        questions: [
+          { direction: 'asked_by_me', counterparty: '', question: 'q one', answered: false, sourceQuote: null, sourceTimestamp: null },
+        ],
+        model: 'm',
+      })),
+    ).process({ extractionId: second, inboxItemId: job.inboxItemId });
+
+    const rows = await questionsRepo().find();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('answered');
+    // Provenance still repoints to the latest run.
+    expect(rows[0].extractionId).toBe(second);
+  });
+
+  it('never reaps a user-answered question when a re-run paraphrases it', async () => {
+    const job = await seedJob('one question');
+    await buildProcessor(
+      fakeProvider(() => ({
+        questions: [
+          { direction: 'asked_by_me', counterparty: '', question: 'did the landlord reply', answered: false, sourceQuote: null, sourceTimestamp: null },
+        ],
+        model: 'm',
+      })),
+    ).process({ extractionId: job.extractionId, inboxItemId: job.inboxItemId });
+
+    // User marks it answered.
+    const row = await questionsRepo().findOneByOrFail({ inboxItemId: job.inboxItemId });
+    row.status = 'answered';
+    await questionsRepo().save(row);
+
+    // Re-run paraphrases the question (different normalizedQuestion). The old
+    // answered row is on an older extractionId but must NOT be reaped; the
+    // paraphrase lands as a fresh open duplicate (documented, mirrors the
+    // tasks duplicate-open behavior).
+    const second = await createExtraction(job.inboxItemId, 'questions', 'queued', new Date('2026-07-01T11:00:00Z'));
+    await buildProcessor(
+      fakeProvider(() => ({
+        questions: [
+          { direction: 'asked_by_me', counterparty: '', question: 'has the landlord gotten back to us', answered: false, sourceQuote: null, sourceTimestamp: null },
+        ],
+        model: 'm',
+      })),
+    ).process({ extractionId: second, inboxItemId: job.inboxItemId });
+
+    const rows = await questionsRepo().find();
+    expect(rows).toHaveLength(2);
+    const answered = rows.find((r) => r.normalizedQuestion === 'did the landlord reply')!;
+    expect(answered.status).toBe('answered');
+    const fresh = rows.find((r) => r.normalizedQuestion === 'has the landlord gotten back to us')!;
+    expect(fresh.status).toBe('open');
+    expect(fresh.extractionId).toBe(second);
   });
 
   it('never resurrects a user-dropped question on re-extraction', async () => {

@@ -15,12 +15,14 @@ const MAX_QUOTE_CHARS = 1_000;
  * table: links counterparties to registry `person` entities on a confident
  * name match, and upserts on (inboxItemId, direction, normalizedQuestion).
  *
- * Status semantics — `open`/`answered` are EXTRACTION-owned: they are re-derived
- * from the model on every run (a question the model now reports answered flips
- * to `answered`, and vice-versa), so a re-extraction keeps the resolved/unresolved
- * state honest. `dropped` is the ONLY user-owned status: once a user drops a
- * question the pipeline never resurrects it. Rows an earlier extraction produced
- * that this batch did NOT re-produce are reaped unless the user dropped them.
+ * Status semantics — `open` is extraction-owned; `answered` is DURABLE once
+ * set, whether by the user (PATCH) or by the model (answered=true): a re-run
+ * may PROMOTE open → answered when the model reports the answer surfaced, but
+ * it never demotes answered → open (that would re-nag a loop the user already
+ * closed) and never touches `dropped` (the user's decision). Only rows still
+ * `open` that an earlier extraction produced and this batch did NOT re-produce
+ * are reaped — answered/dropped rows are kept as a record, mirroring the
+ * commitments reaping rule (open-only).
  *
  * Lives in its OWN provider (not QuestionsService) so the dependency graph
  * stays acyclic: QuestionsService → QUESTIONS_QUEUE → QuestionsProcessor →
@@ -39,11 +41,14 @@ export class QuestionsPersistenceService {
   /**
    * Persist a batch of extracted questions for an item. Deduped + upserted on
    * (inboxItemId, direction, normalizedQuestion): a re-run updates the existing
-   * row (repointing provenance to the new extraction and refreshing the
-   * extraction-owned open/answered status) but PRESERVES a user `dropped`
-   * decision. Rows an earlier extraction produced that the new batch did NOT
-   * re-produce are reaped unless the user dropped them. Returns the number of
-   * rows touched.
+   * row (repointing provenance to the new extraction) but PRESERVES settled
+   * statuses — the only status transition a re-run may make on an existing row
+   * is the safe promotion open → answered. Rows an earlier extraction produced
+   * that the new batch did NOT re-produce are reaped only while still `open`.
+   * NB: if a re-run PARAPHRASES a question the user already answered (different
+   * normalizedQuestion), the old answered row is kept and a fresh open duplicate
+   * appears — acceptable, mirrors the tasks duplicate-open behavior; the user
+   * resolves it once more or drops it. Returns the number of rows touched.
    */
   async persist(
     userId: string,
@@ -91,9 +96,14 @@ export class QuestionsPersistenceService {
         });
         if (existing) {
           Object.assign(existing, fields);
-          // A user `dropped` decision is the user's alone — never resurrect it.
-          // Otherwise refresh the extraction-owned open/answered status.
-          if (existing.status !== 'dropped') existing.status = extractionStatus;
+          // The only status transition a re-run may make on an existing row is
+          // the safe PROMOTION open → answered (the model saw the answer).
+          // Never demote answered → open — `answered` is durable once set,
+          // whether the user or a previous run set it — and never touch
+          // `dropped` (the user's decision).
+          if (existing.status === 'open' && extractionStatus === 'answered') {
+            existing.status = 'answered';
+          }
           await repo.save(existing);
         } else {
           try {
@@ -116,7 +126,9 @@ export class QuestionsPersistenceService {
             });
             if (!winner) throw err;
             Object.assign(winner, fields);
-            if (winner.status !== 'dropped') winner.status = extractionStatus;
+            if (winner.status === 'open' && extractionStatus === 'answered') {
+              winner.status = 'answered';
+            }
             await repo.save(winner);
           }
         }
@@ -125,14 +137,14 @@ export class QuestionsPersistenceService {
 
       // Reap stale rows: every row this batch (re-)produced now points at the
       // new extractionId, so anything still on an older extraction was NOT
-      // re-produced. Drop it unless the user dropped it — a `dropped` row is a
-      // user decision that must survive re-extraction; `open`/`answered` rows
-      // are extraction-owned and vanish with the recording that no longer
-      // supports them.
+      // re-produced. Drop it only while still `open` (the model no longer
+      // stands behind an unresolved loop); `answered` and `dropped` rows are
+      // kept as a record of handled loops — answered is durable whether the
+      // user or the model set it. Mirrors the commitments reaping rule.
       await repo.delete({
         inboxItemId,
         extractionId: Not(extractionId),
-        status: Not('dropped'),
+        status: 'open',
       });
     });
     return count;

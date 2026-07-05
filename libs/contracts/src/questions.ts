@@ -33,8 +33,13 @@ export type QuestionDirection = z.infer<typeof questionDirectionSchema>;
  * Lifecycle of a question. `open` = the loop is still dangling; `answered` =
  * resolved (either detected by the extractor when the answer appears later in
  * the same recording, or marked by the user); `dropped` = the user explicitly
- * let it go. `open`/`answered` are extraction-owned and re-derived on every run;
- * `dropped` is a user decision the pipeline never overwrites.
+ * let it go.
+ *
+ * Ownership: `open` is extraction-owned — a re-run reaps open rows it no
+ * longer stands behind. `answered` is DURABLE once set, by user or model: a
+ * re-run may promote open → answered but never demotes answered → open and
+ * never reaps an answered row. `dropped` is user-owned: the pipeline never
+ * overwrites or reaps it.
  */
 export const questionStatusSchema = z.enum(['open', 'answered', 'dropped']);
 export type QuestionStatus = z.infer<typeof questionStatusSchema>;
@@ -55,9 +60,10 @@ export const extractedQuestionSchema = z.object({
   /** The question itself, in a short phrase. */
   question: z.string().min(1),
   /**
-   * Whether the answer surfaced later in the SAME recording. True → the
-   * question is persisted `answered` (kept for the record but not nagging);
-   * false → it stays `open`.
+   * Whether the answer surfaced later in the SAME recording. True → a new row
+   * is persisted `answered` (kept for the record but not nagging) and an
+   * existing open row is promoted to `answered`; false → a new row starts
+   * `open`, but an existing `answered` row is never demoted back to open.
    */
   answered: z.boolean().default(false),
   /** The transcript span the question was drawn from, for provenance. */
