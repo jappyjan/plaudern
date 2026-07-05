@@ -11,8 +11,10 @@ import { EmbeddingModule } from '@plaudern/embeddings';
 import { EntitiesModule } from '@plaudern/entities';
 import { TopicsModule } from '@plaudern/topics';
 import { CommitmentsModule } from '@plaudern/commitments';
+import { QuestionsModule } from '@plaudern/questions';
 import { TasksModule } from '@plaudern/tasks';
 import { FactsModule } from '@plaudern/facts';
+import { OpenLoopsModule } from '@plaudern/open-loops';
 import { IngestionModule } from '@plaudern/ingestion';
 import { PlaudSyncModule } from '@plaudern/plaud-sync';
 import { SpeakerIdModule } from '@plaudern/speaker-id';
@@ -39,8 +41,10 @@ import { HealthController } from './health.controller';
     EntitiesModule,
     TopicsModule,
     CommitmentsModule,
+    QuestionsModule,
     TasksModule,
     FactsModule,
+    OpenLoopsModule,
     ExtractionModule,
     IngestionModule,
     PlaudSyncModule,

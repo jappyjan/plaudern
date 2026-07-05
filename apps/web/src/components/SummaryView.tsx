@@ -111,8 +111,8 @@ export function SummaryView({ itemId }: { itemId: string }) {
     return (
       <div className="flex flex-col gap-3">
         <p className="text-sm text-default-500">
-          No summary yet. It is generated automatically once a recording is transcribed — or you
-          can create one now.
+          No summary yet. It is generated automatically once the content is ready — or you can
+          create one now.
         </p>
         <Button
           size="sm"

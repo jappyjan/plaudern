@@ -42,8 +42,20 @@ export const extractionKindSchema = z.enum([
   // life ("her birthday is in March", "he's allergic to nuts"), scoped to a
   // registry person and append-only with supersession (JJ-31).
   'facts',
+  // LLM extraction of unanswered open questions in both directions (questions
+  // I asked that got no answer ↔ questions asked of me that I deferred) —
+  // the loops a bad memory drops silently (JJ-34).
+  'questions',
 ]);
 export type ExtractionKind = z.infer<typeof extractionKindSchema>;
+
+/**
+ * Provider id recorded on passthrough "transcription" rows: for text-bearing
+ * sources the row's content is the stored text itself (typed note, web
+ * snapshot, email body) — no speech provider involved. Consumers use it to
+ * tell typed content apart from real speech-to-text output.
+ */
+export const TEXT_PASSTHROUGH_PROVIDER_ID = 'text-passthrough';
 
 /**
  * A timed slice of a derived artifact. Transcription rows carry `text`

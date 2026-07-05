@@ -61,6 +61,9 @@ import { InboxTasksController, TasksController } from './tasks.controller';
     TasksExtractor,
   ],
   controllers: [TasksController, InboxTasksController],
-  exports: [TasksService, TasksExtractor],
+  // TasksRegistryService is exported so the open-loop ledger (JJ-29) can reuse
+  // the authoritative task read model + status mutation without duplicating its
+  // dedupe/ghost-hiding accounting.
+  exports: [TasksService, TasksExtractor, TasksRegistryService],
 })
 export class TasksModule {}
