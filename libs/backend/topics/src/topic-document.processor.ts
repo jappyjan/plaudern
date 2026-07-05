@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { runWithAiAudit } from '@plaudern/audit';
 import { InboxService } from '@plaudern/inbox';
 import { ItemTopicEntity, TopicDocumentEntity, TopicEntity } from '@plaudern/persistence';
 import {
@@ -74,19 +75,25 @@ export class TopicDocumentProcessor {
         order: { version: 'DESC' },
       });
 
-      const result = await this.provider.generate({
-        topicName: topic.name,
-        topicDescription: topic.description,
-        sources: sources.map((s) => ({
-          marker: s.marker,
-          inboxItemId: s.inboxItemId,
-          title: s.title,
-          occurredAt: s.occurredAt,
-          text: s.text,
-          language: s.language,
-        })),
-        previousMarkdown: previous?.markdown ?? null,
-      });
+      // Attribute the external AI-provider call to this user/topic so the
+      // provider adapter can audit it (JJ-42). This kind has no inbox item.
+      const result = await runWithAiAudit(
+        { userId: job.userId, itemId: null, kind: 'topic-document' },
+        () =>
+          this.provider.generate({
+            topicName: topic.name,
+            topicDescription: topic.description,
+            sources: sources.map((s) => ({
+              marker: s.marker,
+              inboxItemId: s.inboxItemId,
+              title: s.title,
+              occurredAt: s.occurredAt,
+              text: s.text,
+              language: s.language,
+            })),
+            previousMarkdown: previous?.markdown ?? null,
+          }),
+      );
 
       const markdown = sanitizeMarkers(result.markdown, sources.length);
       const cited = usedMarkers(markdown, sources.length);

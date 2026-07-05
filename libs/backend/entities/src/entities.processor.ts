@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { runWithAiAudit } from '@plaudern/audit';
 import { InboxService } from '@plaudern/inbox';
 import type { EntityExtractionPayload } from '@plaudern/contracts';
 import {
@@ -42,7 +43,12 @@ export class EntitiesProcessor {
         throw new Error('no succeeded transcription to extract entities from');
       }
 
-      const result = await this.provider.extract(input);
+      // Attribute the external AI-provider call to this user/item so the
+      // provider adapter can audit it (JJ-42).
+      const result = await runWithAiAudit(
+        { userId: item.userId, itemId: item.id, kind: 'entities' },
+        () => this.provider.extract(input),
+      );
       const entityCount = await this.registry.ingest(
         item.userId,
         item.id,

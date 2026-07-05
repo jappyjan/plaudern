@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuditModule } from '@plaudern/audit';
 import { InboxModule } from '@plaudern/inbox';
 import { OpenAiEmbeddingProvider } from '@plaudern/embeddings';
 import {
@@ -26,6 +27,7 @@ import { InboxTasksController, TasksController } from './tasks.controller';
 @Module({
   imports: [
     ConfigModule,
+    AuditModule,
     InboxModule,
     TypeOrmModule.forFeature([
       TaskEntity,

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuditModule } from '@plaudern/audit';
 import { InboxModule } from '@plaudern/inbox';
 import { InboxItemEntity, ReminderEntity } from '@plaudern/persistence';
 import { BullJobQueue, InlineJobQueue, redisConnectionFromConfig } from '@plaudern/queue';
@@ -18,6 +19,7 @@ import { InboxRemindersController } from './inbox-reminders.controller';
 @Module({
   imports: [
     ConfigModule,
+    AuditModule,
     InboxModule,
     TypeOrmModule.forFeature([ReminderEntity, InboxItemEntity]),
   ],

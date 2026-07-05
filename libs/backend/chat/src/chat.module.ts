@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuditModule } from '@plaudern/audit';
 import { ChatConversationEntity, ChatMessageEntity } from '@plaudern/persistence';
 import { SearchModule } from '@plaudern/search';
 import { VerificationModule } from '@plaudern/citations';
@@ -19,6 +20,7 @@ import { ChatController } from './chat.controller';
 @Module({
   imports: [
     ConfigModule,
+    AuditModule,
     SearchModule,
     VerificationModule,
     TypeOrmModule.forFeature([ChatConversationEntity, ChatMessageEntity]),

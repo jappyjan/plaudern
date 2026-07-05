@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
+  AiProviderCallEntity,
   AuthSessionEntity,
   CalendarEventEntity,
   CalendarFeedEntity,
@@ -9,6 +10,7 @@ import {
   ChatMessageEntity,
   CommitmentEntity,
   ConsentSettingsEntity,
+  DeadMansSwitchEntity,
   DecisionEntity,
   DocumentMetadataEntity,
   EmailSettingsEntity,
@@ -92,6 +94,7 @@ import { VoiceProfileSelf1720000000037 } from './migrations/1720000000037-VoiceP
 import { CreateReminders1720000000038 } from './migrations/1720000000038-CreateReminders';
 import { CreateJournalDocuments1720000000039 } from './migrations/1720000000039-CreateJournalDocuments';
 import { SanitizeEntityAliases1720000000040 } from './migrations/1720000000040-SanitizeEntityAliases';
+import { DataSovereignty1720000000041 } from './migrations/1720000000041-DataSovereignty';
 import { CreateDocumentMetadata1720000000042 } from './migrations/1720000000042-CreateDocumentMetadata';
 import { CreateEntityMergeSuggestions1720000000043 } from './migrations/1720000000043-CreateEntityMergeSuggestions';
 import { CreateItemSensitivity1720000000044 } from './migrations/1720000000044-CreateItemSensitivity';
@@ -145,6 +148,8 @@ export const ALL_ENTITIES = [
   NotificationCategoryPreferenceEntity,
   PushSubscriptionEntity,
   NotificationDeliveryEntity,
+  AiProviderCallEntity,
+  DeadMansSwitchEntity,
 ];
 
 // Referenced as classes (not a glob) so migrations load identically under
@@ -191,6 +196,7 @@ export const ALL_MIGRATIONS = [
   CreateReminders1720000000038,
   CreateJournalDocuments1720000000039,
   SanitizeEntityAliases1720000000040,
+  DataSovereignty1720000000041,
   CreateDocumentMetadata1720000000042,
   CreateEntityMergeSuggestions1720000000043,
   CreateItemSensitivity1720000000044,

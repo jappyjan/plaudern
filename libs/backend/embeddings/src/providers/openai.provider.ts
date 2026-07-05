@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AiAuditRecorder } from '@plaudern/audit';
 import {
   DEFAULT_EMBEDDING_DIMENSIONS,
   type EmbeddingProvider,
@@ -40,7 +41,10 @@ export class OpenAiEmbeddingProvider implements EmbeddingProvider {
   private readonly timeoutMs: number;
   private readonly explicitlyEnabled: boolean;
 
-  constructor(config: ConfigService) {
+  constructor(
+    config: ConfigService,
+    private readonly audit: AiAuditRecorder,
+  ) {
     this.baseUrl = config
       .get<string>('EMBEDDINGS_BASE_URL', 'https://api.openai.com/v1')
       .replace(/\/+$/, '');
@@ -81,16 +85,20 @@ export class OpenAiEmbeddingProvider implements EmbeddingProvider {
       // Most local servers (Ollama, text-embeddings-inference) ignore auth
       // entirely; only send the header when a key was actually configured.
       if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
-      const res = await fetch(`${this.baseUrl}/embeddings`, {
+      const endpoint = `${this.baseUrl}/embeddings`;
+      const body = JSON.stringify({
+        model: this.model,
+        input: texts,
+        // Providers that support dimension reduction (OpenAI v3 models) honor
+        // this; others ignore it and return their native dimension.
+        dimensions: this.dimensions,
+      });
+      // Audit the exact bytes leaving the box before they leave (JJ-42).
+      await this.audit.record({ provider: this.id, endpoint, payload: body });
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          model: this.model,
-          input: texts,
-          // Providers that support dimension reduction (OpenAI v3 models) honor
-          // this; others ignore it and return their native dimension.
-          dimensions: this.dimensions,
-        }),
+        body,
         signal: controller.signal,
       });
       if (!res.ok) {

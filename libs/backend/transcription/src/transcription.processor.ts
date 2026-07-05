@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { runWithAiAudit } from '@plaudern/audit';
 import { InboxService } from '@plaudern/inbox';
 import { StorageService } from '@plaudern/storage';
 import {
@@ -40,12 +41,18 @@ export class TranscriptionProcessor {
       // Presign at run time (not enqueue time) so queue retries never hold an
       // expired URL. The provider downloads the URL itself.
       const audioUrl = await this.storage.createInternalPresignedGetUrl(job.storageKey);
-      const result = await this.provider.transcribe({
-        audioUrl,
-        contentType: job.contentType,
-        filename: job.filename,
-        languageHint: job.languageHint,
-      });
+      // Recover the owner so the audited provider call is attributed (JJ-42).
+      const item = await this.inbox.getItemById(job.inboxItemId);
+      const result = await runWithAiAudit(
+        { userId: item?.userId ?? '', itemId: job.inboxItemId, kind: 'transcription' },
+        () =>
+          this.provider.transcribe({
+            audioUrl,
+            contentType: job.contentType,
+            filename: job.filename,
+            languageHint: job.languageHint,
+          }),
+      );
       await this.inbox.completeExtraction(job.extractionId, {
         status: 'succeeded',
         content: result.text,

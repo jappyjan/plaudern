@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuditModule } from '@plaudern/audit';
 import { InboxModule } from '@plaudern/inbox';
 import { EmbeddingChunkEntity } from '@plaudern/persistence';
 import { BullJobQueue, InlineJobQueue, redisConnectionFromConfig } from '@plaudern/queue';
@@ -14,7 +15,7 @@ import { EmbeddingExtractor } from './embedding.extractor';
 import { EmbeddingController } from './embedding.controller';
 
 @Module({
-  imports: [ConfigModule, InboxModule, TypeOrmModule.forFeature([EmbeddingChunkEntity])],
+  imports: [ConfigModule, AuditModule, InboxModule, TypeOrmModule.forFeature([EmbeddingChunkEntity])],
   providers: [
     OpenAiEmbeddingProvider,
     // Only one provider for now (any OpenAI-compatible /embeddings endpoint);

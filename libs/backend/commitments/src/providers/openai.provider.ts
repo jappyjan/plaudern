@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AiAuditRecorder } from '@plaudern/audit';
 import { extractedCommitmentSchema, type ExtractedCommitment } from '@plaudern/contracts';
 import type {
   CommitmentExtractionInput,
@@ -36,7 +37,10 @@ export class OpenAiCommitmentExtractionProvider implements CommitmentExtractionP
   private readonly timeoutMs: number;
   private readonly explicitlyEnabled: boolean;
 
-  constructor(config: ConfigService) {
+  constructor(
+    config: ConfigService,
+    private readonly audit: AiAuditRecorder,
+  ) {
     this.baseUrl = config
       .get<string>('COMMITMENTS_BASE_URL', 'https://api.deepseek.com/v1')
       .replace(/\/+$/, '');
@@ -69,18 +73,22 @@ export class OpenAiCommitmentExtractionProvider implements CommitmentExtractionP
       // Most local servers (Ollama, llama.cpp) ignore auth entirely; only send
       // the header when a key was actually configured.
       if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
-      const res = await fetch(`${this.baseUrl}/chat/completions`, {
+      const endpoint = `${this.baseUrl}/chat/completions`;
+      const body = JSON.stringify({
+        model: this.model,
+        temperature: 0,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: buildUserPrompt(input) },
+        ],
+      });
+      // Audit the exact bytes leaving the box before they leave (JJ-42).
+      await this.audit.record({ provider: this.id, endpoint, payload: body });
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          model: this.model,
-          temperature: 0,
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
-            { role: 'user', content: buildUserPrompt(input) },
-          ],
-        }),
+        body,
         signal: controller.signal,
       });
       if (!res.ok) {

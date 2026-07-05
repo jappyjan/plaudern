@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AiAuditRecorder } from '@plaudern/audit';
 import type {
   ChatCompletionMessage,
   ChatCompletionProvider,
@@ -35,7 +36,10 @@ export class OpenAiChatCompletionProvider implements ChatCompletionProvider {
   private readonly timeoutMs: number;
   private readonly explicitlyEnabled: boolean;
 
-  constructor(config: ConfigService) {
+  constructor(
+    config: ConfigService,
+    private readonly audit: AiAuditRecorder,
+  ) {
     const fallbackBaseUrl = config.get<string>(
       'SUMMARIZATION_BASE_URL',
       'https://api.deepseek.com/v1',
@@ -72,15 +76,19 @@ export class OpenAiChatCompletionProvider implements ChatCompletionProvider {
       // Most local servers (Ollama, llama.cpp) ignore auth entirely; only send
       // the header when a key was actually configured.
       if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
-      const res = await fetch(`${this.baseUrl}/chat/completions`, {
+      const endpoint = `${this.baseUrl}/chat/completions`;
+      const body = JSON.stringify({
+        model: this.model,
+        temperature: 0,
+        response_format: { type: 'json_object' },
+        messages,
+      });
+      // Audit the exact bytes leaving the box before they leave (JJ-42).
+      await this.audit.record({ provider: this.id, endpoint, payload: body });
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          model: this.model,
-          temperature: 0,
-          response_format: { type: 'json_object' },
-          messages,
-        }),
+        body,
         signal: controller.signal,
       });
       if (!res.ok) {

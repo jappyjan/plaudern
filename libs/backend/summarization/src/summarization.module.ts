@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuditModule } from '@plaudern/audit';
 import { InboxModule } from '@plaudern/inbox';
 import { SpeakerOccurrenceEntity, SummarizationSettingsEntity } from '@plaudern/persistence';
 import { BullJobQueue, InlineJobQueue, redisConnectionFromConfig } from '@plaudern/queue';
@@ -20,6 +21,7 @@ import { SummaryExtractor } from './summary.extractor';
 @Module({
   imports: [
     ConfigModule,
+    AuditModule,
     InboxModule,
     TypeOrmModule.forFeature([SpeakerOccurrenceEntity, SummarizationSettingsEntity]),
   ],

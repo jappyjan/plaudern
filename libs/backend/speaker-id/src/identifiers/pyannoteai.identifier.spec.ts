@@ -4,6 +4,8 @@ import type { PyannoteAiClient, PyannoteAiDiarization } from '../providers/pyann
 import type { VoiceprintMatcherService, DiarizedSpeakerLite } from '../voiceprint-matcher.service';
 
 const config = { get: (_: string, d?: string) => d } as any;
+// Auditing is exercised in the audit lib's own spec; here it is a no-op stub.
+const audit = { record: async () => undefined } as any;
 // Audio is read from private storage and pushed to pyannoteAI — never presigned.
 const storage = { getObjectStream: async () => Readable.from([Buffer.from('AUDIO')]) } as any;
 
@@ -37,7 +39,14 @@ function build(known: { id: string; voiceprint: string | null }[]) {
   } as unknown as PyannoteAiClient;
   let diar: PyannoteAiDiarization = { durationSeconds: 0, segments: [] };
   const setDiar = (d: PyannoteAiDiarization) => (diar = d);
-  const identifier = new PyannoteAiSpeakerIdentifier(config, storage, client, matcher, profiles);
+  const identifier = new PyannoteAiSpeakerIdentifier(
+    config,
+    storage,
+    client,
+    matcher,
+    profiles,
+    audit,
+  );
   return { identifier, captured, clientCalls, setDiar };
 }
 

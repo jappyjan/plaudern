@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuditModule } from '@plaudern/audit';
 import {
   CalendarEventEntity,
   InboxItemEntity,
@@ -23,6 +24,7 @@ import { JournalController } from './journal.controller';
 @Module({
   imports: [
     ConfigModule,
+    AuditModule,
     TypeOrmModule.forFeature([JournalDocumentEntity, InboxItemEntity, CalendarEventEntity]),
   ],
   providers: [
