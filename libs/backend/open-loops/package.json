@@ -10,6 +10,7 @@
     "@plaudern/commitments": "workspace:*",
     "@plaudern/contracts": "workspace:*",
     "@plaudern/persistence": "workspace:*",
+    "@plaudern/questions": "workspace:*",
     "@plaudern/tasks": "workspace:*"
   },
   "peerDependencies": {

@@ -744,6 +744,9 @@ importers:
       '@plaudern/persistence':
         specifier: workspace:*
         version: link:../persistence
+      '@plaudern/questions':
+        specifier: workspace:*
+        version: link:../questions
       '@plaudern/tasks':
         specifier: workspace:*
         version: link:../tasks
