@@ -9,6 +9,8 @@ import {
   EntitySuppressionEntity,
   ExtractedPayloadEntity,
   InboxItemEntity,
+  PersonalFactCitationEntity,
+  PersonalFactEntity,
   VoiceProfileEntity,
 } from '@plaudern/persistence';
 import type { ExtractedEntity } from '@plaudern/contracts';
@@ -114,6 +116,84 @@ describe('EntitiesCorrectionService', () => {
     const detail = await registry.detail(USER, survivorId);
     expect(detail.mentionCount).toBe(1);
     expect(await dataSource.getRepository(EntityMentionEntity).count()).toBe(1);
+  });
+
+  it('merge repoints personal facts and recomputes supersession to a SINGLE active (JJ-31)', async () => {
+    // Two person entities, each with one EXCLUSIVE "current city" fact backed by
+    // a live facts citation — both active in their own (pre-merge) groups.
+    const survivor = await dataSource.getRepository(EntityRegistryEntity).save({
+      userId: USER,
+      type: 'person',
+      canonicalName: 'Anna',
+      normalizedName: 'anna',
+      aliases: [],
+    });
+    const victim = await dataSource.getRepository(EntityRegistryEntity).save({
+      userId: USER,
+      type: 'person',
+      canonicalName: 'Ana',
+      normalizedName: 'ana',
+      aliases: [],
+    });
+    const facts = dataSource.getRepository(PersonalFactEntity);
+    const factCitations = dataSource.getRepository(PersonalFactCitationEntity);
+
+    async function seedFact(
+      entityId: string,
+      value: string,
+      occurredAt: string,
+    ): Promise<string> {
+      const item = await createItem(occurredAt);
+      const ext = await dataSource.getRepository(ExtractedPayloadEntity).save({
+        inboxItemId: item,
+        kind: 'facts',
+        version: 1,
+        provider: 'test',
+        status: 'succeeded',
+        createdAt: new Date(occurredAt),
+      });
+      const fact = await facts.save({
+        userId: USER,
+        personEntityId: entityId,
+        personName: 'Anna',
+        subjectKey: `e:${entityId}`,
+        attribute: 'current city',
+        normalizedAttribute: 'current city',
+        value,
+        normalizedValue: value.toLowerCase(),
+        exclusive: true,
+        supersededByFactId: null,
+        supersededAt: null,
+        lastOccurredAt: occurredAt,
+      });
+      await factCitations.save({
+        userId: USER,
+        factId: fact.id,
+        inboxItemId: item,
+        extractionId: ext.id,
+        quote: null,
+        startSeconds: null,
+      });
+      return fact.id;
+    }
+
+    const survivorFactId = await seedFact(survivor.id, 'Berlin', '2026-01-01T00:00:00.000Z');
+    const victimFactId = await seedFact(victim.id, 'Munich', '2026-03-01T00:00:00.000Z');
+
+    await corrections.merge(USER, survivor.id, victim.id);
+
+    // Both facts now belong to the survivor's subject; the merge recompute
+    // collapses the two once-active exclusive facts to exactly ONE active — the
+    // newest (Munich) — with Berlin superseded by it. Nothing hard-deleted.
+    const all = await facts.find({ where: { userId: USER } });
+    expect(all).toHaveLength(2);
+    expect(all.every((f) => f.subjectKey === `e:${survivor.id}`)).toBe(true);
+    const active = all.filter((f) => f.supersededByFactId === null);
+    expect(active).toHaveLength(1);
+    expect(active[0].id).toBe(victimFactId);
+    expect(active[0].value).toBe('Munich');
+    const superseded = all.find((f) => f.id === survivorFactId)!;
+    expect(superseded.supersededByFactId).toBe(victimFactId);
   });
 
   it('merge is durable: re-extraction of the victim name resolves to the survivor', async () => {

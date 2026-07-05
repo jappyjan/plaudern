@@ -35,5 +35,7 @@ export * from './commitment.entity';
 export * from './question.entity';
 export * from './task.entity';
 export * from './task-citation.entity';
+export * from './personal-fact.entity';
+export * from './personal-fact-citation.entity';
 export * from './chat-conversation.entity';
 export * from './chat-message.entity';

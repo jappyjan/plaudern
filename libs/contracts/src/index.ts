@@ -9,6 +9,7 @@ export * from './embedding';
 export * from './entities';
 export * from './topics';
 export * from './tasks';
+export * from './facts';
 export * from './relations';
 export * from './commitments';
 export * from './questions';

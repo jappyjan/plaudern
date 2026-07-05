@@ -21,6 +21,7 @@
     "@plaudern/embeddings": "workspace:*",
     "@plaudern/entities": "workspace:*",
     "@plaudern/extraction": "workspace:*",
+    "@plaudern/facts": "workspace:*",
     "@plaudern/geocoding": "workspace:*",
     "@plaudern/inbox": "workspace:*",
     "@plaudern/ingestion": "workspace:*",
