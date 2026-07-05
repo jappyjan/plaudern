@@ -123,7 +123,7 @@ export function App() {
                 isIconOnly
                 variant="light"
                 size="sm"
-                aria-label="Contacts"
+                aria-label="People"
               >
                 <PeopleIcon className="h-5 w-5" />
               </Button>

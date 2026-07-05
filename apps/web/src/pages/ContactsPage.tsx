@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Card,
@@ -11,23 +11,37 @@ import {
 } from '@heroui/react';
 import type { VoiceProfileDto } from '@plaudern/contracts';
 import { Link } from 'react-router-dom';
-import { listSpeakers, mergeSpeakers, updateSpeaker } from '../lib/api';
+import { autoLinkEntities, listEntities, listSpeakers, mergeSpeakers, updateSpeaker } from '../lib/api';
+import { mergePeople, type UnifiedPerson } from '../lib/mergePeople';
 import { speakerColor, speakerDisplayName } from '../lib/speakerColors';
 import { formatDateTime } from '../lib/format';
 
 /**
- * Contact book: every person the system has heard, plus a review queue for
- * newly detected voices (name them, merge them into an existing person, or
- * keep them as a new one).
+ * People hub: every person the system knows — whether it *heard* them (a voice
+ * profile / contact) or merely saw them *mentioned* in a transcript (a `person`
+ * knowledge-graph entity). The two are one real person, already linked by
+ * `entity.voiceProfileId`, so they are merged into a single card here (see
+ * `mergePeople`) instead of the two separate lists they used to live in. A
+ * review queue at the bottom handles newly detected, still-unnamed voices.
  */
 export function ContactsPage() {
   const [profiles, setProfiles] = useState<VoiceProfileDto[] | null>(null);
+  const [people, setPeople] = useState<UnifiedPerson[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [linking, setLinking] = useState(false);
+  const [linkResult, setLinkResult] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const res = await listSpeakers();
-      setProfiles(res.profiles);
+      // Person entities that no current extraction mentions stay hidden (the
+      // API default) — the list should reflect who the recordings talk about
+      // today. Both calls are flat GETs, so a client-side merge is cheap.
+      const [speakers, entities] = await Promise.all([
+        listSpeakers(),
+        listEntities('person'),
+      ]);
+      setProfiles(speakers.profiles);
+      setPeople(mergePeople(speakers.profiles, entities.entities));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -37,10 +51,49 @@ export function ContactsPage() {
     void load();
   }, [load]);
 
+  // Heard voices still awaiting a name/confirmation, and not already folded into
+  // a merged card via an entity link — those go to the review queue below.
+  const reviewQueue = useMemo(
+    () => (people ?? []).filter((p) => p.provenance === 'heard' && p.unconfirmed),
+    [people],
+  );
+  const listed = useMemo(
+    () => (people ?? []).filter((p) => !(p.provenance === 'heard' && p.unconfirmed)),
+    [people],
+  );
+  // People known only from mentions can be linked to a heard voice — offer the
+  // sweep when there's at least one such person and at least one contact.
+  const mentionedOnly = useMemo(
+    () => (people ?? []).filter((p) => p.provenance === 'mentioned').length,
+    [people],
+  );
+  const confirmedProfiles = useMemo(
+    () => (profiles ?? []).filter((p) => p.status === 'confirmed'),
+    [profiles],
+  );
+
+  const runAutoLink = async () => {
+    setLinking(true);
+    setLinkResult(null);
+    try {
+      const { linked } = await autoLinkEntities();
+      if (linked > 0) await load();
+      setLinkResult(
+        linked > 0
+          ? `Linked ${linked} ${linked === 1 ? 'person' : 'people'} to a contact.`
+          : 'No new matches — name more contacts to link more people.',
+      );
+    } catch (cause) {
+      setLinkResult(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setLinking(false);
+    }
+  };
+
   if (error) {
     return <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">{error}</div>;
   }
-  if (!profiles) {
+  if (!people) {
     return (
       <div className="flex justify-center py-12">
         <Spinner label="Loading…" />
@@ -48,72 +101,46 @@ export function ContactsPage() {
     );
   }
 
-  const confirmed = profiles.filter((p) => p.status === 'confirmed');
-  const unconfirmed = profiles.filter((p) => p.status === 'unconfirmed');
-
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold">People</h2>
-        {confirmed.length === 0 && (
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold">People</h2>
+          {mentionedOnly > 0 && confirmedProfiles.length > 0 && (
+            <Button size="sm" variant="flat" isLoading={linking} onPress={() => void runAutoLink()}>
+              Auto-link
+            </Button>
+          )}
+        </div>
+        {linkResult && <p className="text-xs text-default-500">{linkResult}</p>}
+        {listed.length === 0 ? (
           <p className="text-sm text-default-500">
-            No confirmed people yet. Voices detected in your recordings show up below for review.
+            No people yet. Voices detected in your recordings show up below for review, and people
+            mentioned in your recordings are added automatically as they are processed.
           </p>
+        ) : (
+          listed.map((person) => <PersonCard key={person.key} person={person} />)
         )}
-        {confirmed.map((profile) => (
-          <Card key={profile.id} as={Link} to={`/contacts/${profile.id}`} isPressable>
-            <CardBody className="flex flex-row items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <Avatar profile={profile} />
-                <div>
-                  <p className="text-sm font-medium">{speakerDisplayName(profile)}</p>
-                  <p className="text-xs text-default-500">
-                    {profile.recordingCount} recording{profile.recordingCount === 1 ? '' : 's'}
-                    {profile.lastHeardAt &&
-                      ` · last heard ${formatDateTime(profile.lastHeardAt)}`}
-                  </p>
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                {profile.isSelf && (
-                  <Chip size="sm" variant="flat" color="primary">
-                    You
-                  </Chip>
-                )}
-                {profile.consentStatus === 'declined' && (
-                  <Chip size="sm" variant="flat" color="danger">
-                    declined
-                  </Chip>
-                )}
-                {profile.consentStatus === 'consented' && (
-                  <Chip size="sm" variant="flat" color="success">
-                    consented
-                  </Chip>
-                )}
-                {profile.redacted && (
-                  <Chip size="sm" variant="flat" color="danger">
-                    redacted
-                  </Chip>
-                )}
-              </div>
-            </CardBody>
-          </Card>
-        ))}
       </div>
 
-      {unconfirmed.length > 0 && (
+      {reviewQueue.length > 0 && (
         <div className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold">Needs review</h2>
             <Chip size="sm" color="warning" variant="flat">
-              {unconfirmed.length}
+              {reviewQueue.length}
             </Chip>
           </div>
           <p className="text-sm text-default-500">
             New voices that could not be matched to a known person.
           </p>
-          {unconfirmed.map((profile) => (
-            <ReviewCard key={profile.id} profile={profile} confirmed={confirmed} onDone={load} />
+          {reviewQueue.map((person) => (
+            <ReviewCard
+              key={person.key}
+              profile={person.voiceProfile!}
+              confirmed={confirmedProfiles}
+              onDone={load}
+            />
           ))}
         </div>
       )}
@@ -121,11 +148,82 @@ export function ContactsPage() {
   );
 }
 
-function Avatar({ profile }: { profile: VoiceProfileDto }) {
-  const initial = (profile.name ?? '?').charAt(0).toUpperCase();
+/** Concise provenance line: how many recordings heard / mentioned in. */
+function provenanceLabel(person: UnifiedPerson): string {
+  const parts: string[] = [];
+  if (person.recordingCount > 0) {
+    parts.push(`heard in ${person.recordingCount} recording${person.recordingCount === 1 ? '' : 's'}`);
+  }
+  if (person.mentionCount > 0) {
+    parts.push(`mentioned in ${person.mentionCount} recording${person.mentionCount === 1 ? '' : 's'}`);
+  }
+  if (parts.length === 0) return 'no current recordings';
+  return parts.join(' · ');
+}
+
+function displayName(person: UnifiedPerson): string {
+  if (person.name) return person.name;
+  if (person.voiceProfile) return speakerDisplayName(person.voiceProfile);
+  return 'Unknown person';
+}
+
+function PersonCard({ person }: { person: UnifiedPerson }) {
+  const name = displayName(person);
+  return (
+    <Card as={Link} to={person.detailTo} isPressable>
+      <CardBody className="flex flex-row items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar seed={person.key} name={name} />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium">{name}</p>
+            <p className="text-xs text-default-500">
+              {provenanceLabel(person)}
+              {person.lastActivityAt && ` · ${formatDateTime(person.lastActivityAt)}`}
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {person.isSelf && (
+            <Chip size="sm" variant="flat" color="primary">
+              You
+            </Chip>
+          )}
+          {person.provenance === 'mentioned' && (
+            <Chip size="sm" variant="flat" title="Mentioned in recordings; not matched to a voice yet">
+              mentioned
+            </Chip>
+          )}
+          {person.unconfirmed && (
+            <Chip size="sm" variant="flat" color="warning">
+              unconfirmed
+            </Chip>
+          )}
+          {person.consentStatus === 'declined' && (
+            <Chip size="sm" variant="flat" color="danger">
+              declined
+            </Chip>
+          )}
+          {person.consentStatus === 'consented' && (
+            <Chip size="sm" variant="flat" color="success">
+              consented
+            </Chip>
+          )}
+          {person.redacted && (
+            <Chip size="sm" variant="flat" color="danger">
+              redacted
+            </Chip>
+          )}
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+function Avatar({ seed, name }: { seed: string; name: string }) {
+  const initial = (name || '?').charAt(0).toUpperCase();
   return (
     <span
-      className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold ${speakerColor(profile.id)}`}
+      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${speakerColor(seed)}`}
     >
       {initial}
     </span>
@@ -163,7 +261,7 @@ function ReviewCard({
       <CardBody className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <Avatar profile={profile} />
+            <Avatar seed={profile.id} name={profile.name ?? '?'} />
             <div>
               <p className="text-sm font-medium">Unknown voice</p>
               <p className="text-xs text-default-500">
