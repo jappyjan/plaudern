@@ -5,6 +5,7 @@ import {
   EntityMentionEntity,
   ExtractedPayloadEntity,
   InboxItemEntity,
+  ItemSensitivityEntity,
   ItemTopicEntity,
 } from '@plaudern/persistence';
 import { EmbeddingModule } from '@plaudern/embeddings';
@@ -28,6 +29,7 @@ import { ItemSimilarController, SearchController } from './search.controller';
       EntityMentionEntity,
       ItemTopicEntity,
       EmbeddingChunkEntity,
+      ItemSensitivityEntity,
     ]),
   ],
   providers: [KeywordSearchService, SearchService],

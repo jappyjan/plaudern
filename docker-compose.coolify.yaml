@@ -174,6 +174,24 @@ services:
       - JOURNAL_API_KEY=${SUMMARIZATION_API_KEY}
       - JOURNAL_BASE_URL=${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
       - JOURNAL_MODEL=${JOURNAL_MODEL:-deepseek-chat}
+      # Sensitivity sentinel (JJ-21). The deterministic detectors (IBAN, card,
+      # credentials, national IDs) ALWAYS run with no key. The OPTIONAL LLM
+      # classifier catches nuanced cases (health details, other people's
+      # secrets) and is DISABLED until a key is set — it sees the raw transcript,
+      # so point SENTINEL_LLM_BASE_URL at a local endpoint to keep it private.
+      # Leave the key empty to run detectors-only (recommended default).
+      - SENTINEL_LLM_API_KEY=${SENTINEL_LLM_API_KEY:-}
+      - SENTINEL_LLM_BASE_URL=${SENTINEL_LLM_BASE_URL:-https://api.deepseek.com/v1}
+      - SENTINEL_LLM_MODEL=${SENTINEL_LLM_MODEL:-deepseek-chat}
+      # Local-only routing (JJ-21): items classified sensitive/secret are NEVER
+      # sent to an external LLM. If a LOCAL model tier is configured here they
+      # are released to it; otherwise they are HELD ("needs local model") rather
+      # than processed externally. Set LOCAL_LLM_ENABLED=true once you run a
+      # local OpenAI-compatible server (Ollama, llama.cpp) AND have pointed the
+      # per-kind *_BASE_URL above at it, so sensitive content stays on-box.
+      - LOCAL_LLM_ENABLED=${LOCAL_LLM_ENABLED:-false}
+      - LOCAL_LLM_BASE_URL=${LOCAL_LLM_BASE_URL:-http://localhost:11434/v1}
+      - LOCAL_LLM_MODEL=${LOCAL_LLM_MODEL:-llama3.1}
       # Transcription: the hosted ElevenLabs Scribe API — fill in
       # ELEVENLABS_API_KEY (get one at elevenlabs.io). Audio bytes are uploaded
       # to ElevenLabs directly (storage stays private).

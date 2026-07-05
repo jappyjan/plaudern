@@ -22,6 +22,7 @@ import {
   GeocodeCacheEntity,
   InboxItemEntity,
   InboxTombstoneEntity,
+  ItemSensitivityEntity,
   ItemTopicEntity,
   JournalDocumentEntity,
   McpTokenEntity,
@@ -88,6 +89,7 @@ import { CreateTopicDocuments1720000000036 } from './migrations/1720000000036-Cr
 import { VoiceProfileSelf1720000000037 } from './migrations/1720000000037-VoiceProfileSelf';
 import { CreateReminders1720000000038 } from './migrations/1720000000038-CreateReminders';
 import { CreateJournalDocuments1720000000039 } from './migrations/1720000000039-CreateJournalDocuments';
+import { CreateItemSensitivity1720000000043 } from './migrations/1720000000043-CreateItemSensitivity';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -106,6 +108,7 @@ export const ALL_ENTITIES = [
   QuestionEntity,
   DecisionEntity,
   ReminderEntity,
+  ItemSensitivityEntity,
   TaskEntity,
   TaskCitationEntity,
   PersonalFactEntity,
@@ -180,6 +183,7 @@ export const ALL_MIGRATIONS = [
   VoiceProfileSelf1720000000037,
   CreateReminders1720000000038,
   CreateJournalDocuments1720000000039,
+  CreateItemSensitivity1720000000043,
 ];
 
 /**

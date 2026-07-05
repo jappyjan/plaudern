@@ -103,6 +103,7 @@ function makeHit(overrides: Partial<SearchResultItem> = {}): SearchResultItem {
     keywordRank: 1,
     fusedScore: 0.03,
     rank: 1,
+    sensitivityTier: null,
     ...overrides,
   };
 }

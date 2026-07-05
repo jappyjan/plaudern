@@ -16,6 +16,7 @@
     "@plaudern/inbox": "workspace:*",
     "@plaudern/persistence": "workspace:*",
     "@plaudern/reminders": "workspace:*",
+    "@plaudern/sensitivity": "workspace:*",
     "@plaudern/speaker-id": "workspace:*",
     "@plaudern/summarization": "workspace:*",
     "@plaudern/topics": "workspace:*",

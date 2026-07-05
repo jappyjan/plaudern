@@ -2,6 +2,8 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import type { Subscription } from 'rxjs';
 import { InboxEventsService, InboxService, type Extractor } from '@plaudern/inbox';
 import type { InboxItemEntity } from '@plaudern/persistence';
+import { isExternalLlmKind } from '@plaudern/contracts';
+import { SensitivityRoutingService } from '@plaudern/sensitivity';
 import { ExtractorGraph } from './extractor-graph';
 import { evaluateReadiness, isGenerationCovered } from './readiness';
 
@@ -32,6 +34,7 @@ export class ExtractionPipelineService implements OnModuleInit, OnModuleDestroy 
     private readonly graph: ExtractorGraph,
     private readonly inbox: InboxService,
     private readonly events: InboxEventsService,
+    private readonly routing: SensitivityRoutingService,
   ) {}
 
   onModuleInit(): void {
@@ -45,6 +48,20 @@ export class ExtractionPipelineService implements OnModuleInit, OnModuleDestroy 
             `evaluating '${dependent.kind}' for ${event.itemId} failed: ${(err as Error).message}`,
           );
         });
+      }
+      // The sentinel (JJ-21) is a sibling of the external-LLM extractors, not
+      // their upstream, so its completion re-opens the routing decision for
+      // every gated kind: items that `wait`ed for a tier can now proceed, route
+      // to local, or be held.
+      if (event.kind === 'sentinel' && event.status === 'succeeded') {
+        for (const extractor of this.graph.all()) {
+          if (!isExternalLlmKind(extractor.kind)) continue;
+          void this.maybeRun(event.itemId, extractor).catch((err) => {
+            this.logger.warn(
+              `re-evaluating '${extractor.kind}' for ${event.itemId} after sentinel failed: ${(err as Error).message}`,
+            );
+          });
+        }
       }
     });
   }
@@ -85,6 +102,26 @@ export class ExtractionPipelineService implements OnModuleInit, OnModuleDestroy 
       if (isGenerationCovered(item.extractions ?? [], extractor.kind, readiness.generationTs)) {
         return; // this generation is already extracted or in progress
       }
+
+      // Local-only routing guard (JJ-21): an external-LLM extractor may only run
+      // on content whose sensitivity tier allows it. Sensitive/secret items are
+      // HELD (never sent externally) unless a local model tier is configured;
+      // `wait` means the sentinel hasn't classified the item yet — its
+      // completion re-triggers this evaluation.
+      if (isExternalLlmKind(extractor.kind)) {
+        const decision = await this.routing.decide(inboxItemId);
+        if (decision === 'wait') return;
+        if (decision === 'hold') {
+          await this.routing.markHeld(inboxItemId);
+          this.logger.log(
+            `holding '${extractor.kind}' for ${inboxItemId}: sensitive content, no local model tier`,
+          );
+          return;
+        }
+        // `external` or `local` — clear any prior hold and proceed.
+        await this.routing.clearHeld(inboxItemId);
+      }
+
       await extractor.enqueue(item);
     } finally {
       this.evaluating.delete(key);
