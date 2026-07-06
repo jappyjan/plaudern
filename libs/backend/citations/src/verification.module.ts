@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { AuditModule } from '@plaudern/audit';
 import { CITATION_VERIFIER } from './verification.provider';
 import { OpenAiCitationVerifier } from './providers/openai.verifier';
 import { VerificationService } from './verification.service';
@@ -16,7 +17,7 @@ import { VerificationService } from './verification.service';
  * wired here.
  */
 @Module({
-  imports: [ConfigModule],
+  imports: [ConfigModule, AuditModule],
   providers: [
     OpenAiCitationVerifier,
     {

@@ -1,4 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { runWithAiAudit } from '@plaudern/audit';
 import { AiConfigService } from '@plaudern/ai-config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -89,11 +90,13 @@ export class EntityReconciliationService {
       webSnippets = research.snippets;
       usedWeb = research.usedWeb;
     }
-    const { decision } = await this.judge.judge(userId, {
-      subject: { name: subject.canonicalName, type: subject.type, aliases: subject.aliases },
-      candidate: { name: candidate.canonicalName, type: candidate.type, aliases: candidate.aliases },
-      webSnippets,
-    });
+    const { decision } = await runWithAiAudit({ userId, kind: 'entity_judge' }, () =>
+      this.judge.judge(userId, {
+        subject: { name: subject.canonicalName, type: subject.type, aliases: subject.aliases },
+        candidate: { name: candidate.canonicalName, type: candidate.type, aliases: candidate.aliases },
+        webSnippets,
+      }),
+    );
     const survivorId = decision.survivor === 'candidate' ? candidate.id : subject.id;
     const recommendation: ReconcileRecommendation = {
       sameThing: decision.sameThing,

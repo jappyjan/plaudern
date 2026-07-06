@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { runWithAiAudit } from '@plaudern/audit';
 import { InboxService } from '@plaudern/inbox';
 import { StorageService } from '@plaudern/storage';
 import { TranscriptionService } from '@plaudern/transcription';
@@ -42,11 +43,13 @@ export class OcrProcessor {
       const item = await this.inbox.getItemById(job.inboxItemId);
       if (!item) throw new Error('inbox item no longer exists');
       const imageDataUrl = `data:${job.contentType};base64,${bytes.toString('base64')}`;
-      const result = await this.provider.recognize(item.userId, {
-        imageDataUrl,
-        contentType: job.contentType,
-        filename: job.filename,
-      });
+      const result = await runWithAiAudit({ userId: item.userId, itemId: item.id, kind: 'ocr' }, () =>
+        this.provider.recognize(item.userId, {
+          imageDataUrl,
+          contentType: job.contentType,
+          filename: job.filename,
+        }),
+      );
 
       const payload: OcrExtractionPayload = {
         model: result.model ?? this.provider.id,

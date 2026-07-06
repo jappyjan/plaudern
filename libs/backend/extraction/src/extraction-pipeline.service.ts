@@ -109,7 +109,7 @@ export class ExtractionPipelineService implements OnModuleInit, OnModuleDestroy 
       // `wait` means the sentinel hasn't classified the item yet — its
       // completion re-triggers this evaluation.
       if (isExternalLlmKind(extractor.kind)) {
-        const decision = await this.routing.decide(inboxItemId, extractor.kind);
+        const decision = await this.routing.decide(item.userId, inboxItemId, extractor.kind);
         if (decision === 'wait') return;
         if (decision === 'hold') {
           await this.routing.markHeld(inboxItemId);
