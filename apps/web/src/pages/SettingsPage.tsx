@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Accordion,
+  AccordionItem,
+  Autocomplete,
+  AutocompleteItem,
   Button,
   Checkbox,
   Input,
@@ -28,10 +32,15 @@ import {
   SUMMARY_LANGUAGE_LABELS,
   summaryLanguagePreferenceSchema,
   aiProviderProtocolSchema,
+  PROVIDER_PRESETS,
+  providerPreset,
+  type AiProviderPreset,
   type AiProviderDto,
   type AiProviderProtocol,
   type AiCapabilityCatalogEntry,
   type AiCapabilitySettingDto,
+  type AiCapabilityGroupDto,
+  type AiCapabilityKind,
   type CalendarFeedsResponse,
   type EmailSettingsDto,
   type GooglePendingResponse,
@@ -49,7 +58,7 @@ import {
   createGoogleFeeds,
   deleteAiProvider,
   deleteCalendarFeed,
-  getAiCapabilities,
+  getAiCapabilityGroups,
   getConsentSettings,
   getEmailSettings,
   getMcpTokenStatus,
@@ -76,6 +85,8 @@ import {
   triggerCalendarSync,
   triggerPlaudSync,
   updateAiCapability,
+  updateAiCapabilityGroup,
+  resetAiCapabilityGroupOverrides,
   updateAiProvider,
   updateCalendarFeed,
   updateConsentSettings,
@@ -339,7 +350,7 @@ export function SettingsPage({
 
       <AiProvidersSection />
 
-      <AiCapabilitiesSection />
+      <AiCapabilityGroupsSection />
 
       <ConsentSection />
 
@@ -546,10 +557,13 @@ const AI_PROTOCOL_LABELS: Record<AiProviderProtocol, string> = {
 };
 
 const NO_PROVIDER_KEY = '__none__';
+const CUSTOM_PRESET_KEY = '__custom__';
 
 /**
- * Add or edit an AI provider *connection* (credentials). The API key is
- * write-only: on edit, leaving it blank keeps the stored key, so we never
+ * Add or edit an AI provider *connection* (credentials). Picking a vendor preset
+ * (DeepSeek, OpenAI, ElevenLabs, …) fills in the protocol + base URL so the user
+ * doesn't have to; "Custom" reveals the raw protocol + base-URL fields. The API
+ * key is write-only: on edit, leaving it blank keeps the stored key, so we never
  * prefill it — mirroring the Plaud password field.
  */
 function AiProviderModal({
@@ -564,6 +578,7 @@ function AiProviderModal({
   onSaved: () => void;
 }) {
   const editing = Boolean(provider);
+  const [presetId, setPresetId] = useState<string>(CUSTOM_PRESET_KEY);
   const [name, setName] = useState('');
   const [protocol, setProtocol] = useState<AiProviderProtocol>('openai-compatible');
   const [baseUrl, setBaseUrl] = useState('');
@@ -571,14 +586,28 @@ function AiProviderModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const preset = presetId === CUSTOM_PRESET_KEY ? null : (providerPreset(presetId) ?? null);
+  const isCustom = preset === null;
+
   useEffect(() => {
     if (!isOpen) return;
+    setPresetId(provider?.preset ?? CUSTOM_PRESET_KEY);
     setName(provider?.name ?? '');
     setProtocol(provider?.protocol ?? 'openai-compatible');
     setBaseUrl(provider?.baseUrl ?? '');
     setApiKey('');
     setError(null);
   }, [isOpen, provider]);
+
+  const applyPreset = (id: string) => {
+    setPresetId(id);
+    if (id === CUSTOM_PRESET_KEY) return;
+    const chosen = providerPreset(id);
+    if (!chosen) return;
+    setProtocol(chosen.protocol);
+    setBaseUrl(chosen.defaultBaseUrl);
+    if (!name.trim()) setName(chosen.label);
+  };
 
   const close = () => {
     if (saving) return;
@@ -591,6 +620,7 @@ function AiProviderModal({
     if (!trimmedName || !trimmedBaseUrl) return;
     setSaving(true);
     setError(null);
+    const presetValue = isCustom ? null : preset.id;
     try {
       if (provider) {
         // Empty apiKey => omit (keep stored key). Editing the key needs an
@@ -599,6 +629,7 @@ function AiProviderModal({
           name: trimmedName,
           protocol,
           baseUrl: trimmedBaseUrl,
+          preset: presetValue,
           ...(apiKey ? { apiKey } : {}),
         });
       } else {
@@ -606,6 +637,7 @@ function AiProviderModal({
           name: trimmedName,
           protocol,
           baseUrl: trimmedBaseUrl,
+          preset: presetValue,
           ...(apiKey ? { apiKey } : {}),
         });
       }
@@ -618,11 +650,29 @@ function AiProviderModal({
     }
   };
 
+  const keyless = preset?.keyless ?? false;
+
   return (
     <Modal isOpen={isOpen} onClose={close} placement="center" isDismissable={!saving}>
       <ModalContent>
         <ModalHeader>{editing ? 'Edit provider' : 'Add provider'}</ModalHeader>
         <ModalBody className="gap-4 py-6">
+          <Select
+            label="Provider"
+            selectedKeys={[presetId]}
+            isDisabled={saving}
+            onSelectionChange={(keys) => {
+              const key = Array.from(keys)[0];
+              if (typeof key === 'string') applyPreset(key);
+            }}
+            disallowEmptySelection
+            description="Pick a known vendor to fill in the endpoint, or Custom to enter it yourself."
+          >
+            {[
+              ...PROVIDER_PRESETS.map((p) => <SelectItem key={p.id}>{p.label}</SelectItem>),
+              <SelectItem key={CUSTOM_PRESET_KEY}>Custom…</SelectItem>,
+            ]}
+          </Select>
           <Input
             label="Name"
             placeholder="e.g. DeepSeek, local Ollama"
@@ -630,22 +680,23 @@ function AiProviderModal({
             onValueChange={setName}
             isDisabled={saving}
             maxLength={120}
-            autoFocus
           />
-          <Select
-            label="Protocol"
-            selectedKeys={[protocol]}
-            isDisabled={saving}
-            onSelectionChange={(keys) => {
-              const key = Array.from(keys)[0];
-              if (typeof key === 'string') setProtocol(key as AiProviderProtocol);
-            }}
-            disallowEmptySelection
-          >
-            {aiProviderProtocolSchema.options.map((p) => (
-              <SelectItem key={p}>{AI_PROTOCOL_LABELS[p]}</SelectItem>
-            ))}
-          </Select>
+          {isCustom && (
+            <Select
+              label="Protocol"
+              selectedKeys={[protocol]}
+              isDisabled={saving}
+              onSelectionChange={(keys) => {
+                const key = Array.from(keys)[0];
+                if (typeof key === 'string') setProtocol(key as AiProviderProtocol);
+              }}
+              disallowEmptySelection
+            >
+              {aiProviderProtocolSchema.options.map((p) => (
+                <SelectItem key={p}>{AI_PROTOCOL_LABELS[p]}</SelectItem>
+              ))}
+            </Select>
+          )}
           <Input
             label="Base URL"
             placeholder="https://api.deepseek.com/v1"
@@ -654,6 +705,9 @@ function AiProviderModal({
             isDisabled={saving}
             maxLength={2000}
             autoComplete="off"
+            description={
+              !isCustom ? `Prefilled for ${preset.label} — edit only if your endpoint differs.` : undefined
+            }
           />
           <Input
             label="API key"
@@ -663,12 +717,18 @@ function AiProviderModal({
             isDisabled={saving}
             maxLength={4000}
             placeholder={
-              editing && provider?.hasApiKey ? '••••••••  (unchanged)' : 'Leave blank for keyless local endpoints'
+              editing && provider?.hasApiKey
+                ? '••••••••  (unchanged)'
+                : keyless
+                  ? 'Not required for this provider'
+                  : 'Leave blank for keyless local endpoints'
             }
             description={
               editing && provider?.hasApiKey
                 ? 'Leave empty to keep the stored key.'
-                : 'Optional — leave blank for keyless local endpoints (Ollama, llama.cpp, …).'
+                : keyless
+                  ? 'Optional — this provider runs locally and needs no key.'
+                  : 'Stored encrypted and never shown again.'
             }
             autoComplete="new-password"
           />
@@ -740,9 +800,10 @@ function AiProvidersSection() {
       <div>
         <h2 className="text-lg font-semibold">AI providers</h2>
         <p className="text-sm text-default-500">
-          Connect the AI endpoints that power summaries, transcription, extraction and chat — any
-          OpenAI-compatible server, ElevenLabs, a self-hosted Whisper, or pyannoteAI. Keys are
-          stored encrypted and never shown again. Assign them to capabilities below.
+          Connect the AI endpoints that power summaries, transcription, extraction and chat — pick a
+          known vendor (OpenAI, DeepSeek, ElevenLabs, pyannoteAI, …) and the endpoint fills itself
+          in, or choose Custom. Keys are stored encrypted and never shown again. Assign them to the
+          settings below.
         </p>
       </div>
 
@@ -763,7 +824,14 @@ function AiProvidersSection() {
               className="flex items-center justify-between gap-2 rounded-medium bg-default-50 p-3 text-sm"
             >
               <div className="min-w-0">
-                <p className="truncate font-medium">{p.name}</p>
+                <p className="truncate font-medium">
+                  {p.name}
+                  {providerPreset(p.preset) && (
+                    <span className="ml-2 rounded bg-default-100 px-1.5 py-0.5 text-xs font-normal text-default-500">
+                      {providerPreset(p.preset)?.label}
+                    </span>
+                  )}
+                </p>
                 <p className="truncate text-xs text-default-500">
                   {AI_PROTOCOL_LABELS[p.protocol]} · {p.baseUrl}
                 </p>
@@ -1024,17 +1092,286 @@ function AiCapabilityRow({
  * extraction, chat, …), each wired to one provider connection + model. Filters
  * the provider dropdown to protocols each capability can actually speak.
  */
-function AiCapabilitiesSection() {
-  const [catalog, setCatalog] = useState<AiCapabilityCatalogEntry[] | null>(null);
+/** Preset-suggested models for a provider connection, scoped to a kind. */
+function presetModelsFor(provider: AiProviderDto | null, kind: AiCapabilityKind): string[] {
+  const preset: AiProviderPreset | null = provider ? providerPreset(provider.preset) : null;
+  return preset?.models[kind] ?? [];
+}
+
+/**
+ * One capability *group* (the simplified, kind-level setting): assign a provider
+ * connection, pick a model (suggested from the provider's vendor), tune any
+ * params, and toggle it. An Advanced accordion drops to per-task overrides plus
+ * a Reset that folds them back into this shared setting.
+ */
+function AiCapabilityGroupCard({
+  group,
+  providers,
+  catalog,
+  settings,
+  onChanged,
+}: {
+  group: AiCapabilityGroupDto;
+  providers: AiProviderDto[];
+  catalog: AiCapabilityCatalogEntry[];
+  settings: AiCapabilitySettingDto[];
+  onChanged: () => void;
+}) {
+  const [providerId, setProviderId] = useState<string | null>(group.providerId);
+  const [model, setModel] = useState(group.model ?? '');
+  const [enabled, setEnabled] = useState(group.enabled);
+  const [params, setParams] = useState<Record<string, unknown>>(group.paramValues);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [resetting, setResetting] = useState(false);
+
+  useEffect(() => {
+    setProviderId(group.providerId);
+    setModel(group.model ?? '');
+    setEnabled(group.enabled);
+    setParams(group.paramValues);
+    setSaved(false);
+  }, [group]);
+
+  const compatible = providers.filter((p) => group.compatibleProtocols.includes(p.protocol));
+  const selectedProvider = providers.find((p) => p.id === providerId) ?? null;
+  const modelSuggestions = presetModelsFor(selectedProvider, group.kind);
+
+  const setParam = (key: string, value: unknown) => {
+    setParams((prev) => ({ ...prev, [key]: value }));
+    setSaved(false);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      await updateAiCapabilityGroup(group.kind, {
+        providerId,
+        model: model.trim() === '' ? null : model.trim(),
+        enabled,
+        params,
+      });
+      setSaved(true);
+      onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const resetOverrides = async () => {
+    setResetting(true);
+    setError(null);
+    try {
+      await resetAiCapabilityGroupOverrides(group.kind);
+      onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const memberEntries = catalog.filter((e) => group.memberCapabilities.includes(e.capability));
+
+  return (
+    <div className="flex flex-col gap-3 rounded-medium border border-default-200 p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="font-medium">{group.label}</p>
+          <p className="text-sm text-default-500">{group.description}</p>
+        </div>
+        <span
+          className={
+            group.active
+              ? 'shrink-0 rounded-full bg-success-100 px-2 py-0.5 text-xs text-success-700'
+              : 'shrink-0 rounded-full bg-default-100 px-2 py-0.5 text-xs text-default-500'
+          }
+        >
+          {group.active ? 'Active' : 'Inactive'}
+        </span>
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <Select
+          label="Provider"
+          className="sm:flex-1"
+          selectedKeys={[providerId ?? NO_PROVIDER_KEY]}
+          isDisabled={saving}
+          onSelectionChange={(keys) => {
+            const key = Array.from(keys)[0];
+            setProviderId(key === NO_PROVIDER_KEY || key === undefined ? null : String(key));
+            setSaved(false);
+          }}
+          disallowEmptySelection
+          description={
+            compatible.length === 0 ? 'No compatible provider connected — add one above.' : undefined
+          }
+        >
+          {[
+            <SelectItem key={NO_PROVIDER_KEY}>None (disabled)</SelectItem>,
+            ...compatible.map((p) => <SelectItem key={p.id}>{p.name}</SelectItem>),
+          ]}
+        </Select>
+        <Autocomplete
+          label="Model"
+          className="sm:flex-1"
+          allowsCustomValue
+          inputValue={model}
+          onInputChange={(v) => {
+            setModel(v);
+            setSaved(false);
+          }}
+          isDisabled={saving}
+          placeholder={group.defaultModel ?? 'Provider default'}
+        >
+          {modelSuggestions.map((m) => (
+            <AutocompleteItem key={m}>{m}</AutocompleteItem>
+          ))}
+        </Autocomplete>
+      </div>
+
+      {group.params.length > 0 && (
+        <div className="flex flex-col gap-3">
+          {group.params.map((param) => {
+            const value = params[param.key];
+            if (param.type === 'boolean') {
+              return (
+                <Switch
+                  key={param.key}
+                  size="sm"
+                  isSelected={Boolean(value)}
+                  isDisabled={saving}
+                  onValueChange={(on) => setParam(param.key, on)}
+                >
+                  {param.label}
+                </Switch>
+              );
+            }
+            return (
+              <Input
+                key={param.key}
+                type={param.type === 'number' ? 'number' : 'text'}
+                label={param.label}
+                description={param.description ?? undefined}
+                placeholder={param.placeholder ?? undefined}
+                isDisabled={saving}
+                value={value === undefined || value === null ? '' : String(value)}
+                onValueChange={(v) => {
+                  if (param.type === 'number') {
+                    setParam(param.key, v.trim() === '' ? null : Number(v));
+                  } else {
+                    setParam(param.key, v);
+                  }
+                }}
+              />
+            );
+          })}
+        </div>
+      )}
+
+      <div className="flex items-center gap-3">
+        <Switch
+          size="sm"
+          isSelected={enabled}
+          isDisabled={saving}
+          onValueChange={(on) => {
+            setEnabled(on);
+            setSaved(false);
+          }}
+        >
+          Enabled
+        </Switch>
+        <Button
+          size="sm"
+          color="primary"
+          className="ml-auto"
+          isLoading={saving}
+          onPress={() => void save()}
+        >
+          Save
+        </Button>
+      </div>
+
+      {error && <div className="rounded-medium bg-danger-50 p-2 text-xs text-danger">{error}</div>}
+      {saved && !error && <span className="text-xs text-success">Saved.</span>}
+
+      {memberEntries.length > 1 && (
+        <Accordion isCompact className="px-0">
+          <AccordionItem
+            key="advanced"
+            aria-label="Advanced per-task overrides"
+            title={
+              <span className="text-sm">
+                Advanced
+                {group.overriddenCapabilities.length > 0 && (
+                  <span className="ml-2 rounded bg-warning-100 px-1.5 py-0.5 text-xs text-warning-700">
+                    {group.overriddenCapabilities.length} overridden
+                  </span>
+                )}
+              </span>
+            }
+          >
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-default-500">
+                  Point individual tasks at a different provider or model. Reset drops all overrides
+                  back to the shared setting above.
+                </p>
+                <Button
+                  size="sm"
+                  variant="flat"
+                  isLoading={resetting}
+                  isDisabled={group.overriddenCapabilities.length === 0}
+                  onPress={() => void resetOverrides()}
+                >
+                  Reset
+                </Button>
+              </div>
+              {memberEntries.map((entry) => {
+                const setting = settings.find((s) => s.capability === entry.capability);
+                if (!setting) return null;
+                return (
+                  <AiCapabilityRow
+                    key={entry.capability}
+                    entry={entry}
+                    setting={setting}
+                    providers={providers}
+                    onSaved={onChanged}
+                  />
+                );
+              })}
+            </div>
+          </AccordionItem>
+        </Accordion>
+      )}
+    </div>
+  );
+}
+
+/**
+ * AI settings: the five capability *groups* (Reasoning/Chat, Vision/OCR,
+ * Embeddings, Transcription, Diarization). Each is wired to one provider
+ * connection + model and powers every underlying task of that kind, with
+ * optional per-task overrides in Advanced.
+ */
+function AiCapabilityGroupsSection() {
+  const [groups, setGroups] = useState<AiCapabilityGroupDto[] | null>(null);
+  const [catalog, setCatalog] = useState<AiCapabilityCatalogEntry[]>([]);
   const [settings, setSettings] = useState<AiCapabilitySettingDto[]>([]);
   const [providers, setProviders] = useState<AiProviderDto[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [caps, providerList] = await Promise.all([getAiCapabilities(), listAiProviders()]);
-      setCatalog(caps.catalog);
-      setSettings(caps.settings);
+      const [res, providerList] = await Promise.all([getAiCapabilityGroups(), listAiProviders()]);
+      setGroups(res.groups);
+      setCatalog(res.catalog);
+      setSettings(res.settings);
       setProviders(providerList.providers);
       setLoadError(null);
     } catch (cause) {
@@ -1046,46 +1383,36 @@ function AiCapabilitiesSection() {
     void refresh();
   }, [refresh]);
 
-  const applySetting = (next: AiCapabilitySettingDto) => {
-    setSettings((prev) => prev.map((s) => (s.capability === next.capability ? next : s)));
-  };
-
-  const settingFor = (capability: string): AiCapabilitySettingDto | undefined =>
-    settings.find((s) => s.capability === capability);
-
   return (
     <div className="flex flex-col gap-4 border-t border-default-200 pt-6">
       <div>
-        <h2 className="text-lg font-semibold">AI capabilities</h2>
+        <h2 className="text-lg font-semibold">AI settings</h2>
         <p className="text-sm text-default-500">
-          Route each AI task to one of your provider connections above and pick the model it uses. A
-          capability with no provider assigned stays off.
+          Pick which provider and model power each kind of AI task. Set the reasoning model once and
+          every text feature — summaries, extraction, journaling, chat — uses it.
         </p>
       </div>
 
       {loadError && (
         <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">
-          Failed to load capabilities: {loadError}
+          Failed to load AI settings: {loadError}
         </div>
       )}
 
-      {catalog === null && !loadError ? (
+      {groups === null && !loadError ? (
         <Spinner size="sm" />
       ) : (
         <div className="flex flex-col gap-4">
-          {catalog?.map((entry) => {
-            const setting = settingFor(entry.capability);
-            if (!setting) return null;
-            return (
-              <AiCapabilityRow
-                key={entry.capability}
-                entry={entry}
-                setting={setting}
-                providers={providers}
-                onSaved={applySetting}
-              />
-            );
-          })}
+          {groups?.map((group) => (
+            <AiCapabilityGroupCard
+              key={group.kind}
+              group={group}
+              providers={providers}
+              catalog={catalog}
+              settings={settings}
+              onChanged={() => void refresh()}
+            />
+          ))}
         </div>
       )}
     </div>

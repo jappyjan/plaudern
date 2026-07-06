@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { DataSource, Repository } from 'typeorm';
 import {
+  AiCapabilityGroupSettingEntity,
   AiCapabilitySettingEntity,
   AiProviderEntity,
   ALL_ENTITIES,
@@ -37,6 +38,7 @@ describe('AiConfigImportService.onModuleInit', () => {
   let dataSource: DataSource;
   let providers: Repository<AiProviderEntity>;
   let capabilities: Repository<AiCapabilitySettingEntity>;
+  let groups: Repository<AiCapabilityGroupSettingEntity>;
   let service: AiConfigImportService;
   let savedEnv: Record<string, string | undefined>;
 
@@ -56,7 +58,8 @@ describe('AiConfigImportService.onModuleInit', () => {
     await dataSource.initialize();
     providers = dataSource.getRepository(AiProviderEntity);
     capabilities = dataSource.getRepository(AiCapabilitySettingEntity);
-    service = new AiConfigImportService(providers, capabilities, envConfig);
+    groups = dataSource.getRepository(AiCapabilityGroupSettingEntity);
+    service = new AiConfigImportService(providers, capabilities, groups, envConfig);
   });
 
   afterEach(async () => {
@@ -71,6 +74,7 @@ describe('AiConfigImportService.onModuleInit', () => {
     await service.onModuleInit();
     expect(await providers.count()).toBe(0);
     expect(await capabilities.count()).toBe(0);
+    expect(await groups.count()).toBe(0);
   });
 
   it('imports providers (de-duplicated) and capability rows for DEFAULT_USER_ID', async () => {
@@ -104,34 +108,47 @@ describe('AiConfigImportService.onModuleInit', () => {
       .sort();
     expect(openaiNames).toEqual(['api.openai.com', 'api.openai.com 2']);
 
-    const capRows = await capabilities.find();
-    const importedCaps = capRows.map((c) => c.capability).sort();
-    expect(importedCaps).toEqual(
-      [
-        'summarization',
-        'entity_extraction',
-        'tasks',
-        'embeddings',
-        'ocr',
-        'transcription',
-        'speaker_id',
-      ].sort(),
-    );
-    expect(capRows.every((c) => c.userId === DEFAULT_USER_ID)).toBe(true);
+    // Uniform capabilities collapse into shared group rows (one per kind), so
+    // the per-task override table ends up empty here.
+    expect(await capabilities.count()).toBe(0);
 
-    // The three deepseek capabilities all point at the single shared connection.
-    const deepseekCapProviderIds = new Set(
-      capRows
-        .filter((c) => ['summarization', 'entity_extraction', 'tasks'].includes(c.capability))
-        .map((c) => c.providerId),
-    );
-    expect(deepseekCapProviderIds).toEqual(new Set([deepseek[0].id]));
+    const groupRows = await groups.find();
+    expect(groupRows.every((g) => g.userId === DEFAULT_USER_ID)).toBe(true);
+    const byKind = new Map(groupRows.map((g) => [g.kind, g]));
+    const providerByKey = (key: string) =>
+      providerRows.find((p) => decryptSecret(p.apiKeyEncrypted as string, SECRET) === key);
+    // The three deepseek chat capabilities collapse to one chat group on the
+    // single shared connection.
+    expect(byKind.get('chat')?.providerId).toBe(deepseek[0].id);
+    expect(byKind.get('vision')?.providerId).toBe(providerByKey('openai-vision-key')?.id);
+    expect(byKind.get('embeddings')?.providerId).toBe(providerByKey('openai-embed-key')?.id);
 
-    // transcription/speaker_id imported with their protocols + keys.
+    // transcription/speaker_id imported with their protocols + keys, as groups.
     const transcription = providerRows.find((p) => p.protocol === 'elevenlabs');
     expect(decryptSecret(transcription?.apiKeyEncrypted as string, SECRET)).toBe('eleven-key');
+    expect(byKind.get('stt')?.providerId).toBe(transcription?.id);
     const diarization = providerRows.find((p) => p.protocol === 'pyannoteai');
     expect(decryptSecret(diarization?.apiKeyEncrypted as string, SECRET)).toBe('pyannote-key');
+    expect(byKind.get('diarization')?.providerId).toBe(diarization?.id);
+  });
+
+  it('keeps a divergent chat capability as an override, not in the group', async () => {
+    // Two chat capabilities on DIFFERENT keys → two connections. The chat group
+    // seeds from the primary (summarization); the other stays an override.
+    process.env.SUMMARIZATION_API_KEY = 'key-a';
+    process.env.ENTITY_EXTRACTION_API_KEY = 'key-b';
+
+    await service.onModuleInit();
+
+    const chatGroup = await groups.findOneByOrFail({ userId: DEFAULT_USER_ID, kind: 'chat' });
+    const summarizationProvider = (await providers.find()).find(
+      (p) => decryptSecret(p.apiKeyEncrypted as string, SECRET) === 'key-a',
+    );
+    expect(chatGroup.providerId).toBe(summarizationProvider?.id);
+
+    // entity_extraction diverges → survives as a per-task override row.
+    const overrides = await capabilities.find({ where: { userId: DEFAULT_USER_ID } });
+    expect(overrides.map((o) => o.capability)).toEqual(['entity_extraction']);
   });
 
   it('is idempotent — a second run adds no duplicate rows', async () => {

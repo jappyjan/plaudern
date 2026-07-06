@@ -3,13 +3,21 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type { AiCapability, AiProviderProtocol } from '@plaudern/contracts';
+import { PROVIDER_PRESETS } from '@plaudern/contracts';
 import {
+  AiCapabilityGroupSettingEntity,
   AiCapabilitySettingEntity,
   AiProviderEntity,
   DEFAULT_USER_ID,
   encryptSecret,
 } from '@plaudern/persistence';
-import { ALL_CAPABILITIES, capabilityMeta } from './capability-registry';
+import {
+  ALL_CAPABILITIES,
+  ALL_CAPABILITY_KINDS,
+  capabilitiesOfKind,
+  capabilityGroupMeta,
+  capabilityMeta,
+} from './capability-registry';
 
 interface DesiredProvider {
   protocol: AiProviderProtocol;
@@ -48,6 +56,8 @@ export class AiConfigImportService implements OnModuleInit {
     private readonly providers: Repository<AiProviderEntity>,
     @InjectRepository(AiCapabilitySettingEntity)
     private readonly capabilities: Repository<AiCapabilitySettingEntity>,
+    @InjectRepository(AiCapabilityGroupSettingEntity)
+    private readonly groups: Repository<AiCapabilityGroupSettingEntity>,
     private readonly config: ConfigService,
   ) {
     this.encryptionSecret = config.get<string>('APP_ENCRYPTION_SECRET', 'change-me');
@@ -76,6 +86,7 @@ export class AiConfigImportService implements OnModuleInit {
         name,
         protocol: item.provider.protocol,
         baseUrl: item.provider.baseUrl,
+        preset: presetForProvider(item.provider),
         apiKeyEncrypted: item.provider.apiKey
           ? encryptSecret(item.provider.apiKey, this.encryptionSecret)
           : null,
@@ -99,9 +110,60 @@ export class AiConfigImportService implements OnModuleInit {
       );
     }
 
+    // Fold the freshly-seeded per-capability rows into the simplified,
+    // kind-level group settings the new UI exposes (same best-effort collapse
+    // the migration does — leftover divergent rows survive as overrides).
+    await this.collapseIntoGroups();
+
     this.logger.log(
       `imported ${providerByKey.size} AI provider(s) and ${desired.length} capability setting(s) from legacy env`,
     );
+  }
+
+  /**
+   * Seed one shared group row per (kind) from the primary capability (or the
+   * most common provider among members), then delete member rows that resolve
+   * identically so they inherit the group. Divergent tasks stay as overrides.
+   */
+  private async collapseIntoGroups(): Promise<void> {
+    const rows = await this.capabilities.find({ where: { userId: DEFAULT_USER_ID } });
+    const byCapability = new Map(rows.map((r) => [r.capability as AiCapability, r]));
+
+    for (const kind of ALL_CAPABILITY_KINDS) {
+      const primary = capabilityGroupMeta(kind).primary;
+      const memberRows = capabilitiesOfKind(kind)
+        .map((c) => byCapability.get(c))
+        .filter((r): r is AiCapabilitySettingEntity => r != null);
+      const seed =
+        byCapability.get(primary)?.providerId != null
+          ? byCapability.get(primary)!
+          : mostCommonProvider(memberRows);
+      if (!seed?.providerId) continue;
+
+      await this.groups.save(
+        this.groups.create({
+          userId: DEFAULT_USER_ID,
+          kind,
+          providerId: seed.providerId,
+          model: seed.model,
+          timeoutMs: seed.timeoutMs,
+          enabled: seed.enabled,
+          params: seed.params,
+        }),
+      );
+
+      for (const row of memberRows) {
+        if (
+          row.providerId === seed.providerId &&
+          row.model === seed.model &&
+          row.timeoutMs === seed.timeoutMs &&
+          row.enabled === seed.enabled &&
+          JSON.stringify(row.params ?? null) === JSON.stringify(seed.params ?? null)
+        ) {
+          await this.capabilities.delete({ id: row.id });
+        }
+      }
+    }
   }
 
   private collectDesired(): DesiredCapability[] {
@@ -237,6 +299,39 @@ export class AiConfigImportService implements OnModuleInit {
 
 function providerKey(p: DesiredProvider): string {
   return `${p.protocol}|${p.baseUrl}|${p.apiKey ?? ''}`;
+}
+
+/** The setting row whose provider is the most common among a kind's members. */
+function mostCommonProvider(
+  rows: AiCapabilitySettingEntity[],
+): AiCapabilitySettingEntity | null {
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    if (r.providerId) counts.set(r.providerId, (counts.get(r.providerId) ?? 0) + 1);
+  }
+  let best: string | null = null;
+  let bestCount = 0;
+  for (const [providerId, count] of counts) {
+    if (count > bestCount) {
+      best = providerId;
+      bestCount = count;
+    }
+  }
+  return best ? (rows.find((r) => r.providerId === best) ?? null) : null;
+}
+
+/** Best-guess vendor preset for an imported connection (protocol + base URL). */
+function presetForProvider(p: DesiredProvider): string | null {
+  const byUrl = PROVIDER_PRESETS.find(
+    (preset) => preset.protocol === p.protocol && preset.defaultBaseUrl === p.baseUrl,
+  );
+  if (byUrl) return byUrl.id;
+  // Non-openai protocols map 1:1 to a single vendor preset.
+  if (p.protocol !== 'openai-compatible') {
+    const byProtocol = PROVIDER_PRESETS.find((preset) => preset.protocol === p.protocol);
+    if (byProtocol) return byProtocol.id;
+  }
+  return null;
 }
 
 function providerName(p: DesiredProvider): string {

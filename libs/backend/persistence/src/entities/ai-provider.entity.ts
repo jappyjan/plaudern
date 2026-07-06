@@ -40,6 +40,10 @@ export class AiProviderEntity {
   @Column({ type: 'varchar' })
   baseUrl!: string;
 
+  /** Vendor preset id this connection was created from, or null for custom. */
+  @Column({ type: 'varchar', nullable: true })
+  preset!: string | null;
+
   /** AES-256-GCM ciphertext of the API key, or null for keyless endpoints. */
   @Column({ type: 'varchar', nullable: true })
   apiKeyEncrypted!: string | null;

@@ -46,6 +46,7 @@ export class AiProviderService {
       name: req.name.trim(),
       protocol: req.protocol,
       baseUrl: req.baseUrl.trim(),
+      preset: req.preset?.trim() ? req.preset.trim() : null,
       apiKeyEncrypted: apiKey ? encryptSecret(apiKey, this.encryptionSecret) : null,
     });
     const saved = await this.saveUnique(entity);
@@ -64,6 +65,7 @@ export class AiProviderService {
     if (req.name !== undefined) entity.name = req.name.trim();
     if (req.protocol !== undefined) entity.protocol = req.protocol;
     if (req.baseUrl !== undefined) entity.baseUrl = req.baseUrl.trim();
+    if (req.preset !== undefined) entity.preset = req.preset?.trim() ? req.preset.trim() : null;
     if (req.apiKey !== undefined) {
       // Empty string clears the key (keyless); a value replaces it; omission
       // (handled by `!== undefined`) keeps the stored one.
@@ -109,6 +111,7 @@ export class AiProviderService {
       name: entity.name,
       protocol: entity.protocol,
       baseUrl: entity.baseUrl,
+      preset: entity.preset ?? null,
       hasApiKey: entity.apiKeyEncrypted !== null,
       apiKeyHint,
       createdAt: entity.createdAt.toISOString(),
