@@ -88,8 +88,10 @@ describe('DossierService', () => {
       commitments,
       items,
       selfProfile,
+      undefined as never,
     );
     const questionsService = new QuestionsService(
+      undefined as never,
       undefined as never,
       undefined as never,
       undefined as never,

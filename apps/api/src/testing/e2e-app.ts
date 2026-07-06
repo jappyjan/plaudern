@@ -23,11 +23,18 @@ import {
 export async function createE2eApp(
   customize: (builder: TestingModuleBuilder) => TestingModuleBuilder = (builder) => builder,
 ): Promise<INestApplication> {
+  // The hosted pyannoteAI client is built per job from the owner's resolved
+  // `speaker_id` config via the static `PyannoteAiClient.fromResolvedConfig`, so
+  // it is no longer a DI provider to override. Point that factory at one shared
+  // deterministic fake (its uploads world-model must persist across jobs) so the
+  // real identifier + voiceprint matcher run end-to-end without network.
+  jest
+    .spyOn(PyannoteAiClient, 'fromResolvedConfig')
+    .mockReturnValue(new FakePyannoteAiClient() as unknown as PyannoteAiClient);
+
   const builder = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(TRANSCRIPTION_PROVIDER)
     .useValue(new FakeTranscriptionProvider())
-    .overrideProvider(PyannoteAiClient)
-    .useValue(new FakePyannoteAiClient())
     .overrideProvider(CLIP_EXTRACTOR)
     .useValue(new FakeClipExtractor())
     .overrideProvider(AUDIO_CONCATENATOR)

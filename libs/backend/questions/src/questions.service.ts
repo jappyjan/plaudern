@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import { AiConfigService } from '@plaudern/ai-config';
 import { InboxService } from '@plaudern/inbox';
 import type {
   ExtractionStatus,
@@ -51,6 +52,7 @@ export const QUESTIONS_EXTRACTOR_VERSION = 1;
 export class QuestionsService {
   constructor(
     private readonly inbox: InboxService,
+    private readonly aiConfig: AiConfigService,
     @Inject(QUESTION_EXTRACTION_PROVIDER)
     private readonly provider: QuestionExtractionProvider,
     @Inject(QUESTIONS_QUEUE)
@@ -61,12 +63,9 @@ export class QuestionsService {
     private readonly items: Repository<InboxItemEntity>,
   ) {}
 
-  /**
-   * Whether question extraction is configured (QUESTIONS_API_KEY present, or
-   * QUESTIONS_ENABLED=true for keyless local endpoints like Ollama).
-   */
-  get enabled(): boolean {
-    return this.provider.enabled;
+  /** Whether question extraction is configured for this user. */
+  isEnabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'questions');
   }
 
   // ---- Pipeline ----
@@ -77,9 +76,9 @@ export class QuestionsService {
    * history); persisted questions are upserted so a user `dropped` survives.
    */
   async retry(userId: string, inboxItemId: string): Promise<string> {
-    if (!this.provider.enabled) {
+    if (!(await this.isEnabled(userId))) {
       throw new BadRequestException(
-        'question extraction is not configured (set QUESTIONS_API_KEY, or QUESTIONS_ENABLED=true for keyless local endpoints such as Ollama)',
+        'question extraction is not configured — assign a provider to the questions capability in Settings → AI',
       );
     }
     const item = await this.inbox.getItem(userId, inboxItemId);

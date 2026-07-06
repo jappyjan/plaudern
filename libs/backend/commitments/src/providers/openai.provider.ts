@@ -1,6 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { AiAuditRecorder } from '@plaudern/audit';
+import { Injectable } from '@nestjs/common';
+import { AiConfigService, OpenAiChatClient } from '@plaudern/ai-config';
 import { extractedCommitmentSchema, type ExtractedCommitment } from '@plaudern/contracts';
 import type {
   CommitmentExtractionInput,
@@ -8,102 +7,44 @@ import type {
   CommitmentExtractionResult,
 } from '../commitments.provider';
 
-interface ChatChoice {
-  message?: { content?: string | null };
-}
-interface ChatResponse {
-  choices?: ChatChoice[];
-  model?: string;
-}
-
 /**
  * Extracts promissory commitments via an OpenAI-compatible `/chat/completions`
- * endpoint. Defaults to DeepSeek (`deepseek-chat`) — the cheapest capable
- * option — but any provider exposing the OpenAI schema works by overriding
- * COMMITMENTS_BASE_URL/MODEL, including a **local Ollama** server
- * (`COMMITMENTS_BASE_URL=http://localhost:11434/v1`) — the local-model tier
- * that keeps sensitive transcripts off the network, mirroring the entities and
- * topics extractors.
+ * endpoint, using the per-user AI config resolved for the `commitments`
+ * capability (Settings → AI). Works with OpenAI, DeepSeek, a keyless local
+ * Ollama/llama.cpp gateway, etc. — whatever provider the user assigned to the
+ * capability, mirroring the entities and topics extractors.
  *
  * Only text is sent to the configured endpoint; no audio ever leaves our infra.
  */
 @Injectable()
 export class OpenAiCommitmentExtractionProvider implements CommitmentExtractionProvider {
-  readonly id: string;
-  private readonly logger = new Logger(OpenAiCommitmentExtractionProvider.name);
-  private readonly baseUrl: string;
-  private readonly apiKey: string;
-  private readonly model: string;
-  private readonly timeoutMs: number;
-  private readonly explicitlyEnabled: boolean;
+  readonly id = 'openai';
 
   constructor(
-    config: ConfigService,
-    private readonly audit: AiAuditRecorder,
-  ) {
-    this.baseUrl = config
-      .get<string>('COMMITMENTS_BASE_URL', 'https://api.deepseek.com/v1')
-      .replace(/\/+$/, '');
-    this.apiKey = config.get<string>('COMMITMENTS_API_KEY', '');
-    this.model = config.get<string>('COMMITMENTS_MODEL', 'deepseek-chat');
-    this.timeoutMs = Number(config.get<string>('COMMITMENTS_TIMEOUT_MS', String(2 * 60_000)));
-    // Cloud endpoints are gated on an API key — an empty key means "disabled".
-    // Keyless local OpenAI-compatible servers (Ollama, llama.cpp, …) opt in
-    // explicitly via COMMITMENTS_ENABLED=true.
-    this.explicitlyEnabled = config.get<string>('COMMITMENTS_ENABLED', 'false') === 'true';
-    this.id = `openai:${this.model}`;
-  }
+    private readonly aiConfig: AiConfigService,
+    private readonly chat: OpenAiChatClient,
+  ) {}
 
-  get enabled(): boolean {
-    return this.apiKey.length > 0 || this.explicitlyEnabled;
-  }
-
-  async extract(input: CommitmentExtractionInput): Promise<CommitmentExtractionResult> {
-    if (!this.enabled) {
+  async extract(
+    userId: string,
+    input: CommitmentExtractionInput,
+  ): Promise<CommitmentExtractionResult> {
+    const config = await this.aiConfig.resolve(userId, 'commitments');
+    if (!config) {
       throw new Error(
-        'commitment extraction is disabled — set COMMITMENTS_API_KEY (cloud endpoints) or ' +
-          'COMMITMENTS_ENABLED=true (keyless local endpoints such as Ollama) to enable it',
+        'commitment extraction is not configured — assign a provider to the commitments capability in Settings → AI',
       );
     }
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    try {
-      const headers: Record<string, string> = { 'content-type': 'application/json' };
-      // Most local servers (Ollama, llama.cpp) ignore auth entirely; only send
-      // the header when a key was actually configured.
-      if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
-      const endpoint = `${this.baseUrl}/chat/completions`;
-      const body = JSON.stringify({
-        model: this.model,
-        temperature: 0,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: buildUserPrompt(input) },
-        ],
-      });
-      // Audit the exact bytes leaving the box before they leave (JJ-42).
-      await this.audit.record({ provider: this.id, endpoint, payload: body });
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body,
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        throw new Error(
-          `commitment extraction request failed: ${res.status} ${body.slice(0, 500)}`,
-        );
-      }
-      const json = (await res.json()) as ChatResponse;
-      const content = json.choices?.[0]?.message?.content ?? '';
-      const commitments = parseCommitmentsResponse(content);
-      return { commitments, model: json.model ?? this.model, raw: json };
-    } finally {
-      clearTimeout(timer);
-    }
+    const response = await this.chat.chat(config, {
+      temperature: 0,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: buildUserPrompt(input) },
+      ],
+    });
+    const commitments = parseCommitmentsResponse(this.chat.contentOf(response));
+    return { commitments, model: response.model ?? config.model, raw: response };
   }
 }
 

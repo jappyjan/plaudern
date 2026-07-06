@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
+import { AiConfigService } from '@plaudern/ai-config';
 import { InboxService } from '@plaudern/inbox';
 import type { ExtractionStatus } from '@plaudern/contracts';
 import type { ExtractedPayloadEntity } from '@plaudern/persistence';
@@ -25,18 +26,16 @@ export const EMBEDDING_EXTRACTOR_VERSION = 1;
 export class EmbeddingService {
   constructor(
     private readonly inbox: InboxService,
+    private readonly aiConfig: AiConfigService,
     @Inject(EMBEDDING_PROVIDER)
     private readonly provider: EmbeddingProvider,
     @Inject(EMBEDDING_QUEUE)
     private readonly queue: EmbeddingQueue,
   ) {}
 
-  /**
-   * Whether embeddings are configured (EMBEDDINGS_API_KEY present, or
-   * EMBEDDINGS_ENABLED=true for keyless local endpoints such as Ollama).
-   */
-  get enabled(): boolean {
-    return this.provider.enabled;
+  /** Whether embeddings are configured for this user (per-user DB AI config). */
+  isEnabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'embeddings');
   }
 
   /**
@@ -45,9 +44,9 @@ export class EmbeddingService {
    * in history (append-only).
    */
   async retry(userId: string, inboxItemId: string): Promise<string> {
-    if (!this.provider.enabled) {
+    if (!(await this.aiConfig.isEnabled(userId, 'embeddings'))) {
       throw new BadRequestException(
-        'embeddings are not configured (set EMBEDDINGS_API_KEY, or EMBEDDINGS_ENABLED=true for keyless local endpoints such as Ollama)',
+        'embeddings are not configured — assign a provider to the embeddings capability in Settings → AI',
       );
     }
     const item = await this.inbox.getItem(userId, inboxItemId);

@@ -27,6 +27,7 @@ import {
   FakeSummarizationProvider,
   FAKE_EMBEDDING_DIMENSIONS,
 } from '../testing/fake-providers';
+import { seedAiCapability } from '../testing/seed-ai-config';
 
 describe('Embeddings pipeline (e2e, Path A)', () => {
   let app: INestApplication;
@@ -41,6 +42,11 @@ describe('Embeddings pipeline (e2e, Path A)', () => {
         .overrideProvider(EMBEDDING_PROVIDER)
         .useValue(new FakeEmbeddingProvider()),
     );
+
+    // The embedding extractor waits for the summary (summary[settled]) and both
+    // capabilities are DB-gated now — enable them for the test user.
+    await seedAiCapability(app, 'summarization');
+    await seedAiCapability(app, 'embeddings');
 
     storage = app.get(StorageService) as InMemoryStorageService;
     chunks = app.get(getRepositoryToken(EmbeddingChunkEntity));

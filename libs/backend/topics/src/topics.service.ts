@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import { AiConfigService } from '@plaudern/ai-config';
 import { InboxService } from '@plaudern/inbox';
 import {
   topicClassificationPayloadSchema,
@@ -61,11 +62,12 @@ export class TopicsService {
     private readonly provider: TopicClassificationProvider,
     @Inject(TOPICS_QUEUE)
     private readonly queue: TopicsQueue,
+    private readonly aiConfig: AiConfigService,
   ) {}
 
-  /** Whether classification is configured (TOPICS_API_KEY or TOPICS_ENABLED). */
-  get enabled(): boolean {
-    return this.provider.enabled;
+  /** Whether topic classification is configured for this user. */
+  isEnabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'topics');
   }
 
   // ---- Taxonomy CRUD ----
@@ -195,9 +197,9 @@ export class TopicsService {
    * Appends a fresh topics row; older ones stay in history (append-only).
    */
   async retry(userId: string, inboxItemId: string): Promise<string> {
-    if (!this.provider.enabled) {
+    if (!(await this.aiConfig.isEnabled(userId, 'topics'))) {
       throw new BadRequestException(
-        'topic classification is not configured (set TOPICS_API_KEY, or TOPICS_ENABLED=true for keyless local endpoints such as Ollama)',
+        'topic classification is not configured (assign a provider to the topics capability in Settings → AI)',
       );
     }
     const item = await this.inbox.getItem(userId, inboxItemId);

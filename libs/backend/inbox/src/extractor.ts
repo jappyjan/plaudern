@@ -47,8 +47,13 @@ export interface Extractor {
   /** Upstream kinds this extractor waits for. Empty = root (runs on commit). */
   readonly dependsOn: ExtractorDependency[];
 
-  /** Whether the extractor's provider is configured on this server. */
-  enabled(): boolean;
+  /**
+   * Whether the extractor's provider is configured FOR THIS USER. Per-user and
+   * async because AI config now lives in the DB (see `@plaudern/ai-config`),
+   * not in env — enablement is a `userId`-keyed lookup, not a construction-time
+   * constant.
+   */
+  enabled(userId: string): Promise<boolean>;
 
   /**
    * Whether this extractor is relevant for the item at all (e.g. transcription

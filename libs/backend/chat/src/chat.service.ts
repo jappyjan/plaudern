@@ -22,6 +22,7 @@ import {
   type SearchResultItem,
 } from '@plaudern/contracts';
 import { ChatConversationEntity, ChatMessageEntity } from '@plaudern/persistence';
+import { AiConfigService } from '@plaudern/ai-config';
 import { SearchService } from '@plaudern/search';
 import { VerificationService } from '@plaudern/citations';
 import {
@@ -43,8 +44,7 @@ const MAX_QUERIES = 3;
 const MAX_PASSAGE_CHARS = 700;
 
 const DISABLED_REASON =
-  'memory chat is disabled — set CHAT_API_KEY (or SUMMARIZATION_API_KEY, which it falls ' +
-  'back to) for cloud endpoints, or CHAT_ENABLED=true for keyless local endpoints such as Ollama';
+  'memory chat is not configured — assign a provider to the chat capability in Settings → AI';
 
 /** Said when retrieval finds nothing: no sources → no generation, no guessing. */
 const NO_SOURCES_ANSWER =
@@ -109,6 +109,7 @@ export class ChatService {
   constructor(
     @Inject(CHAT_COMPLETION_PROVIDER)
     private readonly provider: ChatCompletionProvider,
+    private readonly aiConfig: AiConfigService,
     private readonly search: SearchService,
     private readonly verification: VerificationService,
     @InjectRepository(ChatConversationEntity)
@@ -117,8 +118,8 @@ export class ChatService {
     private readonly messages: Repository<ChatMessageEntity>,
   ) {}
 
-  status(): ChatStatusDto {
-    return this.provider.enabled
+  async status(userId: string): Promise<ChatStatusDto> {
+    return (await this.aiConfig.isEnabled(userId, 'chat'))
       ? { available: true, reason: null }
       : { available: false, reason: DISABLED_REASON };
   }
@@ -152,7 +153,7 @@ export class ChatService {
   }
 
   async ask(userId: string, req: ChatAskRequest): Promise<ChatAskResponse> {
-    if (!this.provider.enabled) {
+    if (!(await this.aiConfig.isEnabled(userId, 'chat'))) {
       throw new ServiceUnavailableException(DISABLED_REASON);
     }
 
@@ -252,7 +253,7 @@ export class ChatService {
       const { content } = await runWithAiAudit(
         { userId, itemId: null, kind: 'chat' },
         () =>
-          this.provider.complete([
+          this.provider.complete(userId, [
             { role: 'system', content: REWRITE_SYSTEM_PROMPT },
             {
               role: 'user',
@@ -333,7 +334,7 @@ export class ChatService {
     // to a single inbox item (JJ-42).
     const { content: raw } = await runWithAiAudit(
       { userId, itemId: null, kind: 'chat' },
-      () => this.provider.complete(messages),
+      () => this.provider.complete(userId, messages),
     );
     const json = extractJsonObject(raw);
     const answer = typeof json.answer === 'string' && json.answer.trim() ? json.answer : raw;
@@ -367,11 +368,11 @@ export class ChatService {
     // (dates/amounts/names) against the cited passages, catching the
     // confident-but-wrong extraction a valid marker can't. Gated + best-effort:
     // disabled or failed verification leaves the structural confidence intact.
-    if (confidence === 'high' && this.verification.enabled) {
+    if (confidence === 'high' && (await this.verification.isEnabled(userId))) {
       const passages = citations
         .map((c) => c.snippet)
         .filter((snippet): snippet is string => !!snippet);
-      const outcome = await this.verification.verifyHighStakes(enforced.content, passages);
+      const outcome = await this.verification.verifyHighStakes(userId, enforced.content, passages);
       if (outcome.ran && outcome.unsupported.length > 0) {
         this.logger.warn(
           `verification flagged unsupported values, downgrading to low: ${outcome.unsupported.join(', ')}`,

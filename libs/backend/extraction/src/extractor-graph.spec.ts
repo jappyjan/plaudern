@@ -14,7 +14,7 @@ function extractor(
     kind,
     version: overrides.version ?? 1,
     dependsOn,
-    enabled: overrides.enabled ?? (() => true),
+    enabled: overrides.enabled ?? (async () => true),
     appliesTo: overrides.appliesTo ?? (() => true),
     enqueue: async () => 'extraction-id',
   };
@@ -29,7 +29,7 @@ function row(
 }
 
 function item(extractions: ExtractedPayloadEntity[]): InboxItemEntity {
-  return { id: 'item-1', extractions } as InboxItemEntity;
+  return { id: 'item-1', userId: 'user-1', extractions } as InboxItemEntity;
 }
 
 describe('ExtractorGraph (declaration validation)', () => {
@@ -92,14 +92,14 @@ describe('ExtractorGraph (declaration validation)', () => {
     ).toThrow(/dependency cycle/);
   });
 
-  it('exposes the graph as an introspection DTO', () => {
+  it('exposes the graph as an introspection DTO', async () => {
     const graph = new ExtractorGraph([
       extractor('transcription', [], { version: 3 }),
       extractor('summary', [{ kind: 'transcription', requires: 'succeeded' }], {
-        enabled: () => false,
+        enabled: async () => false,
       }),
     ]);
-    expect(graph.toDto()).toEqual([
+    expect(await graph.toDto('user-1')).toEqual([
       { kind: 'transcription', version: 3, enabled: true, dependsOn: [] },
       {
         kind: 'summary',
@@ -122,8 +122,8 @@ describe('evaluateReadiness (the generic dependency gate)', () => {
   ]);
   const summary = graph.get('summary')!;
 
-  it('is ready once the required dep succeeded and the settled dep is terminal (even failed)', () => {
-    const readiness = evaluateReadiness(
+  it('is ready once the required dep succeeded and the settled dep is terminal (even failed)', async () => {
+    const readiness = await evaluateReadiness(
       summary,
       item([
         row('transcription', 'succeeded', '2026-07-01T10:00:00Z'),
@@ -137,8 +137,8 @@ describe('evaluateReadiness (the generic dependency gate)', () => {
     });
   });
 
-  it('waits while a dependency is still in flight', () => {
-    const readiness = evaluateReadiness(
+  it('waits while a dependency is still in flight', async () => {
+    const readiness = await evaluateReadiness(
       summary,
       item([
         row('transcription', 'succeeded', '2026-07-01T10:00:00Z'),
@@ -149,10 +149,10 @@ describe('evaluateReadiness (the generic dependency gate)', () => {
     expect(readiness.ready).toBe(false);
   });
 
-  it('waits for an applicable dependency whose row has not been appended yet', () => {
+  it('waits for an applicable dependency whose row has not been appended yet', async () => {
     // Diarization applies to the item but its row is on its way — the old
     // SummarizationTrigger `expectsDiarization` behavior.
-    const readiness = evaluateReadiness(
+    const readiness = await evaluateReadiness(
       summary,
       item([row('transcription', 'succeeded', '2026-07-01T10:00:00Z')]),
       graph,
@@ -160,16 +160,16 @@ describe('evaluateReadiness (the generic dependency gate)', () => {
     expect(readiness.ready).toBe(false);
   });
 
-  it('proceeds without a settled dependency that does not apply (speaker id off)', () => {
+  it('proceeds without a settled dependency that does not apply (speaker id off)', async () => {
     const offGraph = new ExtractorGraph([
       extractor('transcription'),
-      extractor('diarization', [], { enabled: () => false }),
+      extractor('diarization', [], { enabled: async () => false }),
       extractor('summary', [
         { kind: 'transcription', requires: 'succeeded' },
         { kind: 'diarization', requires: 'settled' },
       ]),
     ]);
-    const readiness = evaluateReadiness(
+    const readiness = await evaluateReadiness(
       offGraph.get('summary')!,
       item([row('transcription', 'succeeded', '2026-07-01T10:00:00Z')]),
       offGraph,
@@ -177,8 +177,8 @@ describe('evaluateReadiness (the generic dependency gate)', () => {
     expect(readiness.ready).toBe(true);
   });
 
-  it('never becomes ready when a required dependency failed', () => {
-    const readiness = evaluateReadiness(
+  it('never becomes ready when a required dependency failed', async () => {
+    const readiness = await evaluateReadiness(
       summary,
       item([
         row('transcription', 'failed', '2026-07-01T10:00:00Z'),
@@ -189,7 +189,7 @@ describe('evaluateReadiness (the generic dependency gate)', () => {
     expect(readiness.ready).toBe(false);
   });
 
-  it('never becomes ready when a required dependency cannot apply (text item)', () => {
+  it('never becomes ready when a required dependency cannot apply (text item)', async () => {
     const textGraph = new ExtractorGraph([
       extractor('transcription', [], { appliesTo: () => false }),
       extractor('diarization', [], { appliesTo: () => false }),
@@ -198,12 +198,12 @@ describe('evaluateReadiness (the generic dependency gate)', () => {
         { kind: 'diarization', requires: 'settled' },
       ]),
     ]);
-    const readiness = evaluateReadiness(textGraph.get('summary')!, item([]), textGraph);
+    const readiness = await evaluateReadiness(textGraph.get('summary')!, item([]), textGraph);
     expect(readiness.ready).toBe(false);
   });
 
-  it('only judges the LATEST attempt of each dependency (append-only history)', () => {
-    const readiness = evaluateReadiness(
+  it('only judges the LATEST attempt of each dependency (append-only history)', async () => {
+    const readiness = await evaluateReadiness(
       summary,
       item([
         row('transcription', 'succeeded', '2026-07-01T10:00:00Z'),

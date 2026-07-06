@@ -12,6 +12,7 @@
     "@nestjs/platform-express": "11.1.27",
     "@nestjs/schedule": "6.1.1",
     "@nestjs/typeorm": "11.0.3",
+    "@plaudern/ai-config": "workspace:*",
     "@plaudern/audit": "workspace:*",
     "@plaudern/auth": "workspace:*",
     "@plaudern/calendar": "workspace:*",

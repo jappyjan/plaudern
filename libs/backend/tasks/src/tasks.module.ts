@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AiConfigService, OpenAiEmbeddingsClient } from '@plaudern/ai-config';
 import { AuditModule } from '@plaudern/audit';
 import { InboxModule } from '@plaudern/inbox';
 import { OpenAiEmbeddingProvider } from '@plaudern/embeddings';
@@ -47,11 +48,11 @@ import { InboxTasksController, TasksController } from './tasks.controller';
       inject: [OpenAiTaskExtractionProvider],
       useFactory: (openai: OpenAiTaskExtractionProvider) => openai,
     },
-    OpenAiEmbeddingProvider,
     {
       provide: TASK_DEDUPE_EMBEDDING_PROVIDER,
-      inject: [OpenAiEmbeddingProvider],
-      useFactory: (openai: OpenAiEmbeddingProvider) => openai,
+      inject: [AiConfigService, OpenAiEmbeddingsClient],
+      useFactory: (aiConfig: AiConfigService, client: OpenAiEmbeddingsClient) =>
+        new OpenAiEmbeddingProvider(aiConfig, client),
     },
     TasksRegistryService,
     TaskContextService,

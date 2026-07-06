@@ -92,7 +92,7 @@ export class CommitmentTaskDedupeService {
       return;
     }
 
-    const vectors = await this.embed(open.map((c) => c.description));
+    const vectors = await this.embed(userId, open.map((c) => c.description));
 
     const dirty: CommitmentEntity[] = [];
     for (let i = 0; i < open.length; i++) {
@@ -158,10 +158,12 @@ export class CommitmentTaskDedupeService {
   }
 
   /** Embed commitment descriptions; a null per entry when embeddings are unavailable. */
-  private async embed(texts: string[]): Promise<(number[] | null)[]> {
-    if (!this.embeddings.enabled || texts.length === 0) return texts.map(() => null);
+  private async embed(userId: string, texts: string[]): Promise<(number[] | null)[]> {
+    if (texts.length === 0 || !(await this.embeddings.isEnabled(userId))) {
+      return texts.map(() => null);
+    }
     try {
-      const { vectors } = await this.embeddings.embed(texts);
+      const { vectors } = await this.embeddings.embed(userId, texts);
       return texts.map((_, i) => (vectors[i]?.length ? vectors[i] : null));
     } catch (err) {
       this.logger.warn(

@@ -16,16 +16,18 @@ const USER = '00000000-0000-0000-0000-0000000000aa';
 /** Embeds each text to a caller-supplied vector; unknown text → far-away zero. */
 class FakeEmbeddings implements EmbeddingProvider {
   readonly id = 'fake-embeddings';
-  readonly dimensions = 3;
   constructor(
-    readonly enabled: boolean,
+    private readonly enabled: boolean,
     private readonly map: Record<string, number[]> = {},
   ) {}
-  async embed(texts: string[]): Promise<EmbeddingResult> {
+  async isEnabled(): Promise<boolean> {
+    return this.enabled;
+  }
+  async embed(_userId: string, texts: string[]): Promise<EmbeddingResult> {
     return {
       vectors: texts.map((t) => this.map[t] ?? [0, 0, 0]),
       model: this.id,
-      dimensions: this.dimensions,
+      dimensions: 3,
     };
   }
 }

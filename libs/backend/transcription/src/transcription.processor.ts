@@ -46,7 +46,7 @@ export class TranscriptionProcessor {
       const result = await runWithAiAudit(
         { userId: item?.userId ?? '', itemId: job.inboxItemId, kind: 'transcription' },
         () =>
-          this.provider.transcribe({
+          this.provider.transcribe(job.userId, {
             audioUrl,
             contentType: job.contentType,
             filename: job.filename,

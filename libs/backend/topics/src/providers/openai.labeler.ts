@@ -1,87 +1,46 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { AiConfigService, OpenAiChatClient } from '@plaudern/ai-config';
 import type {
   TopicProposalLabelInput,
   TopicProposalLabelProvider,
   TopicProposalLabelResult,
 } from '../topic-proposals.provider';
 
-interface ChatChoice {
-  message?: { content?: string | null };
-}
-interface ChatResponse {
-  choices?: ChatChoice[];
-  model?: string;
-}
-
 /**
- * Labels an embedding cluster with a short topic name (JJ-64) via the same
- * OpenAI-compatible `/chat/completions` endpoint and TOPICS_* configuration
- * that topic classification uses (DeepSeek by default). Sharing the key/endpoint
- * keeps configuration to one place; only text excerpts are sent, never audio.
+ * Labels an embedding cluster with a short topic name (JJ-64) via an
+ * OpenAI-compatible `/chat/completions` endpoint. The endpoint/model come from
+ * the user's DB-backed AI config (`@plaudern/ai-config`) — labeling is part of
+ * the topics capability, so it resolves the `topics` capability, sharing the
+ * user's topic-classification provider. Only text excerpts are sent, never audio.
  */
 @Injectable()
 export class OpenAiTopicProposalLabelProvider implements TopicProposalLabelProvider {
-  readonly id: string;
-  private readonly baseUrl: string;
-  private readonly apiKey: string;
-  private readonly model: string;
-  private readonly timeoutMs: number;
-  private readonly explicitlyEnabled: boolean;
+  readonly id = 'openai';
 
-  constructor(config: ConfigService) {
-    this.baseUrl = config
-      .get<string>('TOPICS_BASE_URL', 'https://api.deepseek.com/v1')
-      .replace(/\/+$/, '');
-    this.apiKey = config.get<string>('TOPICS_API_KEY', '');
-    this.model = config.get<string>('TOPICS_MODEL', 'deepseek-chat');
-    this.timeoutMs = Number(config.get<string>('TOPICS_TIMEOUT_MS', String(2 * 60_000)));
-    this.explicitlyEnabled = config.get<string>('TOPICS_ENABLED', 'false') === 'true';
-    this.id = `openai:${this.model}`;
-  }
+  constructor(
+    private readonly aiConfig: AiConfigService,
+    private readonly chat: OpenAiChatClient,
+  ) {}
 
-  get enabled(): boolean {
-    return this.apiKey.length > 0 || this.explicitlyEnabled;
-  }
-
-  async label(input: TopicProposalLabelInput): Promise<TopicProposalLabelResult> {
-    if (!this.enabled) {
+  async label(userId: string, input: TopicProposalLabelInput): Promise<TopicProposalLabelResult> {
+    const config = await this.aiConfig.resolve(userId, 'topics');
+    if (!config) {
       throw new Error(
-        'topic labeling is disabled — set TOPICS_API_KEY (cloud endpoints) or ' +
-          'TOPICS_ENABLED=true (keyless local endpoints such as Ollama) to enable it',
+        'topic labeling is not configured — add an AI provider and assign it to the ' +
+          'topics capability in Settings → AI',
       );
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    try {
-      const headers: Record<string, string> = { 'content-type': 'application/json' };
-      if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
-      const res = await fetch(`${this.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: this.model,
-          temperature: 0,
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: LABEL_SYSTEM_PROMPT },
-            { role: 'user', content: buildLabelPrompt(input) },
-          ],
-        }),
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        throw new Error(`topic labeling request failed: ${res.status} ${body.slice(0, 500)}`);
-      }
-      const json = (await res.json()) as ChatResponse;
-      const content = json.choices?.[0]?.message?.content ?? '';
-      const parsed = parseLabelResponse(content);
-      return { ...parsed, model: json.model ?? this.model };
-    } finally {
-      clearTimeout(timer);
-    }
+    const response = await this.chat.chat(config, {
+      temperature: 0,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: LABEL_SYSTEM_PROMPT },
+        { role: 'user', content: buildLabelPrompt(input) },
+      ],
+    });
+    const parsed = parseLabelResponse(this.chat.contentOf(response));
+    return { ...parsed, model: response.model ?? config.model };
   }
 }
 

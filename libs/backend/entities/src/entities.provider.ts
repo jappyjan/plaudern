@@ -25,9 +25,7 @@ export interface EntityExtractionResult {
  */
 export interface EntityExtractionProvider {
   readonly id: string;
-  /** Whether the provider is configured enough to run (e.g. has an API key). */
-  readonly enabled: boolean;
-  extract(input: EntityExtractionInput): Promise<EntityExtractionResult>;
+  extract(userId: string, input: EntityExtractionInput): Promise<EntityExtractionResult>;
 }
 
 export const ENTITY_EXTRACTION_PROVIDER = Symbol('ENTITY_EXTRACTION_PROVIDER');

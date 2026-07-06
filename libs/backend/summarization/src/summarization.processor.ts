@@ -50,7 +50,7 @@ export class SummarizationProcessor {
       // so the provider adapter can audit it (JJ-42).
       const result = await runWithAiAudit(
         { userId: item.userId, itemId: item.id, kind: 'summary' },
-        () => this.provider.summarize({ ...input, targetLanguage }),
+        () => this.provider.summarize(item.userId, { ...input, targetLanguage }),
       );
       const payload: SummaryPayload = {
         title: result.title,

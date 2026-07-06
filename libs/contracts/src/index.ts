@@ -26,6 +26,8 @@ export * from './geocode';
 export * from './calendar';
 export * from './notifications';
 export * from './auth';
+export * from './ai-providers';
+export * from './ai-capabilities';
 export * from './extraction';
 export * from './sensitivity';
 export * from './mcp';

@@ -31,6 +31,7 @@ import { InMemoryStorageService, StorageService } from '@plaudern/storage';
 import { SUMMARIZATION_PROVIDER } from '@plaudern/summarization';
 import { createE2eApp } from '../testing/e2e-app';
 import { FakeSummarizationProvider } from '../testing/fake-providers';
+import { seedAiCapability } from '../testing/seed-ai-config';
 
 describe('Merge & split recordings (e2e, Path A)', () => {
   let app: INestApplication;
@@ -44,6 +45,12 @@ describe('Merge & split recordings (e2e, Path A)', () => {
     app = await createE2eApp((builder) =>
       builder.overrideProvider(SUMMARIZATION_PROVIDER).useValue(new FakeSummarizationProvider()),
     );
+
+    // Diarization and summary are DB-gated capabilities now; the merge flow
+    // stitches diarization and re-runs the summary.
+    await seedAiCapability(app, 'speaker_id');
+    await seedAiCapability(app, 'summarization');
+
     storage = app.get(StorageService) as InMemoryStorageService;
     extractionRepo = app.get(getRepositoryToken(ExtractedPayloadEntity));
     mergeRepo = app.get(getRepositoryToken(RecordingMergeEntity));

@@ -47,7 +47,7 @@ export class EntitiesProcessor {
       // provider adapter can audit it (JJ-42).
       const result = await runWithAiAudit(
         { userId: item.userId, itemId: item.id, kind: 'entities' },
-        () => this.provider.extract(input),
+        () => this.provider.extract(item.userId, input),
       );
       const entityCount = await this.registry.ingest(
         item.userId,

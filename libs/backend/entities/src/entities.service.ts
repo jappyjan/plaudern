@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
+import { AiConfigService } from '@plaudern/ai-config';
 import { InboxService } from '@plaudern/inbox';
 import type { ExtractionStatus } from '@plaudern/contracts';
 import type { ExtractedPayloadEntity } from '@plaudern/persistence';
@@ -27,18 +28,16 @@ export const ENTITIES_EXTRACTOR_VERSION = 1;
 export class EntitiesService {
   constructor(
     private readonly inbox: InboxService,
+    private readonly aiConfig: AiConfigService,
     @Inject(ENTITY_EXTRACTION_PROVIDER)
     private readonly provider: EntityExtractionProvider,
     @Inject(ENTITY_EXTRACTION_QUEUE)
     private readonly queue: EntityExtractionQueue,
   ) {}
 
-  /**
-   * Whether entity extraction is configured (ENTITY_EXTRACTION_API_KEY present,
-   * or ENTITY_EXTRACTION_ENABLED=true for keyless local endpoints like Ollama).
-   */
-  get enabled(): boolean {
-    return this.provider.enabled;
+  /** Whether entity extraction is configured for this user. */
+  isEnabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'entity_extraction');
   }
 
   /**
@@ -47,9 +46,9 @@ export class EntitiesService {
    * history); the registry supersedes old mentions on success.
    */
   async retry(userId: string, inboxItemId: string): Promise<string> {
-    if (!this.provider.enabled) {
+    if (!(await this.aiConfig.isEnabled(userId, 'entity_extraction'))) {
       throw new BadRequestException(
-        'entity extraction is not configured (set ENTITY_EXTRACTION_API_KEY, or ENTITY_EXTRACTION_ENABLED=true for keyless local endpoints such as Ollama)',
+        'entity extraction is not configured (assign a provider in Settings → AI)',
       );
     }
     const item = await this.inbox.getItem(userId, inboxItemId);

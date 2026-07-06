@@ -36,9 +36,15 @@ export interface TopicClassificationResult {
  */
 export interface TopicClassificationProvider {
   readonly id: string;
-  /** Whether the provider is configured enough to run (e.g. has an API key). */
-  readonly enabled: boolean;
-  classify(input: TopicClassificationInput): Promise<TopicClassificationResult>;
+  /**
+   * Classify for a specific user — the user's DB-backed AI config
+   * (`@plaudern/ai-config`, capability `topics`) decides the endpoint/model.
+   * Throws if the user has not configured the topics capability.
+   */
+  classify(
+    userId: string,
+    input: TopicClassificationInput,
+  ): Promise<TopicClassificationResult>;
 }
 
 export const TOPIC_CLASSIFICATION_PROVIDER = Symbol('TOPIC_CLASSIFICATION_PROVIDER');

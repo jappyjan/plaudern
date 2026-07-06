@@ -41,9 +41,7 @@ export interface JournalProviderResult {
  */
 export interface JournalProvider {
   readonly id: string;
-  /** Whether the provider is configured enough to run (e.g. has an API key). */
-  readonly enabled: boolean;
-  generate(input: JournalProviderInput): Promise<JournalProviderResult>;
+  generate(userId: string, input: JournalProviderInput): Promise<JournalProviderResult>;
 }
 
 export const JOURNAL_PROVIDER = Symbol('JOURNAL_PROVIDER');

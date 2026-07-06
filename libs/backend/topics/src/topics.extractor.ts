@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { AiConfigService } from '@plaudern/ai-config';
 import type { Extractor, ExtractorDependency } from '@plaudern/inbox';
 import type { InboxItemEntity } from '@plaudern/persistence';
 import { TopicsService, TOPICS_EXTRACTOR_VERSION } from './topics.service';
@@ -20,10 +21,13 @@ export class TopicsExtractor implements Extractor {
     { kind: 'summary', requires: 'settled' },
   ];
 
-  constructor(private readonly topics: TopicsService) {}
+  constructor(
+    private readonly topics: TopicsService,
+    private readonly aiConfig: AiConfigService,
+  ) {}
 
-  enabled(): boolean {
-    return this.topics.enabled;
+  enabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'topics');
   }
 
   appliesTo(item: InboxItemEntity): boolean {

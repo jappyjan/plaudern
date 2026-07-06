@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { AiConfigService } from '@plaudern/ai-config';
 import { CITATION_VERIFIER, type CitationVerifier } from './verification.provider';
 
 /** The outcome the generation paths act on. */
@@ -29,11 +30,12 @@ export class VerificationService {
   constructor(
     @Inject(CITATION_VERIFIER)
     private readonly verifier: CitationVerifier,
+    private readonly aiConfig: AiConfigService,
   ) {}
 
-  /** Whether the verification pass is configured to run. */
-  get enabled(): boolean {
-    return this.verifier.enabled;
+  /** Whether the verification pass is configured to run for this user. */
+  isEnabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'verification');
   }
 
   /**
@@ -41,13 +43,17 @@ export class VerificationService {
    * the values the judge could not back. Never throws — a verification failure
    * degrades to "not run" so it can never break the surrounding generation.
    */
-  async verifyHighStakes(answer: string, passages: string[]): Promise<VerificationOutcome> {
-    if (!this.verifier.enabled) return SKIPPED;
+  async verifyHighStakes(
+    userId: string,
+    answer: string,
+    passages: string[],
+  ): Promise<VerificationOutcome> {
+    if (!(await this.aiConfig.isEnabled(userId, 'verification'))) return SKIPPED;
     const usable = passages.map((p) => p?.trim()).filter((p): p is string => !!p);
     if (usable.length === 0 || !answer.trim()) return SKIPPED;
 
     try {
-      const result = await this.verifier.verify({ answer, passages: usable });
+      const result = await this.verifier.verify(userId, { answer, passages: usable });
       const unsupported = result.fields.filter((f) => !f.supported).map((f) => f.value);
       return { ran: true, unsupported };
     } catch (cause) {

@@ -36,9 +36,7 @@ export interface FactExtractionResult {
  */
 export interface FactExtractionProvider {
   readonly id: string;
-  /** Whether the provider is configured enough to run (e.g. has an API key). */
-  readonly enabled: boolean;
-  extract(input: FactExtractionInput): Promise<FactExtractionResult>;
+  extract(userId: string, input: FactExtractionInput): Promise<FactExtractionResult>;
 }
 
 export const FACT_EXTRACTION_PROVIDER = Symbol('FACT_EXTRACTION_PROVIDER');

@@ -3,21 +3,31 @@ import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import type { Repository } from 'typeorm';
 import type { SearchResultItem } from '@plaudern/contracts';
 import type { ChatConversationEntity, ChatMessageEntity } from '@plaudern/persistence';
+import type { AiConfigService } from '@plaudern/ai-config';
 import type { SearchService } from '@plaudern/search';
 import { VerificationService } from '@plaudern/citations';
 import type { CitationVerifier } from '@plaudern/citations';
 import type { ChatCompletionMessage, ChatCompletionProvider } from './chat.provider';
 import { ChatService } from './chat.service';
 
+/** A minimal AiConfigService whose capability enablement is toggled per-test. */
+function fakeAiConfig(enabled: boolean): AiConfigService {
+  return {
+    resolve: async () => (enabled ? ({} as never) : null),
+    isEnabled: async () => enabled,
+    invalidate: () => {},
+  } as unknown as AiConfigService;
+}
+
 /** A verifier that is off by default, so verification is skipped in tests. */
-function fakeVerification(overrides: Partial<CitationVerifier> = {}): VerificationService {
+function fakeVerification(
+  overrides: { enabled?: boolean; verify?: CitationVerifier['verify'] } = {},
+): VerificationService {
   const verifier: CitationVerifier = {
     id: 'fake',
-    enabled: false,
-    verify: async () => ({ fields: [] }),
-    ...overrides,
+    verify: overrides.verify ?? (async () => ({ fields: [] })),
   };
-  return new VerificationService(verifier);
+  return new VerificationService(verifier, fakeAiConfig(overrides.enabled ?? false));
 }
 
 const USER = 'user-1';
@@ -77,11 +87,10 @@ function matches<T>(row: T, where: Partial<T>): boolean {
 
 class FakeProvider implements ChatCompletionProvider {
   id = 'fake';
-  enabled = true;
   calls: ChatCompletionMessage[][] = [];
   replies: string[] = [];
 
-  async complete(messages: ChatCompletionMessage[]) {
+  async complete(_userId: string, messages: ChatCompletionMessage[]) {
     this.calls.push(messages);
     const content = this.replies.shift() ?? '{"answer": "no reply staged", "confidence": "low"}';
     return { content, model: 'fake-model' };
@@ -122,15 +131,23 @@ function makeHit(overrides: Partial<SearchResultItem> = {}): SearchResultItem {
 }
 
 function build(
-  overrides: { provider?: FakeProvider; search?: FakeSearch; verification?: VerificationService } = {},
+  overrides: {
+    provider?: FakeProvider;
+    search?: FakeSearch;
+    verification?: VerificationService;
+    /** Whether the `chat` capability resolves (feature ships off until true). */
+    enabled?: boolean;
+  } = {},
 ) {
   const provider = overrides.provider ?? new FakeProvider();
   const search = overrides.search ?? new FakeSearch();
   const verification = overrides.verification ?? fakeVerification();
+  const aiConfig = fakeAiConfig(overrides.enabled ?? true);
   const conversations = new FakeRepo<ChatConversationEntity>();
   const messages = new FakeRepo<ChatMessageEntity>();
   const service = new ChatService(
     provider,
+    aiConfig,
     search as unknown as SearchService,
     verification,
     conversations as unknown as Repository<ChatConversationEntity>,
@@ -140,21 +157,24 @@ function build(
 }
 
 describe('ChatService.status', () => {
-  it('reports unavailable with an actionable reason when the provider is disabled', () => {
-    const provider = new FakeProvider();
-    provider.enabled = false;
-    const { service } = build({ provider });
-    const status = service.status();
+  it('reports available when the chat capability resolves', async () => {
+    const { service } = build({ enabled: true });
+    const status = await service.status(USER);
+    expect(status.available).toBe(true);
+    expect(status.reason).toBeNull();
+  });
+
+  it('reports unavailable with an actionable reason when the capability is disabled', async () => {
+    const { service } = build({ enabled: false });
+    const status = await service.status(USER);
     expect(status.available).toBe(false);
-    expect(status.reason).toContain('CHAT_API_KEY');
+    expect(status.reason).toContain('chat capability');
   });
 });
 
 describe('ChatService.ask', () => {
-  it('rejects when the provider is disabled (feature ships off)', async () => {
-    const provider = new FakeProvider();
-    provider.enabled = false;
-    const { service } = build({ provider });
+  it('rejects when the capability is disabled (feature ships off)', async () => {
+    const { service } = build({ enabled: false });
     await expect(service.ask(USER, { message: 'anything' })).rejects.toBeInstanceOf(
       ServiceUnavailableException,
     );

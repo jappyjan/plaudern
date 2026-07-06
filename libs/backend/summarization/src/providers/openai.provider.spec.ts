@@ -1,4 +1,8 @@
-import type { ConfigService } from '@nestjs/config';
+import {
+  AiConfigService,
+  OpenAiChatClient,
+  type ResolvedAiConfig,
+} from '@plaudern/ai-config';
 import {
   buildUserPrompt,
   OpenAiSummarizationProvider,
@@ -7,18 +11,36 @@ import {
 } from './openai.provider';
 import type { SummarizationInput } from '../summarization.provider';
 
-/** Minimal ConfigService stand-in — the provider only ever calls `.get(key, default)`. */
-function fakeConfig(values: Record<string, string>): ConfigService {
+const USER = 'user-1';
+
+/** A ready-to-use resolved `summarization` config; override per test. */
+function cfg(over: Partial<ResolvedAiConfig> = {}): ResolvedAiConfig {
   return {
-    get: (key: string, defaultValue?: unknown) =>
-      key in values ? values[key] : defaultValue,
-  } as unknown as ConfigService;
+    capability: 'summarization',
+    protocol: 'openai-compatible',
+    baseUrl: 'https://api.deepseek.com/v1',
+    apiKey: 'sk-test',
+    model: 'deepseek-chat',
+    timeoutMs: 30000,
+    params: {},
+    providerId: 'p1',
+    providerName: 'test',
+    ...over,
+  };
 }
 
-// Auditing is exercised in the audit lib's own spec; here it is a no-op stub.
-const audit = { record: async () => undefined } as unknown as ConstructorParameters<
-  typeof OpenAiSummarizationProvider
->[1];
+/** Fake AiConfigService: `resolve` yields the given config (or null = disabled). */
+function fakeAiConfig(config: ResolvedAiConfig | null): AiConfigService {
+  return {
+    resolve: async () => config,
+    isEnabled: async () => config !== null,
+    invalidate() {},
+  } as unknown as AiConfigService;
+}
+
+function providerWith(config: ResolvedAiConfig | null): OpenAiSummarizationProvider {
+  return new OpenAiSummarizationProvider(fakeAiConfig(config), new OpenAiChatClient({ record: async () => undefined } as any));
+}
 
 const minimalInput: SummarizationInput = {
   transcript: 'hello',
@@ -137,35 +159,29 @@ describe('parseSummaryResponse', () => {
   });
 });
 
-describe('OpenAiSummarizationProvider.enabled', () => {
-  it('is disabled with neither an API key nor SUMMARIZATION_ENABLED', () => {
-    expect(new OpenAiSummarizationProvider(fakeConfig({}), audit).enabled).toBe(false);
+describe('OpenAiSummarizationProvider gating', () => {
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+    jest.restoreAllMocks();
   });
 
-  it('is enabled when SUMMARIZATION_API_KEY is set (cloud default)', () => {
-    const provider = new OpenAiSummarizationProvider(
-      fakeConfig({ SUMMARIZATION_API_KEY: 'sk-test' }),
-      audit,
+  it('throws a descriptive error (without calling the API) when summarization is unconfigured', async () => {
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await expect(providerWith(null).summarize(USER, minimalInput)).rejects.toThrow(
+      /not configured/,
     );
-    expect(provider.enabled).toBe(true);
-  });
-
-  it('is enabled via SUMMARIZATION_ENABLED=true even without a key (keyless local servers e.g. Ollama)', () => {
-    const provider = new OpenAiSummarizationProvider(
-      fakeConfig({ SUMMARIZATION_ENABLED: 'true' }),
-      audit,
-    );
-    expect(provider.enabled).toBe(true);
-  });
-
-  it('throws a descriptive error from summarize() when disabled', async () => {
-    const provider = new OpenAiSummarizationProvider(fakeConfig({}), audit);
-    await expect(provider.summarize(minimalInput)).rejects.toThrow(/SUMMARIZATION_ENABLED/);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
 describe('OpenAiSummarizationProvider request behavior', () => {
-  afterEach(() => jest.restoreAllMocks());
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+    jest.restoreAllMocks();
+  });
 
   it('omits the Authorization header when no API key is configured (e.g. Ollama)', async () => {
     const fetchMock = jest.fn(async (_url: string, _init?: RequestInit) => ({
@@ -179,15 +195,10 @@ describe('OpenAiSummarizationProvider request behavior', () => {
     }));
     global.fetch = fetchMock as unknown as typeof fetch;
 
-    const provider = new OpenAiSummarizationProvider(
-      fakeConfig({
-        SUMMARIZATION_ENABLED: 'true',
-        SUMMARIZATION_BASE_URL: 'http://localhost:11434/v1',
-        SUMMARIZATION_MODEL: 'llama3.1',
-      }),
-      audit,
+    const provider = providerWith(
+      cfg({ apiKey: null, baseUrl: 'http://localhost:11434/v1', model: 'llama3.1' }),
     );
-    const result = await provider.summarize(minimalInput);
+    const result = await provider.summarize(USER, minimalInput);
 
     expect(result.markdown).toBe('body');
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -208,11 +219,7 @@ describe('OpenAiSummarizationProvider request behavior', () => {
     }));
     global.fetch = fetchMock as unknown as typeof fetch;
 
-    const provider = new OpenAiSummarizationProvider(
-      fakeConfig({ SUMMARIZATION_API_KEY: 'sk-test' }),
-      audit,
-    );
-    await provider.summarize(minimalInput);
+    await providerWith(cfg({ apiKey: 'sk-test' })).summarize(USER, minimalInput);
 
     const [, init] = fetchMock.mock.calls[0];
     expect((init?.headers as Record<string, string>).authorization).toBe('Bearer sk-test');

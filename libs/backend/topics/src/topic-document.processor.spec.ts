@@ -40,9 +40,8 @@ function fakeProvider(
   const calls: TopicDocumentInput[] = [];
   return {
     id: 'test:docs',
-    enabled: true,
     calls,
-    generate: async (input) => {
+    generate: async (_userId: string, input: TopicDocumentInput) => {
       calls.push(input);
       return respond(input);
     },

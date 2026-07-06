@@ -10,11 +10,15 @@ process.env.AUTH_DISABLED = 'true';
 process.env.GEOCODER = 'stub';
 
 import { INestApplication } from '@nestjs/common';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import type { Repository } from 'typeorm';
 import request from 'supertest';
 import type { ChatAskResponse, InboxItemDto } from '@plaudern/contracts';
 import { InMemoryStorageService, StorageService } from '@plaudern/storage';
 import { EMBEDDING_PROVIDER } from '@plaudern/embeddings';
 import { SUMMARIZATION_PROVIDER } from '@plaudern/summarization';
+import { AiConfigService } from '@plaudern/ai-config';
+import { AiCapabilitySettingEntity, DEFAULT_USER_ID } from '@plaudern/persistence';
 import {
   CHAT_COMPLETION_PROVIDER,
   type ChatCompletionMessage,
@@ -22,15 +26,15 @@ import {
 } from '@plaudern/chat';
 import { createE2eApp } from '../testing/e2e-app';
 import { FakeEmbeddingProvider, FakeSummarizationProvider } from '../testing/fake-providers';
+import { seedAiCapability } from '../testing/seed-ai-config';
 
 /** Scripted chat LLM: shift()s staged replies, records every call. */
 class FakeChatProvider implements ChatCompletionProvider {
   readonly id = 'fake-chat';
-  enabled = true;
   calls: ChatCompletionMessage[][] = [];
   replies: string[] = [];
 
-  async complete(messages: ChatCompletionMessage[]) {
+  async complete(_userId: string, messages: ChatCompletionMessage[]) {
     this.calls.push(messages);
     const content = this.replies.shift();
     if (!content) throw new Error('no staged chat reply');
@@ -59,6 +63,14 @@ describe('Memory chat (e2e, Path A)', () => {
         .overrideProvider(CHAT_COMPLETION_PROVIDER)
         .useValue(chatProvider),
     );
+
+    // Enablement is DB-driven now. Chat retrieval runs over embeddings of the
+    // ingested recording's transcript+summary, so all three capabilities must
+    // be configured for the test user.
+    await seedAiCapability(app, 'summarization');
+    await seedAiCapability(app, 'embeddings');
+    await seedAiCapability(app, 'chat');
+
     storage = app.get(StorageService) as InMemoryStorageService;
   });
 
@@ -178,18 +190,26 @@ describe('Memory chat (e2e, Path A)', () => {
     await request(app.getHttpServer()).post('/api/v1/chat').send({ message: '' }).expect(400);
   });
 
-  it('is disabled (503 + status reason) when no provider is configured', async () => {
-    chatProvider.enabled = false;
+  it('is disabled (503 + status reason) when the capability is not configured', async () => {
+    // Availability is DB-gated now, not a provider flag: explicitly disable the
+    // chat capability for the test user and confirm the endpoint reflects it.
+    const caps = app.get<Repository<AiCapabilitySettingEntity>>(
+      getRepositoryToken(AiCapabilitySettingEntity),
+    );
+    const aiConfig = app.get(AiConfigService);
+    await caps.update({ userId: DEFAULT_USER_ID, capability: 'chat' }, { enabled: false });
+    aiConfig.invalidate(DEFAULT_USER_ID);
     try {
       const status = await request(app.getHttpServer()).get('/api/v1/chat/status').expect(200);
       expect(status.body.available).toBe(false);
-      expect(status.body.reason).toContain('CHAT_API_KEY');
+      expect(status.body.reason).toContain('not configured');
       await request(app.getHttpServer())
         .post('/api/v1/chat')
         .send({ message: 'hello?' })
         .expect(503);
     } finally {
-      chatProvider.enabled = true;
+      await caps.update({ userId: DEFAULT_USER_ID, capability: 'chat' }, { enabled: true });
+      aiConfig.invalidate(DEFAULT_USER_ID);
     }
   });
 });

@@ -87,15 +87,15 @@ export class StartupBackfillService implements OnApplicationBootstrap, OnModuleD
    */
   async sweep(): Promise<void> {
     if (this.destroyed) return;
-    const kinds = this.enabledKindsInDependencyOrder();
+    const kinds = this.kindsInDependencyOrder();
     if (kinds.length === 0) {
-      this.logger.log('startup backfill: no enabled extraction kinds — nothing to do');
+      this.logger.log('startup backfill: no extraction kinds registered — nothing to do');
       return;
     }
 
     await this.withLock(async () => {
       this.logger.log(
-        `startup backfill: sweeping ${kinds.length} enabled kind(s): ${kinds.join(', ')}`,
+        `startup backfill: sweeping ${kinds.length} kind(s): ${kinds.join(', ')}`,
       );
       for (const kind of kinds) {
         try {
@@ -127,10 +127,14 @@ export class StartupBackfillService implements OnApplicationBootstrap, OnModuleD
   }
 
   /**
-   * Enabled kinds in topological (upstream-first) order. The graph is validated
-   * acyclic at construction, so Kahn's algorithm always drains.
+   * All kinds in topological (upstream-first) order. The graph is validated
+   * acyclic at construction, so Kahn's algorithm always drains. Enablement is
+   * per-user now (DB-backed AI config), so the sweep no longer filters kinds
+   * globally — it starts a run for every kind and the per-item readiness/enabled
+   * gate (`ExtractionRunsService.shouldEnqueue`, keyed by each item's owner)
+   * skips items whose owner has not configured the capability.
    */
-  private enabledKindsInDependencyOrder(): ExtractionKind[] {
+  private kindsInDependencyOrder(): ExtractionKind[] {
     const all = this.graph.all();
     const inDegree = new Map<ExtractionKind, number>();
     for (const extractor of all) inDegree.set(extractor.kind, extractor.dependsOn.length);
@@ -145,7 +149,7 @@ export class StartupBackfillService implements OnApplicationBootstrap, OnModuleD
         if (remaining === 0) queue.push(dependent.kind);
       }
     }
-    return order.filter((kind) => this.graph.get(kind)?.enabled());
+    return order;
   }
 
   /**

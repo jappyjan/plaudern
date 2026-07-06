@@ -1,4 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { AiConfigService } from '@plaudern/ai-config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type {
@@ -50,6 +51,7 @@ export class EntityReconciliationService {
     private readonly mentions: Repository<EntityMentionEntity>,
     @InjectRepository(EntityMergeSuggestionEntity)
     private readonly suggestions: Repository<EntityMergeSuggestionEntity>,
+    private readonly aiConfig: AiConfigService,
     @Inject(ENTITY_JUDGE_PROVIDER)
     private readonly judge: EntityJudgeProvider,
     @Inject(WEB_RESEARCH_PROVIDER)
@@ -72,14 +74,14 @@ export class EntityReconciliationService {
     const subject = all.find((e) => e.id === entityId);
     const candidate = all.find((e) => e.id === candidateId);
     if (!subject || !candidate) throw new NotFoundException('entity not found');
-    if (!this.judge.enabled) return null;
+    if (!(await this.aiConfig.isEnabled(userId, 'entity_judge'))) return null;
 
     // Opt-in web research: only when the caller asks AND it's enabled. Only the
     // subject's name/type and the candidate's name leave — never transcripts.
     let webSnippets: string[] = [];
     let usedWeb = false;
-    if (opts.web && this.web.enabled) {
-      const research = await this.web.research({
+    if (opts.web && (await this.aiConfig.isEnabled(userId, 'web_research'))) {
+      const research = await this.web.research(userId, {
         name: subject.canonicalName,
         type: subject.type,
         context: `possibly the same as "${candidate.canonicalName}" (${candidate.type})`,
@@ -87,7 +89,7 @@ export class EntityReconciliationService {
       webSnippets = research.snippets;
       usedWeb = research.usedWeb;
     }
-    const { decision } = await this.judge.judge({
+    const { decision } = await this.judge.judge(userId, {
       subject: { name: subject.canonicalName, type: subject.type, aliases: subject.aliases },
       candidate: { name: candidate.canonicalName, type: candidate.type, aliases: candidate.aliases },
       webSnippets,

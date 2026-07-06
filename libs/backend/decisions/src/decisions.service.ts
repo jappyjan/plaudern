@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import { AiConfigService } from '@plaudern/ai-config';
 import { InboxService } from '@plaudern/inbox';
 import type {
   DecisionDto,
@@ -51,6 +52,7 @@ export const DECISIONS_EXTRACTOR_VERSION = 1;
 export class DecisionsService {
   constructor(
     private readonly inbox: InboxService,
+    private readonly aiConfig: AiConfigService,
     @Inject(DECISION_EXTRACTION_PROVIDER)
     private readonly provider: DecisionExtractionProvider,
     @Inject(DECISIONS_QUEUE)
@@ -61,12 +63,9 @@ export class DecisionsService {
     private readonly items: Repository<InboxItemEntity>,
   ) {}
 
-  /**
-   * Whether decision extraction is configured (DECISIONS_API_KEY present, or
-   * DECISIONS_ENABLED=true for keyless local endpoints like Ollama).
-   */
-  get enabled(): boolean {
-    return this.provider.enabled;
+  /** Whether decision extraction is configured for this user. */
+  isEnabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'decisions');
   }
 
   // ---- Pipeline ----
@@ -77,9 +76,9 @@ export class DecisionsService {
    * history); persisted decisions are upserted so a user status survives.
    */
   async retry(userId: string, inboxItemId: string): Promise<string> {
-    if (!this.provider.enabled) {
+    if (!(await this.isEnabled(userId))) {
       throw new BadRequestException(
-        'decision extraction is not configured (set DECISIONS_API_KEY, or DECISIONS_ENABLED=true for keyless local endpoints such as Ollama)',
+        'decision extraction is not configured — assign a provider to the decisions capability in Settings → AI',
       );
     }
     const item = await this.inbox.getItem(userId, inboxItemId);

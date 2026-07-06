@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { AiConfigService } from '@plaudern/ai-config';
 import type { Extractor, ExtractorDependency } from '@plaudern/inbox';
 import type { InboxItemEntity } from '@plaudern/persistence';
 import { SummarizationService, SUMMARY_EXTRACTOR_VERSION } from './summarization.service';
@@ -19,10 +20,13 @@ export class SummaryExtractor implements Extractor {
     { kind: 'diarization', requires: 'settled' },
   ];
 
-  constructor(private readonly summarization: SummarizationService) {}
+  constructor(
+    private readonly summarization: SummarizationService,
+    private readonly aiConfig: AiConfigService,
+  ) {}
 
-  enabled(): boolean {
-    return this.summarization.enabled;
+  enabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'summarization');
   }
 
   appliesTo(item: InboxItemEntity): boolean {

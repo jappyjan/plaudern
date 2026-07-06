@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PersistenceModule } from '@plaudern/persistence';
+import { AiConfigModule } from '@plaudern/ai-config';
 import { StorageModule } from '@plaudern/storage';
 import { AuthModule } from '@plaudern/auth';
 import { InboxModule } from '@plaudern/inbox';
@@ -37,6 +38,9 @@ import { HealthController } from './health.controller';
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', 'apps/api/.env'] }),
     PersistenceModule,
+    // Global: exposes AiConfigService + shared AI clients to every feature
+    // module, and runs the one-time env→DB import for AI config.
+    AiConfigModule,
     StorageModule,
     // Installs the global session guard: every route below requires a passkey
     // session unless marked @Public().

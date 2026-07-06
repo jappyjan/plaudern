@@ -17,10 +17,7 @@ import type {
 } from '@plaudern/contracts';
 import { ItemTopicEntity, TopicDocumentEntity, TopicEntity } from '@plaudern/persistence';
 import { analyzeCitationCoverage } from '@plaudern/citations';
-import {
-  TOPIC_DOCUMENT_PROVIDER,
-  type TopicDocumentProvider,
-} from './topic-document.provider';
+import { AiConfigService } from '@plaudern/ai-config';
 import { TOPIC_DOCUMENT_QUEUE, type TopicDocumentQueue } from './topic-document.job';
 
 /** How long to wait for a burst of classifications to settle before regenerating. */
@@ -92,8 +89,7 @@ export class TopicDocumentService implements OnModuleDestroy {
 
   constructor(
     config: ConfigService,
-    @Inject(TOPIC_DOCUMENT_PROVIDER)
-    private readonly provider: TopicDocumentProvider,
+    private readonly aiConfig: AiConfigService,
     @Inject(TOPIC_DOCUMENT_QUEUE)
     private readonly queue: TopicDocumentQueue,
     @InjectRepository(TopicEntity)
@@ -107,9 +103,9 @@ export class TopicDocumentService implements OnModuleDestroy {
     this.debounceMs = Number.isFinite(raw) && raw >= 0 ? raw : DEFAULT_DEBOUNCE_MS;
   }
 
-  /** Whether living-document generation is configured (TOPIC_DOCS_API_KEY, …). */
-  get enabled(): boolean {
-    return this.provider.enabled;
+  /** Whether living-document generation is configured for this user. */
+  isEnabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'topic_docs');
   }
 
   onModuleDestroy(): void {
@@ -123,7 +119,9 @@ export class TopicDocumentService implements OnModuleDestroy {
    * per topic so a burst (e.g. a backfill) regenerates once, not N times.
    */
   onTopicsAssigned(userId: string, topicIds: string[]): void {
-    if (!this.provider.enabled) return;
+    // The per-user config gate lives in `enqueueRegeneration`; scheduling here is
+    // cheap and the debounced enqueue no-ops when the user has no topic_docs
+    // provider configured.
     for (const topicId of new Set(topicIds)) this.scheduleRegeneration(userId, topicId);
   }
 
@@ -170,7 +168,7 @@ export class TopicDocumentService implements OnModuleDestroy {
    * version race was lost.
    */
   async enqueueRegeneration(userId: string, topicId: string): Promise<string | null> {
-    if (!this.provider.enabled) return null;
+    if (!(await this.aiConfig.isEnabled(userId, 'topic_docs'))) return null;
 
     const inFlight = await this.documents.findOne({
       where: [
@@ -213,9 +211,9 @@ export class TopicDocumentService implements OnModuleDestroy {
    * least one classified item.
    */
   async regenerate(userId: string, topicId: string): Promise<string | null> {
-    if (!this.provider.enabled) {
+    if (!(await this.aiConfig.isEnabled(userId, 'topic_docs'))) {
       throw new BadRequestException(
-        'topic documents are not configured (set TOPIC_DOCS_API_KEY, or TOPIC_DOCS_ENABLED=true for keyless local endpoints such as Ollama)',
+        'topic documents are not configured (assign a provider to the topic_docs capability in Settings → AI)',
       );
     }
     const topic = await this.topics.findOne({ where: { id: topicId, userId } });
@@ -255,7 +253,7 @@ export class TopicDocumentService implements OnModuleDestroy {
       error: latest?.status === 'failed' ? latest.error : null,
       generatedAt: current ? iso(current.updatedAt) : null,
       updatedAt: latest ? iso(latest.updatedAt) : null,
-      enabled: this.enabled,
+      enabled: await this.aiConfig.isEnabled(userId, 'topic_docs'),
     };
   }
 

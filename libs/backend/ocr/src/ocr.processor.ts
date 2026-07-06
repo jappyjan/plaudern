@@ -39,8 +39,10 @@ export class OcrProcessor {
           `document is too large to OCR (${bytes.byteLength} bytes > ${MAX_IMAGE_BYTES})`,
         );
       }
+      const item = await this.inbox.getItemById(job.inboxItemId);
+      if (!item) throw new Error('inbox item no longer exists');
       const imageDataUrl = `data:${job.contentType};base64,${bytes.toString('base64')}`;
-      const result = await this.provider.recognize({
+      const result = await this.provider.recognize(item.userId, {
         imageDataUrl,
         contentType: job.contentType,
         filename: job.filename,

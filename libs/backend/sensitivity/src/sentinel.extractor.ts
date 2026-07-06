@@ -20,8 +20,10 @@ export class SentinelExtractor implements Extractor {
 
   constructor(private readonly sentinel: SentinelService) {}
 
-  enabled(): boolean {
-    return this.sentinel.enabled;
+  // Per-user + async to match the Extractor contract (AI config is per-user
+  // now), though the sentinel itself is userId-independent and always enabled.
+  enabled(_userId: string): Promise<boolean> {
+    return Promise.resolve(this.sentinel.enabled);
   }
 
   appliesTo(item: InboxItemEntity): boolean {

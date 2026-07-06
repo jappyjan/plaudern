@@ -6,15 +6,13 @@ import type {
 } from '../web-research.provider';
 
 /**
- * The default web-research provider: does nothing and reaches no network. Bound
- * whenever WEB_RESEARCH_ENABLED is not `true`, so the token always resolves and
- * reconciliation can call it unconditionally (it just no-ops).
+ * A no-op web-research provider: does nothing and reaches no network. Kept as an
+ * always-safe fallback binding for the WEB_RESEARCH_PROVIDER token; reconciliation
+ * can call it unconditionally (it just no-ops).
  */
 @Injectable()
 export class DisabledWebResearchProvider implements WebResearchProvider {
-  readonly enabled = false;
-
-  research(_input: WebResearchInput): Promise<WebResearchResult> {
+  research(_userId: string, _input: WebResearchInput): Promise<WebResearchResult> {
     return Promise.resolve({ snippets: [], usedWeb: false });
   }
 }

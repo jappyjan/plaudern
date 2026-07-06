@@ -54,8 +54,7 @@ function fakeProvider(
 ): QuestionExtractionProvider {
   return {
     id: 'test:questions',
-    enabled: true,
-    extract: async (input) => respond(input),
+    extract: async (_userId, input) => respond(input),
   };
 }
 

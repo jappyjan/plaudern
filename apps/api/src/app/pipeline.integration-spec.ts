@@ -11,6 +11,7 @@ import {
   FakePyannoteAiClient,
   FakeTranscriptionProvider,
 } from '../testing/fake-providers';
+import { seedAiCapability } from '../testing/seed-ai-config';
 
 /**
  * Full-stack integration test (plan §6). Unlike the fast Path A e2e (sqlite +
@@ -41,13 +42,19 @@ describe('Ingestion pipeline (integration, real Postgres + MinIO + Redis)', () =
     process.env.GEOCODER = 'stub';
     process.env.AUTH_DISABLED = 'true'; // single-user mode — auth has its own spec
 
+    // Diarization builds its pyannoteAI client per job via the static
+    // `PyannoteAiClient.fromResolvedConfig` (not a DI provider anymore), so a
+    // provider override no longer intercepts it — spy the factory instead
+    // (mirrors testing/e2e-app.ts).
+    jest
+      .spyOn(PyannoteAiClient, 'fromResolvedConfig')
+      .mockReturnValue(new FakePyannoteAiClient() as unknown as PyannoteAiClient);
+
     const moduleRef = await Test.createTestingModule({
       imports: [(await import('./app.module')).AppModule],
     })
       .overrideProvider(TRANSCRIPTION_PROVIDER)
       .useValue(new FakeTranscriptionProvider())
-      .overrideProvider(PyannoteAiClient)
-      .useValue(new FakePyannoteAiClient())
       .overrideProvider(CLIP_EXTRACTOR)
       .useValue(new FakeClipExtractor())
       .compile();
@@ -55,6 +62,10 @@ describe('Ingestion pipeline (integration, real Postgres + MinIO + Redis)', () =
     app.setGlobalPrefix('api');
     app.enableVersioning({ type: VersioningType.URI });
     await app.init();
+
+    // Diarization is DB-gated now; enable speaker_id for the test user so the
+    // async diarization queue runs against the real speaker tables.
+    await seedAiCapability(app, 'speaker_id');
   });
 
   afterAll(async () => {

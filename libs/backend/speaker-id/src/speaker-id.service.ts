@@ -4,7 +4,7 @@ import {
   Inject,
   Injectable,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { AiConfigService } from '@plaudern/ai-config';
 import { InboxService } from '@plaudern/inbox';
 import { PyannoteAiSpeakerIdentifier } from './identifiers/pyannoteai.identifier';
 import { DIARIZATION_QUEUE, type DiarizationQueue } from './diarization.job';
@@ -24,46 +24,30 @@ export const DIARIZATION_EXTRACTOR_VERSION = 1;
 /**
  * Public entry point invoked by ingestion at commit time, mirroring
  * TranscriptionService: appends a `queued` diarization extraction row and
- * hands the job to the queue. No-op when speaker identification is disabled
- * (SPEAKER_ID_PROVIDER=off).
+ * hands the job to the queue. No-op when speaker identification is not
+ * configured for the user (no `speaker_id` provider assigned).
  */
 @Injectable()
 export class SpeakerIdService {
-  private readonly disabled: boolean;
-
   constructor(
-    config: ConfigService,
     private readonly inbox: InboxService,
+    private readonly aiConfig: AiConfigService,
     private readonly identifier: PyannoteAiSpeakerIdentifier,
     @Inject(DIARIZATION_QUEUE)
     private readonly queue: DiarizationQueue,
-  ) {
-    // Fail fast on values from removed provider modes so a stale deployment
-    // config surfaces at boot, not as silently-different behavior.
-    const selected = config.get<string>('SPEAKER_ID_PROVIDER', 'pyannoteai');
-    if (selected === 'pyannote' || selected === 'stub') {
-      throw new Error(
-        `SPEAKER_ID_PROVIDER=${selected} was removed; use 'pyannoteai' (requires PYANNOTEAI_API_KEY) or 'off'`,
-      );
-    }
-    if (selected !== 'pyannoteai' && selected !== 'off') {
-      throw new Error(
-        `unknown SPEAKER_ID_PROVIDER '${selected}' (expected 'pyannoteai' or 'off')`,
-      );
-    }
-    this.disabled = selected === 'off';
-  }
+  ) {}
 
-  /** Whether speaker identification is configured on this server. */
-  get enabled(): boolean {
-    return !this.disabled;
+  /** Whether speaker identification is configured for this user. */
+  isEnabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'speaker_id');
   }
 
   async enqueueDiarization(
+    userId: string,
     inboxItemId: string,
     params: EnqueueDiarizationParams,
   ): Promise<string | null> {
-    if (this.disabled) return null;
+    if (!(await this.aiConfig.isEnabled(userId, 'speaker_id'))) return null;
     const extraction = await this.inbox.addExtraction(
       inboxItemId,
       'diarization',
@@ -86,8 +70,10 @@ export class SpeakerIdService {
    * automatically once the new diarization lands.
    */
   async retryDiarization(userId: string, inboxItemId: string): Promise<string> {
-    if (this.disabled) {
-      throw new BadRequestException('speaker identification is disabled on this server');
+    if (!(await this.aiConfig.isEnabled(userId, 'speaker_id'))) {
+      throw new BadRequestException(
+        'speaker identification is not configured (assign a provider in Settings → AI)',
+      );
     }
     const item = await this.inbox.getItem(userId, inboxItemId);
     const source = item.source;
@@ -105,8 +91,8 @@ export class SpeakerIdService {
     if (latest && (latest.status === 'queued' || latest.status === 'processing')) {
       throw new ConflictException('speaker identification is already in progress');
     }
-    // Not disabled (checked above), so enqueueDiarization returns a real id.
-    return (await this.enqueueDiarization(item.id, {
+    // Enabled (checked above), so enqueueDiarization returns a real id.
+    return (await this.enqueueDiarization(userId, item.id, {
       storageKey: source.storageKey,
       contentType: source.contentType,
     })) as string;

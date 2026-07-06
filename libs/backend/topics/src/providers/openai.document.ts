@@ -1,105 +1,49 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { AiAuditRecorder } from '@plaudern/audit';
+import { Injectable } from '@nestjs/common';
+import { AiConfigService, OpenAiChatClient } from '@plaudern/ai-config';
 import type {
   TopicDocumentInput,
   TopicDocumentProvider,
   TopicDocumentResult,
 } from '../topic-document.provider';
 
-interface ChatChoice {
-  message?: { content?: string | null };
-}
-interface ChatResponse {
-  choices?: ChatChoice[];
-  model?: string;
-}
-
 /**
  * Generates a topic's living document via an OpenAI-compatible
- * `/chat/completions` endpoint. Defaults to DeepSeek (`deepseek-chat`) but any
- * provider exposing the OpenAI schema works by overriding TOPIC_DOCS_BASE_URL/
- * MODEL, including a local Ollama/llama.cpp gateway (TOPIC_DOCS_ENABLED=true for
- * keyless local servers). Only item text (summaries/transcripts) is sent, never
- * audio, and only to the endpoint the operator configures.
+ * `/chat/completions` endpoint. The endpoint/model come from the user's
+ * DB-backed AI config (`@plaudern/ai-config`, capability `topic_docs`, which
+ * inherits from summarization when unset) — any provider exposing the OpenAI
+ * schema works. Only item text (summaries/transcripts) is sent, never audio.
  */
 @Injectable()
 export class OpenAiTopicDocumentProvider implements TopicDocumentProvider {
-  readonly id: string;
-  private readonly logger = new Logger(OpenAiTopicDocumentProvider.name);
-  private readonly baseUrl: string;
-  private readonly apiKey: string;
-  private readonly model: string;
-  private readonly timeoutMs: number;
-  private readonly explicitlyEnabled: boolean;
+  readonly id = 'openai';
 
   constructor(
-    config: ConfigService,
-    private readonly audit: AiAuditRecorder,
-  ) {
-    // Falls back to the summarization tier so one DeepSeek key lights up every
-    // LLM feature; TOPIC_DOCS_* overrides diverge the model/endpoint per kind.
-    this.baseUrl = config
-      .get<string>(
-        'TOPIC_DOCS_BASE_URL',
-        config.get<string>('SUMMARIZATION_BASE_URL', 'https://api.deepseek.com/v1'),
-      )
-      .replace(/\/+$/, '');
-    this.apiKey = config.get<string>(
-      'TOPIC_DOCS_API_KEY',
-      config.get<string>('SUMMARIZATION_API_KEY', ''),
-    );
-    this.model = config.get<string>('TOPIC_DOCS_MODEL', 'deepseek-chat');
-    this.timeoutMs = Number(config.get<string>('TOPIC_DOCS_TIMEOUT_MS', String(3 * 60_000)));
-    this.explicitlyEnabled = config.get<string>('TOPIC_DOCS_ENABLED', 'false') === 'true';
-    this.id = `openai:${this.model}`;
-  }
+    private readonly aiConfig: AiConfigService,
+    private readonly chat: OpenAiChatClient,
+  ) {}
 
-  get enabled(): boolean {
-    return this.apiKey.length > 0 || this.explicitlyEnabled;
-  }
-
-  async generate(input: TopicDocumentInput): Promise<TopicDocumentResult> {
-    if (!this.enabled) {
+  async generate(userId: string, input: TopicDocumentInput): Promise<TopicDocumentResult> {
+    const config = await this.aiConfig.resolve(userId, 'topic_docs');
+    if (!config) {
       throw new Error(
-        'topic documents are disabled — set TOPIC_DOCS_API_KEY (cloud endpoints) or ' +
-          'TOPIC_DOCS_ENABLED=true (keyless local endpoints such as Ollama) to enable it',
+        'topic documents are not configured — add an AI provider and assign it to the ' +
+          'topic_docs capability in Settings → AI',
       );
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    try {
-      const headers: Record<string, string> = { 'content-type': 'application/json' };
-      if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
-      const endpoint = `${this.baseUrl}/chat/completions`;
-      const body = JSON.stringify({
-        model: this.model,
-        temperature: 0.2,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: buildUserPrompt(input) },
-        ],
-      });
-      // Audit the exact bytes leaving the box before they leave (JJ-42).
-      await this.audit.record({ provider: this.id, endpoint, payload: body });
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body,
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        throw new Error(`topic document request failed: ${res.status} ${body.slice(0, 500)}`);
-      }
-      const json = (await res.json()) as ChatResponse;
-      const content = json.choices?.[0]?.message?.content ?? '';
-      return { markdown: parseDocumentResponse(content), model: json.model ?? this.model, raw: json };
-    } finally {
-      clearTimeout(timer);
-    }
+    const response = await this.chat.chat(config, {
+      temperature: 0.2,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: buildUserPrompt(input) },
+      ],
+    });
+    return {
+      markdown: parseDocumentResponse(this.chat.contentOf(response)),
+      model: response.model ?? config.model,
+      raw: response,
+    };
   }
 }
 

@@ -57,8 +57,7 @@ function fakeProvider(
 ): TaskExtractionProvider {
   return {
     id: 'test:tasks',
-    enabled: true,
-    extract: async (input) => respond(input),
+    extract: async (_userId, input) => respond(input),
   };
 }
 
@@ -76,9 +75,8 @@ function bucketVector(title: string): number[] {
 function fakeEmbeddings(enabled: boolean): EmbeddingProvider {
   return {
     id: 'test:embed',
-    enabled,
-    dimensions: 3,
-    embed: async (texts: string[]) => ({
+    isEnabled: async () => enabled,
+    embed: async (_userId: string, texts: string[]) => ({
       vectors: texts.map(bucketVector),
       model: 'test:embed',
       dimensions: 3,

@@ -57,9 +57,12 @@ export interface SummarizationResult {
  */
 export interface SummarizationProvider {
   readonly id: string;
-  /** Whether the provider is configured enough to run (e.g. has an API key). */
-  readonly enabled: boolean;
-  summarize(input: SummarizationInput): Promise<SummarizationResult>;
+  /**
+   * Summarize for a specific user — the user's DB-backed AI config
+   * (`@plaudern/ai-config`) decides the endpoint/model. Throws if the user has
+   * not configured the summarization capability.
+   */
+  summarize(userId: string, input: SummarizationInput): Promise<SummarizationResult>;
 }
 
 export const SUMMARIZATION_PROVIDER = Symbol('SUMMARIZATION_PROVIDER');

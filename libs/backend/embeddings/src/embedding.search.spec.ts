@@ -20,9 +20,8 @@ function chunk(over: Partial<EmbeddingChunkEntity>): EmbeddingChunkEntity {
 function build(opts: { enabled?: boolean; queryVector?: number[]; rows?: EmbeddingChunkEntity[] }) {
   const provider: EmbeddingProvider = {
     id: 'fake',
-    enabled: opts.enabled ?? true,
-    dimensions: 3,
-    embed: jest.fn(async () => ({
+    isEnabled: async () => opts.enabled ?? true,
+    embed: jest.fn(async (_userId: string, _texts: string[]) => ({
       vectors: [opts.queryVector ?? [1, 0, 0]],
       model: 'fake',
       dimensions: 3,

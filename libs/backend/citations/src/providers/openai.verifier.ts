@@ -1,19 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable } from '@nestjs/common';
+import { AiConfigService, OpenAiChatClient } from '@plaudern/ai-config';
 import type {
   CitationVerifier,
   VerificationInput,
   VerificationResult,
   VerifiedField,
 } from '../verification.provider';
-
-interface ChatChoice {
-  message?: { content?: string | null };
-}
-interface ChatResponse {
-  choices?: ChatChoice[];
-  model?: string;
-}
 
 const SYSTEM_PROMPT = [
   'You are a strict fact-checker for a memory-prosthesis app. You are given an',
@@ -37,51 +29,26 @@ const SYSTEM_PROMPT = [
 
 /**
  * LLM-judge verifier via an OpenAI-compatible `/chat/completions` endpoint.
- * Mirrors the other extractors (DeepSeek default, temp 0, JSON mode); the
- * VERIFICATION_* env falls back to the SUMMARIZATION_* tier so a deploy that
- * already summarizes gets verification for free. With neither key set the pass
- * ships DISABLED and callers skip it.
+ * The endpoint/model come from the user's DB-backed AI config
+ * (`@plaudern/ai-config`, capability `verification`, which inherits from
+ * `summarization` at resolve time); any provider exposing the OpenAI schema
+ * works. When the capability is not configured callers skip verification.
  */
 @Injectable()
 export class OpenAiCitationVerifier implements CitationVerifier {
-  readonly id: string;
-  private readonly logger = new Logger(OpenAiCitationVerifier.name);
-  private readonly baseUrl: string;
-  private readonly apiKey: string;
-  private readonly model: string;
-  private readonly timeoutMs: number;
-  private readonly explicitlyEnabled: boolean;
+  readonly id = 'openai';
 
-  constructor(config: ConfigService) {
-    const fallbackBaseUrl = config.get<string>(
-      'SUMMARIZATION_BASE_URL',
-      'https://api.deepseek.com/v1',
-    );
-    this.baseUrl = config
-      .get<string>('VERIFICATION_BASE_URL', fallbackBaseUrl)
-      .replace(/\/+$/, '');
-    this.apiKey =
-      config.get<string>('VERIFICATION_API_KEY', '') ||
-      config.get<string>('SUMMARIZATION_API_KEY', '');
-    this.model = config.get<string>('VERIFICATION_MODEL', 'deepseek-chat');
-    this.timeoutMs = Number(config.get<string>('VERIFICATION_TIMEOUT_MS', String(60_000)));
-    // Cloud endpoints are gated on an API key — an empty key means "disabled".
-    // Keyless local OpenAI-compatible servers (Ollama, llama.cpp, …) opt in via
-    // VERIFICATION_ENABLED=true.
-    this.explicitlyEnabled = config.get<string>('VERIFICATION_ENABLED', 'false') === 'true';
-    this.id = `openai:${this.model}`;
-  }
+  constructor(
+    private readonly aiConfig: AiConfigService,
+    private readonly chat: OpenAiChatClient,
+  ) {}
 
-  get enabled(): boolean {
-    return this.apiKey.length > 0 || this.explicitlyEnabled;
-  }
-
-  async verify(input: VerificationInput): Promise<VerificationResult> {
-    if (!this.enabled) {
+  async verify(userId: string, input: VerificationInput): Promise<VerificationResult> {
+    const config = await this.aiConfig.resolve(userId, 'verification');
+    if (!config) {
       throw new Error(
-        'citation verification is disabled — set VERIFICATION_API_KEY (or SUMMARIZATION_API_KEY, ' +
-          'which it falls back to) for cloud endpoints, or VERIFICATION_ENABLED=true for keyless ' +
-          'local endpoints such as Ollama',
+        'citation verification is not configured — assign a provider to the verification ' +
+          'capability in Settings → AI',
       );
     }
 
@@ -90,39 +57,19 @@ export class OpenAiCitationVerifier implements CitationVerifier {
       .join('\n');
     const user = `SOURCES:\n${sources}\n\nANSWER:\n${input.answer}`;
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    try {
-      const headers: Record<string, string> = { 'content-type': 'application/json' };
-      if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
-      const res = await fetch(`${this.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: this.model,
-          temperature: 0,
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
-            { role: 'user', content: user },
-          ],
-        }),
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        throw new Error(`verification request failed: ${res.status} ${body.slice(0, 500)}`);
-      }
-      const json = (await res.json()) as ChatResponse;
-      const content = json.choices?.[0]?.message?.content ?? '';
-      return {
-        fields: parseFields(content),
-        model: json.model ?? this.model,
-        raw: content,
-      };
-    } finally {
-      clearTimeout(timer);
-    }
+    const response = await this.chat.chat(config, {
+      temperature: 0,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: user },
+      ],
+    });
+    return {
+      fields: parseFields(this.chat.contentOf(response)),
+      model: response.model ?? config.model,
+      raw: response,
+    };
   }
 }
 

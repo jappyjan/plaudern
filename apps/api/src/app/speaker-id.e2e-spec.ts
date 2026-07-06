@@ -15,6 +15,7 @@ import request from 'supertest';
 import type { VoiceProfileDto } from '@plaudern/contracts';
 import { InMemoryStorageService, StorageService } from '@plaudern/storage';
 import { createE2eApp } from '../testing/e2e-app';
+import { seedAiCapability } from '../testing/seed-ai-config';
 
 describe('Speaker identification (e2e, Path A)', () => {
   let app: INestApplication;
@@ -42,6 +43,9 @@ describe('Speaker identification (e2e, Path A)', () => {
 
   beforeAll(async () => {
     app = await createE2eApp();
+
+    // Diarization is gated on the speaker_id capability being configured.
+    await seedAiCapability(app, 'speaker_id');
 
     storage = app.get(StorageService) as InMemoryStorageService;
     itemIds.push(await ingestAudio('speaker-e2e-1'));

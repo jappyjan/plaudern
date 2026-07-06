@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, In, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
+import { AiConfigService } from '@plaudern/ai-config';
 import { InboxService } from '@plaudern/inbox';
 import type {
   ExtractionStatus,
@@ -51,6 +52,7 @@ export const REMINDERS_EXTRACTOR_VERSION = 1;
 export class RemindersService {
   constructor(
     private readonly inbox: InboxService,
+    private readonly aiConfig: AiConfigService,
     @Inject(REMINDER_EXTRACTION_PROVIDER)
     private readonly provider: ReminderExtractionProvider,
     @Inject(REMINDERS_QUEUE)
@@ -61,12 +63,9 @@ export class RemindersService {
     private readonly items: Repository<InboxItemEntity>,
   ) {}
 
-  /**
-   * Whether reminder extraction is configured (REMINDERS_API_KEY present, or
-   * REMINDERS_ENABLED=true for keyless local endpoints like Ollama).
-   */
-  get enabled(): boolean {
-    return this.provider.enabled;
+  /** Whether reminder extraction is configured for this user. */
+  isEnabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'reminders');
   }
 
   // ---- Pipeline ----
@@ -77,9 +76,9 @@ export class RemindersService {
    * history); persisted reminders are upserted so a user status survives.
    */
   async retry(userId: string, inboxItemId: string): Promise<string> {
-    if (!this.provider.enabled) {
+    if (!(await this.aiConfig.isEnabled(userId, 'reminders'))) {
       throw new BadRequestException(
-        'reminder extraction is not configured (set REMINDERS_API_KEY, or REMINDERS_ENABLED=true for keyless local endpoints such as Ollama)',
+        'reminder extraction is not configured — assign a provider to the reminders capability in Settings → AI',
       );
     }
     const item = await this.inbox.getItem(userId, inboxItemId);

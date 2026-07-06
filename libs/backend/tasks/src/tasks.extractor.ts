@@ -21,8 +21,8 @@ export class TasksExtractor implements Extractor {
 
   constructor(private readonly tasks: TasksService) {}
 
-  enabled(): boolean {
-    return this.tasks.enabled;
+  enabled(userId: string): Promise<boolean> {
+    return this.tasks.isEnabled(userId);
   }
 
   appliesTo(item: InboxItemEntity): boolean {
