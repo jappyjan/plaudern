@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Card, CardBody, CardHeader, Chip, Spinner } from '@heroui/react';
+import { Link } from 'react-router-dom';
 import type { QuestionDto, QuestionStatus, ItemQuestionsResponse } from '@plaudern/contracts';
 import { getItemQuestions, retryItemQuestions, updateQuestionStatus } from '../lib/api';
-import { PeopleIcon } from './icons';
+import { formatDuration, itemDeepLink } from '../lib/format';
+import { PeopleIcon, PlayIcon } from './icons';
 
 /** Extraction is async — poll for the outcome while it is in flight. */
 const POLL_INTERVAL_MS = 10_000;
@@ -205,6 +207,18 @@ function QuestionRow({
       </div>
       {question.counterpartyName && (
         <p className="text-xs text-default-500">{question.counterpartyName}</p>
+      )}
+      {question.sourceTimestamp !== null && (
+        <Button
+          as={Link}
+          to={itemDeepLink(question.inboxItemId, question.sourceTimestamp)}
+          size="sm"
+          variant="light"
+          className="h-6 min-w-0 self-start px-2 text-xs text-default-500"
+          startContent={<PlayIcon className="h-3 w-3" />}
+        >
+          Jump to {formatDuration(question.sourceTimestamp)}
+        </Button>
       )}
       <div className="flex gap-1">
         {question.status === 'open' ? (

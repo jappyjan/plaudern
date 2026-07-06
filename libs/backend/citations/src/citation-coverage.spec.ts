@@ -10,6 +10,57 @@ describe('splitClaims', () => {
     expect(splitClaims('First point; second point.')).toEqual(['First point;', 'second point.']);
     expect(splitClaims('Line one\nLine two')).toEqual(['Line one', 'Line two']);
   });
+
+  it('does not split on abbreviations (JJ-79)', () => {
+    // "z.B." (German "e.g.") must not sever the sentence right after it.
+    expect(
+      splitClaims('Er hat z.B. das Auto gekauft [1].'),
+    ).toEqual(['Er hat z.B. das Auto gekauft [1].']);
+    // A handful of the other listed abbreviations, spot-checked.
+    expect(splitClaims('Das war teuer, d.h. über 10.000 Euro [1].')).toEqual([
+      'Das war teuer, d.h. über 10.000 Euro [1].',
+    ]);
+    expect(splitClaims('Sie kaufte Obst, Brot usw. beim Markt [1].')).toEqual([
+      'Sie kaufte Obst, Brot usw. beim Markt [1].',
+    ]);
+    expect(splitClaims('Dr. Meier war beim Termin dabei [1].')).toEqual([
+      'Dr. Meier war beim Termin dabei [1].',
+    ]);
+  });
+
+  it('still splits on a genuine sentence boundary right after an abbreviation-bearing clause', () => {
+    expect(
+      splitClaims('Er hat z.B. das Auto gekauft [1]. Das war teuer [2].'),
+    ).toEqual(['Er hat z.B. das Auto gekauft [1].', 'Das war teuer [2].']);
+  });
+
+  it('still splits genuine sentence boundaries (no abbreviations involved)', () => {
+    expect(splitClaims('Anna is pregnant. He quit his job.')).toEqual([
+      'Anna is pregnant.',
+      'He quit his job.',
+    ]);
+  });
+
+  it('never merges two real sentences — closed set only, no lowercase/single-letter heuristics (JJ-79)', () => {
+    // These were MERGED by the removed open-ended heuristics, hiding the second
+    // sentence. The abbreviation guard is a closed set, so they must still split:
+    // a lowercase-starting continuation ("iOS", "das budget") is a real sentence,
+    // and a capital letter before the period ("Vitamin D.") is not an initial we
+    // recognise. Over-splitting an unlisted case is an accepted over-hedge; MERGING
+    // is the forbidden under-hedge.
+    expect(splitClaims('Der Termin steht fest [1]. iOS wurde nie erwähnt.')).toEqual([
+      'Der Termin steht fest [1].',
+      'iOS wurde nie erwähnt.',
+    ]);
+    expect(splitClaims('Die Studie [1] nennt Vitamin D. Das ist frei erfunden.')).toEqual([
+      'Die Studie [1] nennt Vitamin D.',
+      'Das ist frei erfunden.',
+    ]);
+    expect(splitClaims('Der Plan steht [1]. das Budget wurde gestrichen.')).toEqual([
+      'Der Plan steht [1].',
+      'das Budget wurde gestrichen.',
+    ]);
+  });
 });
 
 describe('analyzeCitationCoverage — strict (memory chat contract)', () => {
@@ -46,6 +97,33 @@ describe('analyzeCitationCoverage — strict (memory chat contract)', () => {
       ).totalClaims,
     ).toBe(0);
     expect(analyzeCitationCoverage('In short: it happened [1].', strict).uncitedClaims).toBe(0);
+  });
+
+  it('keeps a cited German sentence using "z.B." at high confidence (JJ-79)', () => {
+    // Before the abbreviation guard, "z.B." severed this into two claims and
+    // the second ("das Auto gekauft [1].") lost the citation, downgrading to
+    // low confidence even though the whole sentence IS cited.
+    const result = analyzeCitationCoverage('Er hat z.B. das Auto gekauft [1].', strict);
+    expect(result.totalClaims).toBe(1);
+    expect(result.uncitedClaims).toBe(0);
+    expect(result.confidence).toBe('high');
+  });
+
+  it('does not let a cited head hide an uncited tail — the abbreviation guard must not under-hedge (JJ-79 / JJ-68)', () => {
+    // The removed lowercase/single-letter heuristics MERGED these into one clause;
+    // the merged clause carried the head's [1], so strictUncited flipped low→high
+    // and the uncited (often fabricated) tail was served as HIGH confidence — the
+    // one regression JJ-68 / VISION §6 forbids. The closed abbreviation set splits
+    // them, so the tail's uncited-ness is caught.
+    for (const input of [
+      'Der Termin steht fest [1]. iOS wurde nie erwähnt.',
+      'Die Studie [1] nennt Vitamin D. Das ist frei erfunden.',
+      'Der Plan steht [1]. das Budget wurde gestrichen.',
+    ]) {
+      const result = analyzeCitationCoverage(input, strict);
+      expect(result.uncitedClaims).toBeGreaterThanOrEqual(1);
+      expect(result.confidence).not.toBe('high');
+    }
   });
 
   it('any single uncited substantive claim downgrades a strict answer', () => {

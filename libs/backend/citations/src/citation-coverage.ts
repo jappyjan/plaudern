@@ -76,17 +76,85 @@ export interface CitationCoverage {
 }
 
 /**
+ * Abbreviations whose internal/trailing `.` must NOT be treated as a sentence
+ * terminator (JJ-79). Without this guard, a properly-cited German sentence
+ * using `z.B.` gets severed into an uncited fragment right after "z.B." and
+ * gets spuriously downgraded to low confidence. Lower-cased for comparison.
+ */
+const ABBREVIATIONS = new Set(
+  [
+    'z.B.',
+    'd.h.',
+    'u.a.',
+    'etc.',
+    'i.e.',
+    'e.g.',
+    'usw.',
+    'ca.',
+    'Nr.',
+    'vgl.',
+    'bzw.',
+    'z.T.',
+    'o.Ä.',
+    'ggf.',
+    'inkl.',
+    'Dr.',
+    'Prof.',
+  ].map((abbreviation) => abbreviation.toLowerCase()),
+);
+
+/** Characters allowed inside an abbreviation token: letters (incl. German umlauts/ß) plus internal `.` (e.g. "z.B."). */
+const ABBREVIATION_TOKEN_CHAR_RE = /[A-Za-zÄÖÜäöüß.]/;
+
+/**
+ * Whether the `.` at `periodIndex` is a known abbreviation rather than a
+ * sentence terminator: the letter/`.` token ending at this period (`z.B.`,
+ * `etc.`, `Dr.`, …) is in the closed {@link ABBREVIATIONS} set.
+ *
+ * Deliberately NARROW — a closed set only. Earlier open-ended heuristics
+ * (single-letter-before-dot, lowercase-next-token) were removed: they MERGE two
+ * real sentences, and when the first is cited and the second is not, the
+ * second's uncited-ness is hidden and strictUncited flips low→high — an
+ * UNDER-hedge (an uncited claim served as high confidence), the one direction
+ * JJ-68 / VISION §6 forbids. Over-splitting an unlisted abbreviation (e.g.
+ * "J. Smith") is only an over-hedge, which JJ-79 explicitly accepts, so the
+ * closed set is the safe floor.
+ */
+function isAbbreviationSplitPoint(content: string, periodIndex: number): boolean {
+  let tokenStart = periodIndex;
+  while (tokenStart > 0 && ABBREVIATION_TOKEN_CHAR_RE.test(content[tokenStart - 1])) {
+    tokenStart -= 1;
+  }
+  const token = content.slice(tokenStart, periodIndex + 1);
+  return ABBREVIATIONS.has(token.toLowerCase());
+}
+
+/**
  * Split prose into clause-level claim units. Sentence terminators (`.!?`),
  * clause separators (`;:`), and newlines/bullets all break a unit — so
  * "Anna is pregnant. He quit his job." yields two units, not one, and each is
  * checked for its own citation. Language-agnostic on purpose (works for the
- * German transcripts too): no verb/POS heuristics, just punctuation.
+ * German transcripts too): no verb/POS heuristics, just punctuation — except
+ * a `.` is NOT treated as a boundary when it ends a KNOWN abbreviation
+ * (see {@link isAbbreviationSplitPoint}), so "z.B." and friends don't sever a
+ * sentence into a spurious uncited claim (JJ-79).
  */
 export function splitClaims(content: string): string[] {
-  return content
-    .split(/(?<=[.!?;:])\s+|\n+/)
-    .map((unit) => unit.trim())
-    .filter((unit) => unit.length > 0);
+  const units: string[] = [];
+  let start = 0;
+  const boundaryRe = /[.!?;:]\s+|\n+/g;
+  let match: RegExpExecArray | null;
+  while ((match = boundaryRe.exec(content)) !== null) {
+    const isPeriodBoundary = match[0][0] === '.';
+    if (isPeriodBoundary && isAbbreviationSplitPoint(content, match.index)) {
+      continue;
+    }
+    const end = match.index + match[0].length;
+    units.push(content.slice(start, end));
+    start = end;
+  }
+  units.push(content.slice(start));
+  return units.map((unit) => unit.trim()).filter((unit) => unit.length > 0);
 }
 
 /**

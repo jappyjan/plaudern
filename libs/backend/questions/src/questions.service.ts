@@ -35,7 +35,7 @@ const ACTIVE_STATUSES: ExtractionStatus[] = ['queued', 'processing'];
  * row. Bump when the output meaningfully improves (better model or prompt) so
  * backfill runs can catch older items up.
  */
-export const QUESTIONS_EXTRACTOR_VERSION = 1;
+export const QUESTIONS_EXTRACTOR_VERSION = 2;
 
 /**
  * Owns the question-extraction pipeline step (JJ-34). WHEN it runs is decided

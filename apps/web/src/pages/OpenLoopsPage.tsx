@@ -9,6 +9,7 @@ import type {
   OpenLoopState,
 } from '@plaudern/contracts';
 import { actOnNudge, listNudges, listOpenLoops, updateOpenLoopState } from '../lib/api';
+import { itemDeepLink } from '../lib/format';
 import { LoopIcon } from '../components/icons';
 
 type KindFilter = 'all' | 'task' | 'commitment' | 'question';
@@ -284,12 +285,12 @@ function OpenLoopCard({
           {loop.inboxItemId && (
             <Button
               as={Link}
-              to={`/items/${loop.inboxItemId}`}
+              to={itemDeepLink(loop.inboxItemId, loop.sourceTimestamp)}
               size="sm"
               variant="light"
               className="ml-auto"
             >
-              Open recording
+              {loop.sourceTimestamp !== null ? 'Jump to moment' : 'Open recording'}
             </Button>
           )}
         </div>

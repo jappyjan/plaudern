@@ -15,6 +15,7 @@ function loop(partial: Partial<OpenLoopDto> & { id: string; kind: OpenLoopKind }
     dueDate: null,
     overdue: false,
     inboxItemId: null,
+    sourceTimestamp: null,
     citationCount: 1,
     firstSeenAt: new Date(NOW).toISOString(),
     lastSeenAt: new Date(NOW).toISOString(),

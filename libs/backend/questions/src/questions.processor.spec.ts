@@ -170,6 +170,74 @@ describe('QuestionsProcessor + persistence', () => {
     expect(payload.questionCount).toBe(2);
   });
 
+  it('resolves sourceTimestamp structurally by locating the sourceQuote in transcript segments (JJ-71)', async () => {
+    // The model is NOT asked for a timestamp — it supplies only a sourceQuote,
+    // which the processor maps back to the timed transcription segment it came
+    // from (the same quote→timestamp resolution memory-chat citations use).
+    const inboxItemId = await createItem();
+    await dataSource.getRepository(ExtractedPayloadEntity).save({
+      inboxItemId,
+      kind: 'transcription',
+      version: 1,
+      provider: 'test',
+      status: 'succeeded',
+      createdAt: new Date('2026-07-01T10:00:00Z'),
+      content: 'Did you hear back from the landlord? When is the report due?',
+      segments: [
+        { start: 0, end: 3, text: 'Did you hear back from the landlord?' },
+        { start: 12.5, end: 15, text: 'When is the report due?' },
+      ],
+    });
+    const extractionId = await createExtraction(
+      inboxItemId,
+      'questions',
+      'queued',
+      new Date('2026-07-01T10:05:00Z'),
+    );
+
+    await buildProcessor(
+      fakeProvider(() => ({
+        questions: [
+          {
+            direction: 'asked_by_me',
+            counterparty: '',
+            question: 'did the landlord reply',
+            answered: false,
+            sourceQuote: 'Did you hear back from the landlord?',
+            // Even a bogus model-supplied timestamp is ignored — resolution is structural.
+            sourceTimestamp: 999,
+          },
+          {
+            direction: 'asked_of_me',
+            counterparty: '',
+            question: 'when is the report due',
+            answered: false,
+            sourceQuote: 'When is the report due?',
+            sourceTimestamp: null,
+          },
+          {
+            direction: 'asked_by_me',
+            counterparty: '',
+            question: 'a question never spoken aloud',
+            answered: false,
+            // Quote absent from the transcript → no timestamp resolves.
+            sourceQuote: 'this phrase is nowhere in the transcript',
+            sourceTimestamp: null,
+          },
+        ],
+        model: 'm',
+      })),
+    ).process({ extractionId, inboxItemId });
+
+    const rows = await questionsRepo().find();
+    const first = rows.find((r) => r.normalizedQuestion === 'did the landlord reply')!;
+    expect(first.sourceTimestamp).toBe(0);
+    const second = rows.find((r) => r.normalizedQuestion === 'when is the report due')!;
+    expect(second.sourceTimestamp).toBe(12.5);
+    const unlocatable = rows.find((r) => r.normalizedQuestion === 'a question never spoken aloud')!;
+    expect(unlocatable.sourceTimestamp).toBeNull();
+  });
+
   it('collapses duplicate questions within a batch and caps at 50', async () => {
     const job = await seedJob('Lots of questions.');
     const many = Array.from({ length: 60 }, (_, i) => ({

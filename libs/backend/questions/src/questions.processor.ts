@@ -1,7 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { runWithAiAudit } from '@plaudern/audit';
 import { InboxService } from '@plaudern/inbox';
-import type { QuestionExtractionPayload } from '@plaudern/contracts';
+import type { ExtractionSegment, QuestionExtractionPayload } from '@plaudern/contracts';
+import type { ExtractedPayloadEntity, InboxItemEntity } from '@plaudern/persistence';
 import {
   QUESTION_EXTRACTION_PROVIDER,
   type QuestionExtractionProvider,
@@ -50,11 +51,24 @@ export class QuestionsProcessor {
         { userId: item.userId, itemId: item.id, kind: 'questions' },
         () => this.provider.extract(item.userId, input),
       );
+      // Resolve each question's `sourceTimestamp` STRUCTURALLY (JJ-71): the model
+      // is never asked for a timestamp (unreliable) — instead we locate its
+      // `sourceQuote` in the transcription's timed segments, the same
+      // quote→timestamp mapping the tasks/facts extractors use for deep-linkable
+      // citations. Runs on first extraction AND on every re-extraction (backfill
+      // bumps the version), so older items get backfilled through the normal path.
+      const segments = transcriptionSegments(item);
+      const questions = result.questions.map((question) => ({
+        ...question,
+        sourceTimestamp: question.sourceQuote
+          ? locateQuote(segments, question.sourceQuote)?.start ?? null
+          : null,
+      }));
       const questionCount = await this.persistence.persist(
         item.userId,
         item.id,
         job.extractionId,
-        result.questions,
+        questions,
       );
 
       const payload: QuestionExtractionPayload = {
@@ -78,4 +92,45 @@ export class QuestionsProcessor {
       throw err;
     }
   }
+}
+
+/** The latest succeeded transcription's timed segments, if any. Mirrors the tasks/facts processor helper. */
+function transcriptionSegments(item: InboxItemEntity): ExtractionSegment[] {
+  const transcription = (item.extractions ?? [])
+    .filter((e: ExtractedPayloadEntity) => e.kind === 'transcription' && e.status === 'succeeded')
+    .slice()
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+  return transcription?.segments ?? [];
+}
+
+/**
+ * Best-effort mapping of a quoted sentence back to the transcript segment(s) it
+ * came from, so a citation can deep-link into the audio. Matches on normalized
+ * substring containment in either direction; returns the span covering all
+ * matching segments, or null when the quote can't be located. Mirrors the
+ * tasks/facts processor helper (the same quote→timestamp resolution memory-chat
+ * citations get from their embedding chunks).
+ */
+export function locateQuote(
+  segments: ExtractionSegment[],
+  quote: string,
+): { start: number; end: number } | null {
+  const needle = normalizeText(quote);
+  if (!needle) return null;
+  let start: number | null = null;
+  let end: number | null = null;
+  for (const segment of segments) {
+    const hay = normalizeText(segment.text ?? '');
+    if (!hay) continue;
+    if (hay.includes(needle) || needle.includes(hay)) {
+      start = start === null ? segment.start : Math.min(start, segment.start);
+      end = end === null ? segment.end : Math.max(end, segment.end);
+    }
+  }
+  if (start === null || end === null) return null;
+  return { start, end };
+}
+
+function normalizeText(text: string): string {
+  return text.trim().toLowerCase().replace(/\s+/g, ' ');
 }
