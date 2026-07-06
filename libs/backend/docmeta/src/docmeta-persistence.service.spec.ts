@@ -212,4 +212,66 @@ describe('DocMetaPersistenceService', () => {
     });
     expect(saved[0].documentDate).toBeNull();
   });
+
+  it('retries as an update when a concurrent re-OCR wins the unique-index race (JJ-84)', async () => {
+    // Two workers re-OCR the same item concurrently: both see no existing row
+    // (findOne → null), both attempt an insert. The "other worker" wins — our
+    // save() trips the unique index on inboxItemId (mirrors Postgres 23505 /
+    // better-sqlite3's SQLITE_CONSTRAINT*) — and persistence must re-read the
+    // winner's row and UPDATE it instead of failing, so re-OCR still resolves
+    // to a single row.
+    const winner: Partial<DocumentMetadataEntity> = {
+      id: 'winner-row-1',
+      userId: USER,
+      inboxItemId: ITEM,
+      extractionId: 'earlier-extraction',
+      documentType: 'other',
+      title: 'Stale title from the concurrent winner',
+    };
+    let findOneCalls = 0;
+    const saved: Partial<DocumentMetadataEntity>[] = [];
+    let saveCalls = 0;
+    const repo = {
+      findOne: async () => {
+        findOneCalls += 1;
+        // 1st call: pre-insert lookup, nothing exists yet from this worker's
+        // view. 2nd call: post-unique-violation re-read of the winner.
+        return findOneCalls === 1 ? null : { ...winner };
+      },
+      create: (v: Partial<DocumentMetadataEntity>) => ({ ...v }),
+      save: async (v: Partial<DocumentMetadataEntity>) => {
+        saveCalls += 1;
+        if (saveCalls === 1) {
+          const err = new Error('UNIQUE constraint failed: document_metadata.inboxItemId') as Error & {
+            driverError?: { code: string; message: string };
+          };
+          err.driverError = { code: 'SQLITE_CONSTRAINT_UNIQUE', message: err.message };
+          throw err;
+        }
+        saved.push(v);
+        return v;
+      },
+    } as unknown as Repository<DocumentMetadataEntity>;
+
+    const reminders = {
+      persist: async () => 0,
+    } as unknown as RemindersPersistenceService;
+    const registry = { ingest: async () => 0 } as unknown as EntitiesRegistryService;
+    const service = new DocMetaPersistenceService(repo, reminders, registry);
+
+    const result = await service.persist(USER, ITEM, EXTRACTION, OCCURRED_AT, {
+      ...baseDoc,
+      documentType: 'invoice',
+      title: 'Fresh title from this worker',
+    });
+
+    // No error surfaced to the caller — the race resolved to a single row.
+    expect(result.contactEnriched).toBe(false);
+    // Exactly one row ultimately persisted: the retried UPDATE onto the winner.
+    expect(saved).toHaveLength(1);
+    expect(saved[0].id).toBe('winner-row-1');
+    expect(saved[0].extractionId).toBe(EXTRACTION);
+    expect(saved[0].title).toBe('Fresh title from this worker');
+    expect(findOneCalls).toBe(2);
+  });
 });

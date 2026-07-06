@@ -41,7 +41,11 @@ export interface DocMetaPersistResult {
 /**
  * Persists one docmeta extraction's output (JJ-30/JJ-16). It:
  *   1. upserts the ONE `document_metadata` row for the item (by inboxItemId),
- *      repointing `extractionId` and refreshing every field on re-extraction,
+ *      repointing `extractionId` and refreshing every field on re-extraction —
+ *      a concurrent re-OCR racing the insert loses the unique index and is
+ *      retried as an update against the winner's row (JJ-84, mirroring
+ *      RemindersPersistenceService), so two workers processing the same item
+ *      converge on a single row instead of one erroring out,
  *   2. turns the expiry + Kündigungsfrist dates into prospective reminders via
  *      the JJ-25 reminders infra (which resolves dates against the scan time,
  *      dedups/upserts, and — crucially — NEVER clobbers a user-dismissed
@@ -93,9 +97,7 @@ export class DocMetaPersistenceService {
     const contact = docMeta.documentType === 'business_card' ? docMeta.contact : null;
 
     // 1) Upsert the single document_metadata row (one per item).
-    const existing = await this.documents.findOne({ where: { inboxItemId } });
-    const row = existing ?? this.documents.create({ userId, inboxItemId });
-    Object.assign(row, {
+    const rowFields = {
       userId,
       inboxItemId,
       extractionId,
@@ -112,8 +114,25 @@ export class DocMetaPersistenceService {
       cancellationDate,
       contact: contact ?? null,
       confidence: docMeta.confidence ?? null,
-    });
-    await this.documents.save(row);
+    };
+    const existing = await this.documents.findOne({ where: { inboxItemId } });
+    if (existing) {
+      Object.assign(existing, rowFields);
+      await this.documents.save(existing);
+    } else {
+      try {
+        await this.documents.save(this.documents.create(rowFields));
+      } catch (err) {
+        // Lost a race on the unique index (concurrent re-OCR of the same item) —
+        // re-read the winner and update it instead of failing. Mirrors
+        // RemindersPersistenceService's exact retry pattern.
+        if (!isUniqueViolation(err)) throw err;
+        const winner = await this.documents.findOne({ where: { inboxItemId } });
+        if (!winner) throw err;
+        Object.assign(winner, rowFields);
+        await this.documents.save(winner);
+      }
+    }
 
     // 2) Deadline reminders from expiry + Kündigungsfrist. The reminders infra
     // resolves each date against the scan time, drops past/unparseable ones,
@@ -201,4 +220,21 @@ function clampOrNull(value: string | null | undefined, maxChars: number): string
   if (value === null || value === undefined) return null;
   const trimmed = clamp(value, maxChars);
   return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * Whether a save failed on a unique index, across the drivers we run on:
+ * Postgres surfaces SQLSTATE 23505, better-sqlite3 a SQLITE_CONSTRAINT* code /
+ * "UNIQUE constraint failed" message. Anything else must propagate. Mirrors
+ * RemindersPersistenceService's helper.
+ */
+function isUniqueViolation(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const driverError = (err as { driverError?: unknown }).driverError ?? err;
+  if (!driverError || typeof driverError !== 'object') return false;
+  const code = (driverError as { code?: unknown }).code;
+  if (code === '23505') return true;
+  if (typeof code === 'string' && code.startsWith('SQLITE_CONSTRAINT')) return true;
+  const message = (driverError as { message?: unknown }).message;
+  return typeof message === 'string' && message.includes('UNIQUE constraint failed');
 }
