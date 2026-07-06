@@ -272,6 +272,24 @@ export class TasksRegistryService {
       .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
   }
 
+  /**
+   * Current citation inbox-item ids per task, in ONE bulk pass — the source
+   * items each (deduped) task is derived from, for external-surface sensitivity
+   * gating (JJ-78). Restricted, like the read model, to each item's LATEST
+   * succeeded `tasks` extraction; a task can be backed by MANY items. Task ids
+   * are re-scoped to the user here so a foreign id yields no items.
+   */
+  async citationItemIds(userId: string, taskIds: string[]): Promise<Map<string, string[]>> {
+    const map = new Map<string, string[]>();
+    if (taskIds.length === 0) return map;
+    const rows = await this.tasks.find({ where: { id: In(taskIds), userId } });
+    const current = await this.currentCitations(rows.map((r) => r.id));
+    for (const row of rows) {
+      map.set(row.id, [...new Set((current.get(row.id) ?? []).map((c) => c.inboxItemId))]);
+    }
+    return map;
+  }
+
   /** Change a task's lifecycle status (complete / dismiss / reopen). */
   async updateStatus(userId: string, id: string, status: TaskStatus): Promise<TaskDto> {
     const row = await this.tasks.findOne({ where: { id, userId } });

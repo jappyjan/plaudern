@@ -162,6 +162,25 @@ export class EntitiesRegistryService {
     };
   }
 
+  /**
+   * Current mention inbox-item ids per entity, in ONE bulk pass — the source
+   * items each entity is derived from, for external-surface sensitivity gating
+   * (JJ-78). Restricted, like the read models, to each item's LATEST succeeded
+   * `entities` extraction; entities with no current mention map to an empty
+   * array. Entity ids are re-scoped to the user here, so a foreign id yields no
+   * items rather than leaking cross-user mentions.
+   */
+  async mentionItemIds(userId: string, entityIds: string[]): Promise<Map<string, string[]>> {
+    const map = new Map<string, string[]>();
+    if (entityIds.length === 0) return map;
+    const rows = await this.entities.find({ where: { id: In(entityIds), userId } });
+    const current = await this.currentMentions(rows.map((r) => r.id));
+    for (const row of rows) {
+      map.set(row.id, [...new Set((current.get(row.id) ?? []).map((m) => m.inboxItemId))]);
+    }
+    return map;
+  }
+
   /** Manually link a `person` entity to a contact-book voice profile. */
   async linkContact(userId: string, id: string, voiceProfileId: string): Promise<EntityDetailDto> {
     const row = await this.getOwned(userId, id);
