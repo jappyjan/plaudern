@@ -140,6 +140,15 @@ export const HELD_NEEDS_LOCAL_MODEL = 'needs-local-model';
  * local-only item they run only when a local tier is configured, else they are
  * held. Transcription/diarization are audio-stage and upstream of
  * classification, so they are intentionally NOT gated here.
+ *
+ * `docmeta` (JJ-85) IS gated: it reads the OCR-derived text of a scanned
+ * image/PDF, so a sensitive scanned invoice/contract/ID must be held/local-routed
+ * exactly like any other sensitive item once the sentinel has classified that
+ * text. `ocr` itself is deliberately NOT here — it is the FIRST external call
+ * that produces the text the sentinel classifies from (an image carries no
+ * transcription to pre-classify), so gating it on the not-yet-known tier would
+ * hold-forever. OCR is accepted as the classification-enabling call; everything
+ * downstream of its text (docmeta, entities, facts, …) is gated on the result.
  */
 export const EXTERNAL_LLM_KINDS: ReadonlySet<ExtractionKind> = new Set<ExtractionKind>([
   'summary',
@@ -153,6 +162,7 @@ export const EXTERNAL_LLM_KINDS: ReadonlySet<ExtractionKind> = new Set<Extractio
   'questions',
   'decisions',
   'reminders',
+  'docmeta',
 ]);
 
 /** Whether an extraction kind is gated by the sensitivity routing guard. */

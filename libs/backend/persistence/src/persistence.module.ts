@@ -35,6 +35,7 @@ import {
   NotificationCategoryPreferenceEntity,
   NotificationDeliveryEntity,
   NotificationSettingsEntity,
+  NudgeStateEntity,
   PasskeyCredentialEntity,
   PersonalFactCitationEntity,
   PersonalFactEntity,
@@ -101,6 +102,7 @@ import { CreateDocumentMetadata1720000000042 } from './migrations/1720000000042-
 import { CreateEntityMergeSuggestions1720000000043 } from './migrations/1720000000043-CreateEntityMergeSuggestions';
 import { CreateItemSensitivity1720000000044 } from './migrations/1720000000044-CreateItemSensitivity';
 import { CreateAiConfig1720000000045 } from './migrations/1720000000045-CreateAiConfig';
+import { CreateNudgeState1720000000047 } from './migrations/1720000000047-CreateNudgeState';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -155,6 +157,7 @@ export const ALL_ENTITIES = [
   AiCapabilitySettingEntity,
   AiProviderCallEntity,
   DeadMansSwitchEntity,
+  NudgeStateEntity,
 ];
 
 // Referenced as classes (not a glob) so migrations load identically under
@@ -206,6 +209,7 @@ export const ALL_MIGRATIONS = [
   CreateEntityMergeSuggestions1720000000043,
   CreateItemSensitivity1720000000044,
   CreateAiConfig1720000000045,
+  CreateNudgeState1720000000047,
 ];
 
 /**

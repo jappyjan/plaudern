@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { runWithAiAudit } from '@plaudern/audit';
 import { AiConfigService } from '@plaudern/ai-config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -187,20 +188,22 @@ export class EntityContactResolverService {
     if (shortlist.length === 0) return null;
 
     const mentionExamples = await this.mentionExamples(entity.id);
-    const result = await this.provider.resolve(userId, {
-      entity: {
-        id: entity.id,
-        name: entity.canonicalName,
-        aliases: entity.aliases ?? [],
-        mentionExamples,
-      },
-      candidates: shortlist.map((candidate) => ({
-        voiceProfileId: candidate.voiceProfileId,
-        name: candidate.contactName,
-        evidence: candidate.reasons,
-        heuristicConfidence: round(candidate.confidence),
-      })),
-    });
+    const result = await runWithAiAudit({ userId, kind: 'contact_resolution' }, () =>
+      this.provider.resolve(userId, {
+        entity: {
+          id: entity.id,
+          name: entity.canonicalName,
+          aliases: entity.aliases ?? [],
+          mentionExamples,
+        },
+        candidates: shortlist.map((candidate) => ({
+          voiceProfileId: candidate.voiceProfileId,
+          name: candidate.contactName,
+          evidence: candidate.reasons,
+          heuristicConfidence: round(candidate.confidence),
+        })),
+      }),
+    );
     const { decision } = result;
     if (!decision.voiceProfileId || decision.confidence < LLM_ACCEPT_CONFIDENCE) return null;
     return {

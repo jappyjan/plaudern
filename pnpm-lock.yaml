@@ -128,6 +128,9 @@ importers:
       '@plaudern/notifications':
         specifier: workspace:*
         version: link:../../libs/backend/notifications
+      '@plaudern/nudges':
+        specifier: workspace:*
+        version: link:../../libs/backend/nudges
       '@plaudern/ocr':
         specifier: workspace:*
         version: link:../../libs/backend/ocr
@@ -1068,6 +1071,39 @@ importers:
       '@types/web-push':
         specifier: ^3.6.4
         version: 3.6.4
+
+  libs/backend/nudges:
+    dependencies:
+      '@nestjs/common':
+        specifier: ^11.0.0
+        version: 11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/config':
+        specifier: ^4.0.0
+        version: 4.0.4(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(rxjs@7.8.2)
+      '@nestjs/typeorm':
+        specifier: ^11.0.0
+        version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@plaudern/contracts':
+        specifier: workspace:*
+        version: link:../../contracts
+      '@plaudern/inbox':
+        specifier: workspace:*
+        version: link:../inbox
+      '@plaudern/notifications':
+        specifier: workspace:*
+        version: link:../notifications
+      '@plaudern/persistence':
+        specifier: workspace:*
+        version: link:../persistence
+      rxjs:
+        specifier: ^7.0.0
+        version: 7.8.2
+      typeorm:
+        specifier: ^1.0.0
+        version: 1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3))
 
   libs/backend/ocr:
     dependencies:
