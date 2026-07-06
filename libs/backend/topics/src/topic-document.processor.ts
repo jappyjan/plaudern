@@ -52,6 +52,11 @@ export class TopicDocumentProcessor {
     if (!doc) return; // version row was pruned (topic deleted) — nothing to do.
 
     await this.documents.update({ id: doc.id }, { status: 'processing' });
+    // Snapshot of what THIS version covers, set as soon as it's known — read by
+    // the `finally` below (JJ-76/JJ-77 re-check) on BOTH the success and the
+    // failure path. Null until assignments are loaded: a throw before that
+    // point (e.g. the topic itself is gone) has nothing meaningful to re-check.
+    let coveredItemIds: Set<string> | null = null;
     try {
       const topic = await this.topics.findOne({ where: { id: job.topicId } });
       if (!topic) throw new Error('topic no longer exists');
@@ -60,9 +65,9 @@ export class TopicDocumentProcessor {
         where: { topicId: job.topicId, userId: job.userId },
       });
       if (assignments.length === 0) throw new Error('topic has no classified items to document');
-      // Snapshot of what THIS version covers — anything classified after this
-      // read isn't in the sources we hand the model (JJ-76 re-check on success).
-      const coveredItemIds = new Set(assignments.map((a) => a.inboxItemId));
+      // Anything classified after this read isn't in the sources we hand the
+      // model.
+      coveredItemIds = new Set(assignments.map((a) => a.inboxItemId));
 
       const items = await this.loadItems(assignments.map((a) => a.inboxItemId));
       const sources = collectTopicDocumentSources(items);
@@ -128,8 +133,13 @@ export class TopicDocumentProcessor {
           `failed to prune document history for topic ${job.topicId}: ${(err as Error).message}`,
         );
       }
-
-      // JJ-76: the enqueue-side coalescing guard now DEFERS a trigger that
+    } catch (err) {
+      const message = (err as Error).message;
+      this.logger.error(`topic document generation failed for topic ${job.topicId}: ${message}`);
+      await this.documents.update({ id: doc.id }, { status: 'failed', error: message });
+      throw err;
+    } finally {
+      // JJ-76/JJ-77: the enqueue-side coalescing guard DEFERS a trigger that
       // arrives while a generation is `processing` (not just `queued`). An item
       // classified in that window is invisible to this already-started run —
       // its sources were read above, before the item existed — so without a
@@ -138,32 +148,39 @@ export class TopicDocumentProcessor {
       // covered; if anything new landed mid-flight, enqueue exactly ONE
       // follow-up. `enqueueRegeneration` itself coalesces, so this can't stack,
       // and it only fires when genuinely-new work exists, so it can't loop
-      // (the follow-up run finds nothing newer and stops). Best-effort — a
-      // failed re-enqueue must not fail this already-succeeded generation.
-      try {
-        const currentAssignments = await this.assignments.find({
-          where: { topicId: job.topicId, userId: job.userId },
-          select: { inboxItemId: true },
-        });
-        const hasNewWork = currentAssignments.some((a) => !coveredItemIds.has(a.inboxItemId));
-        if (hasNewWork) {
-          await this.moduleRef
-            .get(TopicDocumentService, { strict: false })
-            .enqueueRegeneration(job.userId, job.topicId);
-          this.logger.log(
-            `re-enqueued topic ${job.topicId}: items were classified during generation`,
+      // (the follow-up run finds nothing newer and stops).
+      //
+      // Runs in `finally` — on BOTH the success path and the failure path
+      // (JJ-77) — because a throw during generation (the provider call, a
+      // pruning bug, anything after sources were snapshotted) must not drop a
+      // gap trigger that arrived mid-flight: a failed run still leaves the
+      // newly-classified item uncovered by any queued/processing generation,
+      // exactly like a successful one would. Guarded on `coveredItemIds` being
+      // set (null when the failure happened before the snapshot, e.g. the
+      // topic itself is gone — nothing to compare against). Best-effort — a
+      // failed re-enqueue must not mask the run's own outcome (a rethrow above
+      // still propagates either way).
+      if (coveredItemIds) {
+        try {
+          const currentAssignments = await this.assignments.find({
+            where: { topicId: job.topicId, userId: job.userId },
+            select: { inboxItemId: true },
+          });
+          const hasNewWork = currentAssignments.some((a) => !coveredItemIds!.has(a.inboxItemId));
+          if (hasNewWork) {
+            await this.moduleRef
+              .get(TopicDocumentService, { strict: false })
+              .enqueueRegeneration(job.userId, job.topicId);
+            this.logger.log(
+              `re-enqueued topic ${job.topicId}: items were classified during generation`,
+            );
+          }
+        } catch (err) {
+          this.logger.warn(
+            `failed to re-enqueue follow-up generation for topic ${job.topicId}: ${(err as Error).message}`,
           );
         }
-      } catch (err) {
-        this.logger.warn(
-          `failed to re-enqueue follow-up generation for topic ${job.topicId}: ${(err as Error).message}`,
-        );
       }
-    } catch (err) {
-      const message = (err as Error).message;
-      this.logger.error(`topic document generation failed for topic ${job.topicId}: ${message}`);
-      await this.documents.update({ id: doc.id }, { status: 'failed', error: message });
-      throw err;
     }
   }
 
