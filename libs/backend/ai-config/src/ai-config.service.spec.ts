@@ -1,6 +1,8 @@
 import { ConfigService } from '@nestjs/config';
 import { DataSource, Repository } from 'typeorm';
+import type { AiCapabilityKind } from '@plaudern/contracts';
 import {
+  AiCapabilityGroupSettingEntity,
   AiCapabilitySettingEntity,
   AiProviderEntity,
   ALL_ENTITIES,
@@ -20,6 +22,7 @@ describe('AiConfigService', () => {
   let dataSource: DataSource;
   let providers: Repository<AiProviderEntity>;
   let capabilities: Repository<AiCapabilitySettingEntity>;
+  let groups: Repository<AiCapabilityGroupSettingEntity>;
   let service: AiConfigService;
 
   beforeEach(async () => {
@@ -32,7 +35,8 @@ describe('AiConfigService', () => {
     await dataSource.initialize();
     providers = dataSource.getRepository(AiProviderEntity);
     capabilities = dataSource.getRepository(AiCapabilitySettingEntity);
-    service = new AiConfigService(providers, capabilities, fakeConfig);
+    groups = dataSource.getRepository(AiCapabilityGroupSettingEntity);
+    service = new AiConfigService(providers, capabilities, groups, fakeConfig);
   });
 
   afterEach(async () => {
@@ -61,6 +65,13 @@ describe('AiConfigService', () => {
     return capabilities.save(
       capabilities.create({ userId: USER, capability, enabled: true, ...row }),
     );
+  }
+
+  async function setGroup(
+    kind: AiCapabilityKind,
+    row: Partial<AiCapabilityGroupSettingEntity>,
+  ): Promise<AiCapabilityGroupSettingEntity> {
+    return groups.save(groups.create({ userId: USER, kind, enabled: true, ...row }));
   }
 
   describe('resolve / isEnabled — null cases', () => {
@@ -122,48 +133,70 @@ describe('AiConfigService', () => {
     });
   });
 
-  describe('inheritance', () => {
-    it('chat and journal inherit summarization provider but keep their own default model', async () => {
+  describe('group layer', () => {
+    it('one chat group powers every chat capability with each one’s own default model', async () => {
       const provider = await createProvider({ name: 'Shared DeepSeek' });
-      // Only summarization is assigned, with a model override that children must NOT adopt.
-      await assign('summarization', { providerId: provider.id, model: 'custom-summary-model' });
+      // A single shared group setting for the whole chat kind, with a group-level
+      // model that members inherit when they have no override of their own.
+      await setGroup('chat', { providerId: provider.id });
 
-      const summary = await service.resolve(USER, 'summarization');
-      expect(summary?.model).toBe('custom-summary-model');
-
-      for (const capability of ['chat', 'journal'] as const) {
+      for (const capability of ['summarization', 'chat', 'journal', 'entity_extraction'] as const) {
         const resolved = await service.resolve(USER, capability);
         expect(resolved).not.toBeNull();
-        expect(resolved?.providerId).toBe(provider.id); // inherited connection
+        expect(resolved?.providerId).toBe(provider.id);
         expect(resolved?.providerName).toBe('Shared DeepSeek');
         expect(resolved?.apiKey).toBe('sk-secret-key');
-        expect(resolved?.model).toBe('deepseek-chat'); // child's own default, not the override
+        expect(resolved?.model).toBe('deepseek-chat'); // each capability's registry default
       }
     });
 
-    it('entity_judge, contact_resolution and entity_relations inherit entity_extraction', async () => {
-      const provider = await createProvider({ name: 'Entities' });
-      await assign('entity_extraction', {
-        providerId: provider.id,
-        model: 'entity-model-override',
+    it('a per-task override wins over the shared group', async () => {
+      const shared = await createProvider({ name: 'Shared' });
+      const special = await createProvider({
+        name: 'Special',
+        baseUrl: 'https://api.openai.com/v1',
       });
+      await setGroup('chat', { providerId: shared.id, model: 'group-model' });
+      await assign('journal', { providerId: special.id, model: 'journal-model' });
 
-      for (const capability of [
-        'entity_judge',
-        'contact_resolution',
-        'entity_relations',
-      ] as const) {
-        const resolved = await service.resolve(USER, capability);
-        expect(resolved?.providerId).toBe(provider.id);
-        expect(resolved?.model).toBe('deepseek-chat'); // own default, not the parent override
-      }
+      const summary = await service.resolve(USER, 'summarization');
+      expect(summary?.providerId).toBe(shared.id);
+      expect(summary?.model).toBe('group-model'); // group model wins over registry default
+
+      const journal = await service.resolve(USER, 'journal');
+      expect(journal?.providerId).toBe(special.id); // override wins
+      expect(journal?.model).toBe('journal-model');
     });
 
-    it('does not inherit for a capability with no inheritsFrom', async () => {
+    it('the group model fills in for members without an override', async () => {
       const provider = await createProvider();
-      await assign('summarization', { providerId: provider.id });
-      // ocr has no inheritance chain to summarization.
+      await setGroup('chat', { providerId: provider.id, model: 'shared-chat-model' });
+      const resolved = await service.resolve(USER, 'topics');
+      expect(resolved?.model).toBe('shared-chat-model');
+    });
+
+    it('a disabled group turns every member off', async () => {
+      const provider = await createProvider();
+      await setGroup('chat', { providerId: provider.id, enabled: false });
+      expect(await service.resolve(USER, 'summarization')).toBeNull();
+      expect(await service.isEnabled(USER, 'chat')).toBe(false);
+    });
+
+    it('does not leak the chat group into other kinds', async () => {
+      const provider = await createProvider();
+      await setGroup('chat', { providerId: provider.id });
+      // ocr is kind=vision — the chat group must not power it.
       expect(await service.resolve(USER, 'ocr')).toBeNull();
+    });
+
+    it('keeps opt-in web_research off until it has its own enabled override', async () => {
+      const provider = await createProvider();
+      await setGroup('chat', { providerId: provider.id });
+      expect(await service.resolve(USER, 'web_research')).toBeNull();
+
+      await assign('web_research', { providerId: provider.id, enabled: true });
+      service.invalidate(USER); // the direct DB write bypasses the service cache
+      expect(await service.resolve(USER, 'web_research')).not.toBeNull();
     });
   });
 

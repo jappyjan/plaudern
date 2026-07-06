@@ -196,14 +196,20 @@ import {
   aiProviderListSchema,
   aiCapabilitiesResponseSchema,
   aiCapabilitySettingSchema,
+  aiCapabilityGroupSchema,
+  aiCapabilityGroupsResponseSchema,
   type AiProviderDto,
   type AiProviderListDto,
   type AiCapabilitiesResponseDto,
   type AiCapabilitySettingDto,
+  type AiCapabilityGroupDto,
+  type AiCapabilityGroupsResponseDto,
   type AiCapability,
+  type AiCapabilityKind,
   type CreateAiProviderRequest,
   type UpdateAiProviderRequest,
   type UpdateAiCapabilityRequest,
+  type UpdateAiCapabilityGroupRequest,
   auditLogListResponseSchema,
   panicDeleteResponseSchema,
   deadMansSwitchSchema,
@@ -1359,6 +1365,37 @@ export async function updateAiCapability(
     await requestJson(`/settings/ai/capabilities/${capability}`, {
       method: 'PUT',
       body: JSON.stringify(req),
+    }),
+  );
+}
+
+/** The five simplified capability groups + the per-task catalog/settings. */
+export async function getAiCapabilityGroups(): Promise<AiCapabilityGroupsResponseDto> {
+  return aiCapabilityGroupsResponseSchema.parse(
+    await requestJson('/settings/ai/capability-groups'),
+  );
+}
+
+/** Set one group's shared provider/model/params (applies to all its members). */
+export async function updateAiCapabilityGroup(
+  kind: AiCapabilityKind,
+  req: UpdateAiCapabilityGroupRequest,
+): Promise<AiCapabilityGroupDto> {
+  return aiCapabilityGroupSchema.parse(
+    await requestJson(`/settings/ai/capability-groups/${kind}`, {
+      method: 'PUT',
+      body: JSON.stringify(req),
+    }),
+  );
+}
+
+/** Drop every per-task override in a group so members use the shared setting. */
+export async function resetAiCapabilityGroupOverrides(
+  kind: AiCapabilityKind,
+): Promise<AiCapabilityGroupDto> {
+  return aiCapabilityGroupSchema.parse(
+    await requestJson(`/settings/ai/capability-groups/${kind}/overrides`, {
+      method: 'DELETE',
     }),
   );
 }

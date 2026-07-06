@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource, Repository } from 'typeorm';
 import {
+  AiCapabilityGroupSettingEntity,
   AiCapabilitySettingEntity,
   AiProviderEntity,
   ALL_ENTITIES,
@@ -37,6 +38,7 @@ describe('AiProviderService', () => {
     aiConfig = new AiConfigService(
       repo,
       dataSource.getRepository(AiCapabilitySettingEntity),
+      dataSource.getRepository(AiCapabilityGroupSettingEntity),
       fakeConfig,
     );
     invalidateSpy = jest.spyOn(aiConfig, 'invalidate');

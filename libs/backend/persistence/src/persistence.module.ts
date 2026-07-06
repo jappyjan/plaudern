@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
+  AiCapabilityGroupSettingEntity,
   AiCapabilitySettingEntity,
   AiProviderCallEntity,
   AiProviderEntity,
@@ -103,6 +104,7 @@ import { CreateEntityMergeSuggestions1720000000043 } from './migrations/17200000
 import { CreateItemSensitivity1720000000044 } from './migrations/1720000000044-CreateItemSensitivity';
 import { CreateAiConfig1720000000045 } from './migrations/1720000000045-CreateAiConfig';
 import { CreateNudgeState1720000000047 } from './migrations/1720000000047-CreateNudgeState';
+import { SimplifyAiConfig1720000000048 } from './migrations/1720000000048-SimplifyAiConfig';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -155,6 +157,7 @@ export const ALL_ENTITIES = [
   NotificationDeliveryEntity,
   AiProviderEntity,
   AiCapabilitySettingEntity,
+  AiCapabilityGroupSettingEntity,
   AiProviderCallEntity,
   DeadMansSwitchEntity,
   NudgeStateEntity,
@@ -210,6 +213,7 @@ export const ALL_MIGRATIONS = [
   CreateItemSensitivity1720000000044,
   CreateAiConfig1720000000045,
   CreateNudgeState1720000000047,
+  SimplifyAiConfig1720000000048,
 ];
 
 /**

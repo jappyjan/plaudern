@@ -2,8 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import type { AiCapability } from '@plaudern/contracts';
+import type { AiCapability, AiCapabilityKind } from '@plaudern/contracts';
 import {
+  AiCapabilityGroupSettingEntity,
   AiCapabilitySettingEntity,
   AiProviderEntity,
   decryptSecret,
@@ -13,7 +14,10 @@ import type { ResolvedAiConfig } from './resolved-config';
 
 interface UserAiConfig {
   providers: Map<string, AiProviderEntity>;
+  /** Per-task overrides (sparse — a row exists only when the user overrides). */
   settings: Map<AiCapability, AiCapabilitySettingEntity>;
+  /** Shared, kind-level settings (the simplified groups). */
+  groups: Map<AiCapabilityKind, AiCapabilityGroupSettingEntity>;
 }
 
 /**
@@ -38,6 +42,8 @@ export class AiConfigService {
     private readonly providers: Repository<AiProviderEntity>,
     @InjectRepository(AiCapabilitySettingEntity)
     private readonly capabilities: Repository<AiCapabilitySettingEntity>,
+    @InjectRepository(AiCapabilityGroupSettingEntity)
+    private readonly groups: Repository<AiCapabilityGroupSettingEntity>,
     config: ConfigService,
   ) {
     this.encryptionSecret = config.get<string>('APP_ENCRYPTION_SECRET', 'change-me');
@@ -59,13 +65,15 @@ export class AiConfigService {
   }
 
   private async loadFresh(userId: string): Promise<UserAiConfig> {
-    const [providerRows, settingRows] = await Promise.all([
+    const [providerRows, settingRows, groupRows] = await Promise.all([
       this.providers.find({ where: { userId } }),
       this.capabilities.find({ where: { userId } }),
+      this.groups.find({ where: { userId } }),
     ]);
     return {
       providers: new Map(providerRows.map((p) => [p.id, p])),
       settings: new Map(settingRows.map((s) => [s.capability as AiCapability, s])),
+      groups: new Map(groupRows.map((g) => [g.kind as AiCapabilityKind, g])),
     };
   }
 
@@ -86,15 +94,25 @@ export class AiConfigService {
 
   private resolveFrom(user: UserAiConfig, capability: AiCapability): ResolvedAiConfig | null {
     const meta = capabilityMeta(capability);
-    const ownRow = user.settings.get(capability);
-    // An explicit disable wins over everything.
-    if (ownRow && ownRow.enabled === false) return null;
+    const override = user.settings.get(capability);
+    const group = user.groups.get(meta.kind);
 
-    // Walk the inheritance chain to find the first assigned, existing provider.
-    const provider = this.findProvider(user, capability);
+    // Disable checks: an explicit per-task disable, or the whole group off.
+    if (override && override.enabled === false) return null;
+    if (group && group.enabled === false) return null;
+
+    // Opt-in capabilities (only web_research) stay off unless the user has
+    // explicitly enabled them with their own provider in the Advanced view —
+    // configuring the shared chat group must not silently switch them on.
+    if (meta.optIn && !(override?.providerId && override.enabled !== false)) return null;
+
+    // Layer the setting: per-task override ?? shared group ?? registry default.
+    const providerId = override?.providerId ?? group?.providerId ?? null;
+    if (!providerId) return null;
+    const provider = user.providers.get(providerId);
     if (!provider) return null;
 
-    const model = ownRow?.model ?? meta.defaultModel;
+    const model = override?.model ?? group?.model ?? meta.defaultModel;
     if (!model) return null;
 
     let apiKey: string | null = null;
@@ -115,31 +133,14 @@ export class AiConfigService {
       baseUrl: provider.baseUrl.replace(/\/+$/, ''),
       apiKey,
       model,
-      timeoutMs: ownRow?.timeoutMs ?? meta.defaultTimeoutMs,
-      params: { ...meta.defaultParams, ...(ownRow?.params ?? {}) },
+      timeoutMs: override?.timeoutMs ?? group?.timeoutMs ?? meta.defaultTimeoutMs,
+      params: {
+        ...meta.defaultParams,
+        ...(group?.params ?? {}),
+        ...(override?.params ?? {}),
+      },
       providerId: provider.id,
       providerName: provider.name,
     };
-  }
-
-  private findProvider(
-    user: UserAiConfig,
-    capability: AiCapability,
-  ): AiProviderEntity | null {
-    const seen = new Set<AiCapability>();
-    let current: AiCapability | undefined = capability;
-    while (current && !seen.has(current)) {
-      seen.add(current);
-      const row = user.settings.get(current);
-      // A child's explicit disable does not block inheritance from the parent;
-      // only the *originally requested* capability's disable does (handled by
-      // the caller). Here we just look for an assigned, existing provider.
-      if (row?.providerId) {
-        const provider = user.providers.get(row.providerId);
-        if (provider) return provider;
-      }
-      current = capabilityMeta(current).inheritsFrom;
-    }
-    return null;
   }
 }
