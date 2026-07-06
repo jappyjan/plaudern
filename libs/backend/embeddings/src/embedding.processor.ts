@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { runWithAiAudit } from '@plaudern/audit';
 import { InboxService } from '@plaudern/inbox';
 import type { EmbeddingPayload } from '@plaudern/contracts';
 import { EmbeddingChunkEntity } from '@plaudern/persistence';
@@ -38,9 +39,11 @@ export class EmbeddingProcessor {
         throw new Error('nothing to embed (no succeeded transcription content)');
       }
 
-      const { vectors, model, dimensions } = await this.provider.embed(
-        item.userId,
-        chunks.map((c) => c.text),
+      // Attribute the external embeddings call to this user/item so the
+      // provider adapter can audit the bytes it sends (JJ-42).
+      const { vectors, model, dimensions } = await runWithAiAudit(
+        { userId: item.userId, itemId: item.id, kind: 'embedding' },
+        () => this.provider.embed(item.userId, chunks.map((c) => c.text)),
       );
 
       const rows = chunks.map((chunk, i) =>

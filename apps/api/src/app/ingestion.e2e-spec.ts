@@ -76,8 +76,9 @@ describe('Ingestion pipeline (e2e, Path A)', () => {
       .get(`/api/v1/inbox/${init.body.inboxItemId}`)
       .expect(200);
 
-    // Audio commit schedules both transcription and speaker diarization.
-    expect(get.body.extractions).toHaveLength(2);
+    // Audio commit schedules transcription + speaker diarization, and the
+    // always-on sensitivity sentinel (JJ-21) runs once transcription succeeds.
+    expect(get.body.extractions).toHaveLength(3);
     const extraction = get.body.extractions.find(
       (e: { kind: string }) => e.kind === 'transcription',
     );
@@ -87,6 +88,8 @@ describe('Ingestion pipeline (e2e, Path A)', () => {
       (e: { kind: string }) => e.kind === 'diarization',
     );
     expect(diarization.status).toBe('succeeded');
+    const sentinel = get.body.extractions.find((e: { kind: string }) => e.kind === 'sentinel');
+    expect(sentinel.status).toBe('succeeded');
     expect(get.body.metadata).toEqual({
       location: { lat: 52.52, lon: 13.405 },
       capturedVia: 'browser-recording',

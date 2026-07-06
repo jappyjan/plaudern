@@ -31,6 +31,7 @@ import { NotificationsModule } from '@plaudern/notifications';
 import { McpModule } from '@plaudern/mcp';
 import { SearchModule } from '@plaudern/search';
 import { ChatModule } from '@plaudern/chat';
+import { AuditModule } from '@plaudern/audit';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -71,6 +72,7 @@ import { HealthController } from './health.controller';
     McpModule,
     SearchModule,
     ChatModule,
+    AuditModule,
   ],
   controllers: [HealthController],
 })

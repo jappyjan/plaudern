@@ -127,7 +127,7 @@ describe('parseEntitiesResponse', () => {
 
 describe('OpenAiEntityExtractionProvider without a resolved config', () => {
   it('throws a descriptive error from extract() when the capability is unconfigured', async () => {
-    const provider = new OpenAiEntityExtractionProvider(fakeAiConfig(null), new OpenAiChatClient());
+    const provider = new OpenAiEntityExtractionProvider(fakeAiConfig(null), new OpenAiChatClient({ record: async () => undefined } as any));
     await expect(provider.extract(USER, minimalInput)).rejects.toThrow(/entity_extraction/);
   });
 });
@@ -151,7 +151,7 @@ describe('OpenAiEntityExtractionProvider request behavior', () => {
 
     const provider = new OpenAiEntityExtractionProvider(
       fakeAiConfig(resolved({ baseUrl: 'http://localhost:11434/v1', model: 'llama3.1', apiKey: null })),
-      new OpenAiChatClient(),
+      new OpenAiChatClient({ record: async () => undefined } as any),
     );
     const result = await provider.extract(USER, minimalInput);
 
@@ -176,7 +176,7 @@ describe('OpenAiEntityExtractionProvider request behavior', () => {
 
     const provider = new OpenAiEntityExtractionProvider(
       fakeAiConfig(resolved({ apiKey: 'sk-test' })),
-      new OpenAiChatClient(),
+      new OpenAiChatClient({ record: async () => undefined } as any),
     );
     await provider.extract(USER, minimalInput);
 

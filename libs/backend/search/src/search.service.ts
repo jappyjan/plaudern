@@ -10,6 +10,7 @@ import {
   type SearchRequest,
   type SearchResponse,
   type SearchResultItem,
+  type SensitivityTier,
   type SimilarItem,
   type SimilarResponse,
   type SourceType,
@@ -19,6 +20,7 @@ import {
   EntityMentionEntity,
   ExtractedPayloadEntity,
   InboxItemEntity,
+  ItemSensitivityEntity,
   ItemTopicEntity,
 } from '@plaudern/persistence';
 import { EmbeddingSearchService, type EmbeddingSearchHit } from '@plaudern/embeddings';
@@ -33,6 +35,8 @@ interface ItemMeta {
   title: string | null;
   sourceType: SourceType;
   occurredAt: string;
+  /** Effective sensitivity tier (JJ-21); null when unclassified. */
+  sensitivityTier: SensitivityTier | null;
 }
 
 /**
@@ -59,6 +63,8 @@ export class SearchService {
     private readonly itemTopics: Repository<ItemTopicEntity>,
     @InjectRepository(EmbeddingChunkEntity)
     private readonly chunks: Repository<EmbeddingChunkEntity>,
+    @InjectRepository(ItemSensitivityEntity)
+    private readonly sensitivity: Repository<ItemSensitivityEntity>,
   ) {}
 
   async search(userId: string, req: SearchRequest): Promise<SearchResponse> {
@@ -157,6 +163,7 @@ export class SearchService {
         keywordRank: f.ranks.keyword ?? null,
         fusedScore: round(f.fusedScore, 6),
         rank: index + 1,
+        sensitivityTier: m.sensitivityTier,
       });
     });
 
@@ -297,6 +304,7 @@ export class SearchService {
       order: { occurredAt: 'DESC' },
       take: limit,
     });
+    const tiers = await this.loadSensitivityTiers(rows.map((r) => r.id));
     return rows.map((item, index) => ({
       itemId: item.id,
       title: titleOf(item),
@@ -312,6 +320,7 @@ export class SearchService {
       keywordRank: null,
       fusedScore: 0,
       rank: index + 1,
+      sensitivityTier: tiers.get(item.id) ?? null,
     }));
   }
 
@@ -398,6 +407,7 @@ export class SearchService {
       where: { id: In(itemIds), userId },
       relations: { extractions: true },
     });
+    const tiers = await this.loadSensitivityTiers(itemIds);
     return new Map(
       rows.map((item) => [
         item.id,
@@ -406,9 +416,25 @@ export class SearchService {
           title: titleOf(item),
           sourceType: item.sourceType,
           occurredAt: item.occurredAt,
+          sensitivityTier: tiers.get(item.id) ?? null,
         },
       ]),
     );
+  }
+
+  /**
+   * Effective sensitivity tier per item (JJ-21) — a user's `manualTier`
+   * override folded over the classifier's `detectedTier`. Missing rows mean
+   * the item is unclassified (→ null).
+   */
+  private async loadSensitivityTiers(
+    itemIds: string[],
+  ): Promise<Map<string, SensitivityTier>> {
+    const map = new Map<string, SensitivityTier>();
+    if (itemIds.length === 0) return map;
+    const rows = await this.sensitivity.find({ where: { inboxItemId: In(itemIds) } });
+    for (const row of rows) map.set(row.inboxItemId, row.manualTier ?? row.detectedTier);
+    return map;
   }
 }
 

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AiConfigService, booleanParam, numberParam } from '@plaudern/ai-config';
+import { AiAuditRecorder } from '@plaudern/audit';
 import type {
   TranscriptionInput,
   TranscriptionResult,
@@ -46,7 +47,10 @@ const MAX_SEGMENT_SECONDS = 14;
  */
 @Injectable()
 export class ElevenLabsTranscriptionProvider {
-  constructor(private readonly aiConfig: AiConfigService) {}
+  constructor(
+    private readonly aiConfig: AiConfigService,
+    private readonly audit: AiAuditRecorder,
+  ) {}
 
   async transcribe(userId: string, input: TranscriptionInput): Promise<TranscriptionResult> {
     const cfg = await this.aiConfig.resolve(userId, 'transcription');
@@ -78,8 +82,11 @@ export class ElevenLabsTranscriptionProvider {
     const headers: Record<string, string> = {};
     if (cfg.apiKey) headers['xi-api-key'] = cfg.apiKey;
 
+    const endpoint = `${cfg.baseUrl}/speech-to-text`;
+    // Audit the audio bytes leaving the box for the hosted provider (JJ-42).
+    await this.audit.record({ provider: `elevenlabs:${model}`, endpoint, payload: bytes });
     const json = await postMultipartForJson<ScribeResponse>(
-      `${cfg.baseUrl}/speech-to-text`,
+      endpoint,
       fields,
       {
         name: 'file',

@@ -160,7 +160,7 @@ describe('OpenAiTopicClassificationProvider gating', () => {
   it('throws a descriptive error from classify() when the capability is unconfigured', async () => {
     const provider = new OpenAiTopicClassificationProvider(
       fakeAiConfig(null),
-      new OpenAiChatClient(),
+      new OpenAiChatClient({ record: async () => undefined } as any),
     );
     await expect(provider.classify(USER, baseInput)).rejects.toThrow(/topics capability/);
   });
@@ -185,7 +185,7 @@ describe('OpenAiTopicClassificationProvider request behavior', () => {
       fakeAiConfig(
         resolved({ baseUrl: 'http://localhost:11434/v1', apiKey: null, model: 'llama3.1' }),
       ),
-      new OpenAiChatClient(),
+      new OpenAiChatClient({ record: async () => undefined } as any),
     );
     const result = await provider.classify(USER, baseInput);
 
@@ -210,7 +210,7 @@ describe('OpenAiTopicClassificationProvider request behavior', () => {
 
     const provider = new OpenAiTopicClassificationProvider(
       fakeAiConfig(resolved({ apiKey: 'sk-test' })),
-      new OpenAiChatClient(),
+      new OpenAiChatClient({ record: async () => undefined } as any),
     );
     await provider.classify(USER, baseInput);
 

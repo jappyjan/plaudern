@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { AiAuditRecorder } from '@plaudern/audit';
 import type { ResolvedAiConfig } from './resolved-config';
 
 export interface ChatMessage {
@@ -29,16 +30,24 @@ export interface ChatResponse {
  */
 @Injectable()
 export class OpenAiChatClient {
+  constructor(private readonly audit: AiAuditRecorder) {}
+
   async chat(config: ResolvedAiConfig, request: ChatRequest): Promise<ChatResponse> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), config.timeoutMs);
     try {
       const headers: Record<string, string> = { 'content-type': 'application/json' };
       if (config.apiKey) headers.authorization = `Bearer ${config.apiKey}`;
-      const res = await fetch(`${config.baseUrl}/chat/completions`, {
+      const endpoint = `${config.baseUrl}/chat/completions`;
+      const body = JSON.stringify({ model: config.model, ...request });
+      // Audit the exact bytes leaving the box before they leave (JJ-42). The
+      // {user, item, kind} attribution is read from the AsyncLocalStorage
+      // context the processor set via runWithAiAudit — no threading needed.
+      await this.audit.record({ provider: `openai:${config.model}`, endpoint, payload: body });
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ model: config.model, ...request }),
+        body,
         signal: controller.signal,
       });
       if (!res.ok) {

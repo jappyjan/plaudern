@@ -164,8 +164,9 @@ describe('Plaud settings + sync (e2e)', () => {
       serialNumber: 'SN42',
       importedVia: 'plaud-cloud-sync',
     });
-    // audio-bearing source type -> transcription + diarization pipelines ran (inline+stub)
-    expect(item.extractions).toHaveLength(2);
+    // audio-bearing source type -> transcription + diarization pipelines ran
+    // (inline+stub), plus the always-on sensitivity sentinel (JJ-21).
+    expect(item.extractions).toHaveLength(3);
     const transcription = item.extractions.find(
       (e: { kind: string }) => e.kind === 'transcription',
     );
@@ -231,7 +232,8 @@ describe('Plaud settings + sync (e2e)', () => {
       (i: { sourceType: string }) => i.sourceType === 'plaud',
     );
     expect(plaudItems).toHaveLength(1);
-    // A fresh round of processing fired on re-import.
-    expect(plaudItems[0].extractions).toHaveLength(2);
+    // A fresh round of processing fired on re-import (transcription +
+    // diarization + the sensitivity sentinel).
+    expect(plaudItems[0].extractions).toHaveLength(3);
   });
 });

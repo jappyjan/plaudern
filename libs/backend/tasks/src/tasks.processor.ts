@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { runWithAiAudit } from '@plaudern/audit';
 import { InboxService } from '@plaudern/inbox';
 import type { ExtractionSegment, TaskExtractionPayload } from '@plaudern/contracts';
 import type { ExtractedPayloadEntity, InboxItemEntity } from '@plaudern/persistence';
@@ -47,7 +48,10 @@ export class TasksProcessor {
       // any stale/mis-attributed ones) rather than guessing whose tasks these are.
       const result =
         ctx.kind === 'ready'
-          ? await this.provider.extract(item.userId, ctx.input)
+          ? await runWithAiAudit(
+              { userId: item.userId, itemId: item.id, kind: 'tasks' },
+              () => this.provider.extract(item.userId, ctx.input),
+            )
           : { tasks: [], model: this.provider.id };
       const segments = transcriptionSegments(item);
       const candidates: TaskCandidate[] = result.tasks.map((task) => {

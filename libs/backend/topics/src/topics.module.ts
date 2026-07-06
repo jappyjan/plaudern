@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuditModule } from '@plaudern/audit';
 import { InboxModule } from '@plaudern/inbox';
 import { EmbeddingModule } from '@plaudern/embeddings';
 import {
@@ -33,6 +34,7 @@ import { TopicDocumentController } from './topic-document.controller';
 @Module({
   imports: [
     ConfigModule,
+    AuditModule,
     InboxModule,
     // Read-only use of stored embeddings (item centroids) for cluster proposals.
     EmbeddingModule,

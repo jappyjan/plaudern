@@ -71,6 +71,9 @@ importers:
       '@plaudern/ai-config':
         specifier: workspace:*
         version: link:../../libs/backend/ai-config
+      '@plaudern/audit':
+        specifier: workspace:*
+        version: link:../../libs/backend/audit
       '@plaudern/auth':
         specifier: workspace:*
         version: link:../../libs/backend/auth
@@ -295,6 +298,9 @@ importers:
       '@nestjs/typeorm':
         specifier: ^11.0.0
         version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/audit':
+        specifier: workspace:*
+        version: link:../audit
       '@plaudern/auth':
         specifier: workspace:*
         version: link:../auth
@@ -310,6 +316,39 @@ importers:
       zod:
         specifier: 4.4.3
         version: 4.4.3
+
+  libs/backend/audit:
+    dependencies:
+      '@nestjs/common':
+        specifier: ^11.0.0
+        version: 11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/config':
+        specifier: ^4.0.0
+        version: 4.0.4(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(rxjs@7.8.2)
+      '@nestjs/typeorm':
+        specifier: ^11.0.0
+        version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@plaudern/contracts':
+        specifier: workspace:*
+        version: link:../../contracts
+      '@plaudern/inbox':
+        specifier: workspace:*
+        version: link:../inbox
+      '@plaudern/persistence':
+        specifier: workspace:*
+        version: link:../persistence
+      '@plaudern/storage':
+        specifier: workspace:*
+        version: link:../storage
+      rxjs:
+        specifier: ^7.0.0
+        version: 7.8.2
+      typeorm:
+        specifier: ^1.0.0
+        version: 1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3))
 
   libs/backend/auth:
     dependencies:
@@ -390,6 +429,12 @@ importers:
       '@nestjs/typeorm':
         specifier: ^11.0.0
         version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/ai-config':
+        specifier: workspace:*
+        version: link:../ai-config
+      '@plaudern/audit':
+        specifier: workspace:*
+        version: link:../audit
       '@plaudern/auth':
         specifier: workspace:*
         version: link:../auth
@@ -420,6 +465,9 @@ importers:
       '@nestjs/config':
         specifier: ^4.0.0
         version: 4.0.4(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(rxjs@7.8.2)
+      '@plaudern/ai-config':
+        specifier: workspace:*
+        version: link:../ai-config
       rxjs:
         specifier: ^7.0.0
         version: 7.8.2
@@ -435,6 +483,12 @@ importers:
       '@nestjs/typeorm':
         specifier: ^11.0.0
         version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/ai-config':
+        specifier: workspace:*
+        version: link:../ai-config
+      '@plaudern/audit':
+        specifier: workspace:*
+        version: link:../audit
       '@plaudern/auth':
         specifier: workspace:*
         version: link:../auth
@@ -471,6 +525,12 @@ importers:
       '@nestjs/typeorm':
         specifier: ^11.0.0
         version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/ai-config':
+        specifier: workspace:*
+        version: link:../ai-config
+      '@plaudern/audit':
+        specifier: workspace:*
+        version: link:../audit
       '@plaudern/auth':
         specifier: workspace:*
         version: link:../auth
@@ -504,6 +564,9 @@ importers:
       '@nestjs/typeorm':
         specifier: ^11.0.0
         version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/ai-config':
+        specifier: workspace:*
+        version: link:../ai-config
       '@plaudern/auth':
         specifier: workspace:*
         version: link:../auth
@@ -586,6 +649,12 @@ importers:
       '@nestjs/typeorm':
         specifier: ^11.0.0
         version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/ai-config':
+        specifier: workspace:*
+        version: link:../ai-config
+      '@plaudern/audit':
+        specifier: workspace:*
+        version: link:../audit
       '@plaudern/contracts':
         specifier: workspace:*
         version: link:../../contracts
@@ -616,6 +685,12 @@ importers:
       '@nestjs/typeorm':
         specifier: ^11.0.0
         version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/ai-config':
+        specifier: workspace:*
+        version: link:../ai-config
+      '@plaudern/audit':
+        specifier: workspace:*
+        version: link:../audit
       '@plaudern/auth':
         specifier: workspace:*
         version: link:../auth
@@ -715,6 +790,9 @@ importers:
       '@plaudern/reminders':
         specifier: workspace:*
         version: link:../reminders
+      '@plaudern/sensitivity':
+        specifier: workspace:*
+        version: link:../sensitivity
       '@plaudern/speaker-id':
         specifier: workspace:*
         version: link:../speaker-id
@@ -745,6 +823,12 @@ importers:
       '@nestjs/typeorm':
         specifier: ^11.0.0
         version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/ai-config':
+        specifier: workspace:*
+        version: link:../ai-config
+      '@plaudern/audit':
+        specifier: workspace:*
+        version: link:../audit
       '@plaudern/auth':
         specifier: workspace:*
         version: link:../auth
@@ -868,6 +952,12 @@ importers:
       '@nestjs/typeorm':
         specifier: ^11.0.0
         version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/ai-config':
+        specifier: workspace:*
+        version: link:../ai-config
+      '@plaudern/audit':
+        specifier: workspace:*
+        version: link:../audit
       '@plaudern/auth':
         specifier: workspace:*
         version: link:../auth
@@ -987,6 +1077,9 @@ importers:
       '@nestjs/typeorm':
         specifier: ^11.0.0
         version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/ai-config':
+        specifier: workspace:*
+        version: link:../ai-config
       '@plaudern/auth':
         specifier: workspace:*
         version: link:../auth
@@ -1110,6 +1203,12 @@ importers:
       '@nestjs/typeorm':
         specifier: ^11.0.0
         version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/ai-config':
+        specifier: workspace:*
+        version: link:../ai-config
+      '@plaudern/audit':
+        specifier: workspace:*
+        version: link:../audit
       '@plaudern/auth':
         specifier: workspace:*
         version: link:../auth
@@ -1155,6 +1254,12 @@ importers:
       '@nestjs/typeorm':
         specifier: ^11.0.0
         version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/ai-config':
+        specifier: workspace:*
+        version: link:../ai-config
+      '@plaudern/audit':
+        specifier: workspace:*
+        version: link:../audit
       '@plaudern/auth':
         specifier: workspace:*
         version: link:../auth
@@ -1204,6 +1309,39 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3))
 
+  libs/backend/sensitivity:
+    dependencies:
+      '@nestjs/common':
+        specifier: ^11.0.0
+        version: 11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/config':
+        specifier: ^4.0.0
+        version: 4.0.4(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(rxjs@7.8.2)
+      '@nestjs/typeorm':
+        specifier: ^11.0.0
+        version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@plaudern/contracts':
+        specifier: workspace:*
+        version: link:../../contracts
+      '@plaudern/inbox':
+        specifier: workspace:*
+        version: link:../inbox
+      '@plaudern/persistence':
+        specifier: workspace:*
+        version: link:../persistence
+      '@plaudern/queue':
+        specifier: workspace:*
+        version: link:../queue
+      rxjs:
+        specifier: ^7.0.0
+        version: 7.8.2
+      typeorm:
+        specifier: ^1.0.0
+        version: 1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3))
+
   libs/backend/speaker-id:
     dependencies:
       '@nestjs/common':
@@ -1215,6 +1353,12 @@ importers:
       '@nestjs/typeorm':
         specifier: ^11.0.0
         version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/ai-config':
+        specifier: workspace:*
+        version: link:../ai-config
+      '@plaudern/audit':
+        specifier: workspace:*
+        version: link:../audit
       '@plaudern/auth':
         specifier: workspace:*
         version: link:../auth
@@ -1263,6 +1407,12 @@ importers:
       '@nestjs/typeorm':
         specifier: ^11.0.0
         version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/ai-config':
+        specifier: workspace:*
+        version: link:../ai-config
+      '@plaudern/audit':
+        specifier: workspace:*
+        version: link:../audit
       '@plaudern/auth':
         specifier: workspace:*
         version: link:../auth
@@ -1296,6 +1446,12 @@ importers:
       '@nestjs/typeorm':
         specifier: ^11.0.0
         version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/ai-config':
+        specifier: workspace:*
+        version: link:../ai-config
+      '@plaudern/audit':
+        specifier: workspace:*
+        version: link:../audit
       '@plaudern/auth':
         specifier: workspace:*
         version: link:../auth
@@ -1335,6 +1491,12 @@ importers:
       '@nestjs/typeorm':
         specifier: ^11.0.0
         version: 11.0.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)(typeorm@1.0.0(babel-plugin-macros@3.1.0)(better-sqlite3@12.11.1)(ioredis@5.10.1)(pg@8.22.0)(ts-node@10.9.2(@types/node@22.10.2)(typescript@5.7.3)))
+      '@plaudern/ai-config':
+        specifier: workspace:*
+        version: link:../ai-config
+      '@plaudern/audit':
+        specifier: workspace:*
+        version: link:../audit
       '@plaudern/auth':
         specifier: workspace:*
         version: link:../auth
@@ -1371,6 +1533,12 @@ importers:
       '@nestjs/config':
         specifier: ^4.0.0
         version: 4.0.4(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(rxjs@7.8.2)
+      '@plaudern/ai-config':
+        specifier: workspace:*
+        version: link:../ai-config
+      '@plaudern/audit':
+        specifier: workspace:*
+        version: link:../audit
       '@plaudern/auth':
         specifier: workspace:*
         version: link:../auth

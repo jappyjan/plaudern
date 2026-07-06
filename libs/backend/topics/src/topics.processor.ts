@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { runWithAiAudit } from '@plaudern/audit';
 import { InboxService } from '@plaudern/inbox';
 import type { TopicAssignmentDto, TopicClassificationPayload } from '@plaudern/contracts';
 import { ItemTopicEntity, TopicEntity } from '@plaudern/persistence';
@@ -60,15 +61,21 @@ export class TopicsProcessor {
       // no assignments rather than calling the model for a guaranteed empty
       // answer.
       if (activeTopics.length > 0) {
-        const result = await this.provider.classify(item.userId, {
-          content: content.content,
-          language: content.language,
-          topics: activeTopics.map((t) => ({
-            id: t.id,
-            name: t.name,
-            description: t.description,
-          })),
-        });
+        // Attribute the external AI-provider call to this user/item so the
+        // provider adapter can audit it (JJ-42).
+        const result = await runWithAiAudit(
+          { userId: item.userId, itemId: item.id, kind: 'topics' },
+          () =>
+            this.provider.classify(item.userId, {
+              content: content.content,
+              language: content.language,
+              topics: activeTopics.map((t) => ({
+                id: t.id,
+                name: t.name,
+                description: t.description,
+              })),
+            }),
+        );
         model = result.model ?? null;
         const nameById = new Map(activeTopics.map((t) => [t.id, t.name]));
         assignments = result.assignments

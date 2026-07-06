@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { AuditModule } from '@plaudern/audit';
 import { InboxModule } from '@plaudern/inbox';
 import { PersistenceModule } from '@plaudern/persistence';
 import { BullJobQueue, InlineJobQueue, redisConnectionFromConfig } from '@plaudern/queue';
@@ -22,7 +23,7 @@ import {
 } from './speakers.controller';
 
 @Module({
-  imports: [ConfigModule, InboxModule, PersistenceModule, StorageModule, SummarizationModule],
+  imports: [ConfigModule, AuditModule, InboxModule, PersistenceModule, StorageModule, SummarizationModule],
   controllers: [SpeakersController, SpeakerTranscriptController, ConsentSettingsController],
   providers: [
     // The hosted-API client is now built per job from the owning user's

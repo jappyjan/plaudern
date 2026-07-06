@@ -34,7 +34,7 @@ function fakeAiConfig(config: ResolvedAiConfig | null): AiConfigService {
 }
 
 function providerWith(config: ResolvedAiConfig | null): OpenAiVisionOcrProvider {
-  return new OpenAiVisionOcrProvider(fakeAiConfig(config), new OpenAiChatClient());
+  return new OpenAiVisionOcrProvider(fakeAiConfig(config), new OpenAiChatClient({ record: async () => undefined } as any));
 }
 
 function okResponse(text: string, model = 'gpt-4o-mini') {

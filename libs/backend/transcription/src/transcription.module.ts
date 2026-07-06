@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { AuditModule } from '@plaudern/audit';
 import { InboxModule } from '@plaudern/inbox';
 import { BullJobQueue, InlineJobQueue, redisConnectionFromConfig } from '@plaudern/queue';
 import { TRANSCRIPTION_PROVIDER } from './transcription.provider';
@@ -13,7 +14,7 @@ import { TranscriptionExtractor } from './transcription.extractor';
 import { TranscriptionController } from './transcription.controller';
 
 @Module({
-  imports: [ConfigModule, InboxModule],
+  imports: [ConfigModule, AuditModule, InboxModule],
   providers: [
     ElevenLabsTranscriptionProvider,
     WhisperTranscriptionProvider,

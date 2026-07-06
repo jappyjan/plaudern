@@ -39,7 +39,7 @@ function fakeAiConfig(config: ResolvedAiConfig | null): AiConfigService {
 }
 
 function providerWith(config: ResolvedAiConfig | null): OpenAiSummarizationProvider {
-  return new OpenAiSummarizationProvider(fakeAiConfig(config), new OpenAiChatClient());
+  return new OpenAiSummarizationProvider(fakeAiConfig(config), new OpenAiChatClient({ record: async () => undefined } as any));
 }
 
 const minimalInput: SummarizationInput = {

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuditModule } from '@plaudern/audit';
 import { InboxModule } from '@plaudern/inbox';
 import { FactsModule } from '@plaudern/facts';
 import { CommitmentsModule } from '@plaudern/commitments';
@@ -51,6 +52,7 @@ import { RelationsExtractor } from './relations.extractor';
 @Module({
   imports: [
     ConfigModule,
+    AuditModule,
     InboxModule,
     // The dossier aggregation composes these read models; importing them here
     // exposes their read services (no cycle — none imports EntitiesModule).

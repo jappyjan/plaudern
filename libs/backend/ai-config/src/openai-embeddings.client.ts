@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { AiAuditRecorder } from '@plaudern/audit';
 import { numberParam, type ResolvedAiConfig } from './resolved-config';
 
 export interface EmbeddingsResponse {
@@ -13,6 +14,8 @@ export interface EmbeddingsResponse {
  */
 @Injectable()
 export class OpenAiEmbeddingsClient {
+  constructor(private readonly audit: AiAuditRecorder) {}
+
   async embed(config: ResolvedAiConfig, input: string[]): Promise<number[][]> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), config.timeoutMs);
@@ -22,10 +25,14 @@ export class OpenAiEmbeddingsClient {
       const dimensions = numberParam(config, 'dimensions', 0);
       const body: Record<string, unknown> = { model: config.model, input };
       if (dimensions > 0) body.dimensions = dimensions;
-      const res = await fetch(`${config.baseUrl}/embeddings`, {
+      const endpoint = `${config.baseUrl}/embeddings`;
+      const payload = JSON.stringify(body);
+      // Audit the exact bytes leaving the box before they leave (JJ-42).
+      await this.audit.record({ provider: `openai:${config.model}`, endpoint, payload });
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers,
-        body: JSON.stringify(body),
+        body: payload,
         signal: controller.signal,
       });
       if (!res.ok) {

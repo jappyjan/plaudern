@@ -6,18 +6,20 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { runWithAiAudit } from '@plaudern/audit';
 import { Repository } from 'typeorm';
-import type {
-  ChatAskRequest,
-  ChatAskResponse,
-  ChatCitation,
-  ChatConfidence,
-  ChatConversationDetailDto,
-  ChatConversationDto,
-  ChatConversationListResponse,
-  ChatMessageDto,
-  ChatStatusDto,
-  SearchResultItem,
+import {
+  isLocalOnlyTier,
+  type ChatAskRequest,
+  type ChatAskResponse,
+  type ChatCitation,
+  type ChatConfidence,
+  type ChatConversationDetailDto,
+  type ChatConversationDto,
+  type ChatConversationListResponse,
+  type ChatMessageDto,
+  type ChatStatusDto,
+  type SearchResultItem,
 } from '@plaudern/contracts';
 import { ChatConversationEntity, ChatMessageEntity } from '@plaudern/persistence';
 import { AiConfigService } from '@plaudern/ai-config';
@@ -246,10 +248,19 @@ export class ChatService {
         .slice(-6)
         .map((m) => `${m.role}: ${truncate(m.content, 400)}`)
         .join('\n');
-      const { content } = await this.provider.complete(userId, [
-        { role: 'system', content: REWRITE_SYSTEM_PROMPT },
-        { role: 'user', content: `Conversation:\n${transcript}\n\nLatest question: ${question}` },
-      ]);
+      // Attribute the external AI-provider call to this user; chat is not
+      // scoped to a single inbox item (JJ-42).
+      const { content } = await runWithAiAudit(
+        { userId, itemId: null, kind: 'chat' },
+        () =>
+          this.provider.complete(userId, [
+            { role: 'system', content: REWRITE_SYSTEM_PROMPT },
+            {
+              role: 'user',
+              content: `Conversation:\n${transcript}\n\nLatest question: ${question}`,
+            },
+          ]),
+      );
       const json = extractJsonObject(content);
       const raw = Array.isArray(json.queries) ? json.queries : [];
       for (const entry of raw) {
@@ -273,6 +284,12 @@ export class ChatService {
         limit: RETRIEVAL_LIMIT,
       });
       for (const hit of response.results) {
+        // Local-only routing guard (JJ-21): sensitive/secret items must NEVER
+        // reach the chat LLM (external by default). FAIL CLOSED — drop a hit
+        // whose tier is sensitive/secret OR not yet classified (null): a
+        // freshly-transcribed item is FTS-searchable before the sentinel runs,
+        // so an unknown tier must be excluded, not sent externally.
+        if (!hit.sensitivityTier || isLocalOnlyTier(hit.sensitivityTier)) continue;
         const existing = byItem.get(hit.itemId);
         if (!existing || hit.fusedScore > existing.score) {
           byItem.set(hit.itemId, { hit, score: hit.fusedScore });
@@ -313,7 +330,12 @@ export class ChatService {
       { role: 'user', content: `${sourcesBlock(sources)}\n\nQuestion: ${question}` },
     ];
 
-    const { content: raw } = await this.provider.complete(userId, messages);
+    // Attribute the external AI-provider call to this user; chat is not scoped
+    // to a single inbox item (JJ-42).
+    const { content: raw } = await runWithAiAudit(
+      { userId, itemId: null, kind: 'chat' },
+      () => this.provider.complete(userId, messages),
+    );
     const json = extractJsonObject(raw);
     const answer = typeof json.answer === 'string' && json.answer.trim() ? json.answer : raw;
     const modelConfidence: ChatConfidence = json.confidence === 'low' ? 'low' : 'high';

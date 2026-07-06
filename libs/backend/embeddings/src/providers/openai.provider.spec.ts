@@ -33,7 +33,7 @@ function fakeAiConfig(config: ResolvedAiConfig | null): AiConfigService {
 }
 
 function providerWith(config: ResolvedAiConfig | null): OpenAiEmbeddingProvider {
-  return new OpenAiEmbeddingProvider(fakeAiConfig(config), new OpenAiEmbeddingsClient());
+  return new OpenAiEmbeddingProvider(fakeAiConfig(config), new OpenAiEmbeddingsClient({ record: async () => undefined } as any));
 }
 
 describe('OpenAiEmbeddingProvider', () => {

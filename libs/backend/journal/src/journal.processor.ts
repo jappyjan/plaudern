@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
+import { runWithAiAudit } from '@plaudern/audit';
 import { In, Repository } from 'typeorm';
 import type { JournalPeriodType } from '@plaudern/contracts';
 import {
@@ -86,19 +87,25 @@ export class JournalProcessor {
         order: { version: 'DESC' },
       });
 
-      const result = await this.provider.generate(job.userId, {
-        periodType: job.periodType,
-        periodKey: job.periodKey,
-        periodLabel: periodLabel(job.periodType, job.periodKey),
-        sources: sources.map((s) => ({
-          marker: s.marker,
-          kind: s.kind,
-          title: s.title,
-          occurredAt: s.occurredAt,
-          text: s.text,
-        })),
-        previousMarkdown: previous?.markdown ?? null,
-      });
+      // Attribute the external AI-provider call to this user; a journal is
+      // period-scoped, so there is no owning inbox item (JJ-42).
+      const result = await runWithAiAudit(
+        { userId: job.userId, itemId: null, kind: 'journal' },
+        () =>
+          this.provider.generate(job.userId, {
+            periodType: job.periodType,
+            periodKey: job.periodKey,
+            periodLabel: periodLabel(job.periodType, job.periodKey),
+            sources: sources.map((s) => ({
+              marker: s.marker,
+              kind: s.kind,
+              title: s.title,
+              occurredAt: s.occurredAt,
+              text: s.text,
+            })),
+            previousMarkdown: previous?.markdown ?? null,
+          }),
+      );
 
       const markdown = sanitizeMarkers(result.markdown, sources.length);
       const cited = usedMarkers(markdown, sources.length);

@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Not, IsNull, Repository } from 'typeorm';
 import { AiConfigService, numberParam } from '@plaudern/ai-config';
+import { AiAuditRecorder } from '@plaudern/audit';
 import { StorageService } from '@plaudern/storage';
 import { VoiceProfileEntity } from '@plaudern/persistence';
 import type { PyannoteAiDiarization } from '../providers/pyannoteai-client';
@@ -37,6 +38,7 @@ export class PyannoteAiSpeakerIdentifier implements SpeakerIdentifier {
     private readonly matcher: VoiceprintMatcherService,
     @InjectRepository(VoiceProfileEntity)
     private readonly profiles: Repository<VoiceProfileEntity>,
+    private readonly audit: AiAuditRecorder,
   ) {}
 
   async identify(job: SpeakerIdentificationJob): Promise<SpeakerIdentificationResult> {
@@ -60,6 +62,14 @@ export class PyannoteAiSpeakerIdentifier implements SpeakerIdentifier {
     // Push the bytes to pyannoteAI (private storage stays private) and work off
     // the returned media:// handle.
     const bytes = await this.readObject(job.storageKey);
+    // Audit the audio bytes uploaded to the hosted diarizer (JJ-42). The
+    // identifier carries the owner/item directly, so pass explicit attribution.
+    await this.audit.record({
+      provider: `pyannoteai:${cfg.model}`,
+      endpoint: `${cfg.baseUrl}/media/input`,
+      payload: bytes,
+      context: { userId: job.userId, itemId: job.inboxItemId, kind: 'diarization' },
+    });
     const audioUrl = await client.upload(bytes, job.contentType, randomUUID());
 
     // Known profiles with a voiceprint become /identify candidates, keyed by id.

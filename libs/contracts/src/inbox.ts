@@ -54,6 +54,12 @@ export const extractionKindSchema = z.enum([
   // date ("the results should be in by the 14th", a contract expiry, "let's
   // talk again next month") becomes a calendar-visible reminder (JJ-25).
   'reminders',
+  // Sensitivity classification ("sentinel", JJ-21): a detection pass over the
+  // transcript (deterministic regex detectors + an optional LLM classifier)
+  // that assigns the item a sensitivity tier. Its tier gates whether the other
+  // LLM extractors may send the content to an external provider or must route
+  // to a local model tier / be held.
+  'sentinel',
   // Vision/LLM document-understanding of a scanned image or PDF (JJ-30/JJ-16):
   // classifies the document type (invoice, contract, letter, prescription,
   // business card, ...) and pulls key fields (amount, IBAN, due/expiry dates,

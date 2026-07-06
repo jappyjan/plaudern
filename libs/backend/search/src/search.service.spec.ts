@@ -7,6 +7,7 @@ import {
   EntityRegistryEntity,
   ExtractedPayloadEntity,
   InboxItemEntity,
+  ItemSensitivityEntity,
   ItemTopicEntity,
 } from '@plaudern/persistence';
 import type { EmbeddingSearchHit } from '@plaudern/embeddings';
@@ -58,6 +59,7 @@ describe('SearchService', () => {
     registry = dataSource.getRepository(EntityRegistryEntity);
     itemTopics = dataSource.getRepository(ItemTopicEntity);
     chunks = dataSource.getRepository(EmbeddingChunkEntity);
+    const sensitivity = dataSource.getRepository(ItemSensitivityEntity);
 
     // `EmbeddingSearchService.isEnabled(userId)` is async now; back it by the
     // mutable `enabled` flag so individual tests can flip semantic off.
@@ -71,6 +73,7 @@ describe('SearchService', () => {
       mentions,
       itemTopics,
       chunks,
+      sensitivity,
     );
   });
 

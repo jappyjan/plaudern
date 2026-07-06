@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { runWithAiAudit } from '@plaudern/audit';
 import { InboxService } from '@plaudern/inbox';
 import type { DecisionExtractionPayload } from '@plaudern/contracts';
 import {
@@ -45,7 +46,10 @@ export class DecisionsProcessor {
         throw new Error('no succeeded transcription to extract decisions from');
       }
 
-      const result = await this.provider.extract(item.userId, input);
+      const result = await runWithAiAudit(
+        { userId: item.userId, itemId: item.id, kind: 'decisions' },
+        () => this.provider.extract(item.userId, input),
+      );
       const decisionCount = await this.persistence.persist(
         item.userId,
         item.id,

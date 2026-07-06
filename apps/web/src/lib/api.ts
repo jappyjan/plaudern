@@ -12,6 +12,7 @@ import {
   googleAuthUrlResponseSchema,
   googlePendingResponseSchema,
   inboxItemSchema,
+  itemSensitivitySchema,
   inboxListResponseSchema,
   inboxPurgeResponseSchema,
   inboxSplitResponseSchema,
@@ -200,6 +201,13 @@ import {
   type CreateAiProviderRequest,
   type UpdateAiProviderRequest,
   type UpdateAiCapabilityRequest,
+  auditLogListResponseSchema,
+  panicDeleteResponseSchema,
+  deadMansSwitchSchema,
+  type AuditLogListResponse,
+  type PanicDeleteResponse,
+  type DeadMansSwitchDto,
+  type UpdateDeadMansSwitchRequest,
 } from '@plaudern/contracts';
 
 /**
@@ -446,6 +454,24 @@ export async function getSummary(itemId: string): Promise<SummaryDto> {
 export async function retrySummary(itemId: string): Promise<SummaryDto> {
   return summarySchema.parse(
     await requestJson(`/inbox/${itemId}/summary/retry`, { method: 'POST' }),
+  );
+}
+
+/** The item's sensitivity classification (tier, mask spans, held state) — JJ-21. */
+export async function getItemSensitivity(itemId: string) {
+  return itemSensitivitySchema.parse(await requestJson(`/inbox/${itemId}/sensitivity`));
+}
+
+/** Set (or clear, with null) a user's manual sensitivity-tier override — JJ-21. */
+export async function setItemSensitivity(
+  itemId: string,
+  manualTier: 'public' | 'normal' | 'sensitive' | 'secret' | null,
+) {
+  return itemSensitivitySchema.parse(
+    await requestJson(`/inbox/${itemId}/sensitivity`, {
+      method: 'PATCH',
+      body: JSON.stringify({ manualTier }),
+    }),
   );
 }
 
@@ -1318,5 +1344,62 @@ export async function updateAiCapability(
       method: 'PUT',
       body: JSON.stringify(req),
     }),
+  );
+}
+
+// ---- AI-provider audit log & data sovereignty (JJ-42) ----
+
+/** One page of the user's audit log of external AI-provider calls, newest first. */
+export async function fetchAuditLog(page = 1, pageSize = 50): Promise<AuditLogListResponse> {
+  const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  return auditLogListResponseSchema.parse(await requestJson(`/audit-log?${query}`));
+}
+
+/**
+ * Download the whole archive (items + extractions + presigned assets + a
+ * combined Markdown rendering) as one JSON file. Fetches the attachment and
+ * triggers a browser save without navigating away.
+ */
+export async function downloadExport(): Promise<void> {
+  const res = await request('/account/export');
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `plaudern-export-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/** DANGER: irreversibly wipe the signed-in user's archive. */
+export async function panicDelete(confirm: string): Promise<PanicDeleteResponse> {
+  return panicDeleteResponseSchema.parse(
+    await requestJson('/account/panic-delete', {
+      method: 'POST',
+      body: JSON.stringify({ confirm }),
+    }),
+  );
+}
+
+export async function getDeadMansSwitch(): Promise<DeadMansSwitchDto> {
+  return deadMansSwitchSchema.parse(await requestJson('/account/dead-mans-switch'));
+}
+
+export async function updateDeadMansSwitch(
+  req: UpdateDeadMansSwitchRequest,
+): Promise<DeadMansSwitchDto> {
+  return deadMansSwitchSchema.parse(
+    await requestJson('/account/dead-mans-switch', {
+      method: 'PUT',
+      body: JSON.stringify(req),
+    }),
+  );
+}
+
+export async function checkInDeadMansSwitch(): Promise<DeadMansSwitchDto> {
+  return deadMansSwitchSchema.parse(
+    await requestJson('/account/dead-mans-switch/check-in', { method: 'POST' }),
   );
 }

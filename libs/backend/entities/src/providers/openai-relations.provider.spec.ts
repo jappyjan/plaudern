@@ -137,7 +137,7 @@ describe('parseRelationsResponse', () => {
 
 describe('OpenAiRelationExtractionProvider without a resolved config', () => {
   it('throws a descriptive error from extract() when the capability is unconfigured', async () => {
-    const provider = new OpenAiRelationExtractionProvider(fakeAiConfig(null), new OpenAiChatClient());
+    const provider = new OpenAiRelationExtractionProvider(fakeAiConfig(null), new OpenAiChatClient({ record: async () => undefined } as any));
     await expect(provider.extract(USER, baseInput)).rejects.toThrow(/entity_relations/);
   });
 });

@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuditModule } from '@plaudern/audit';
 import { AiCapabilitySettingEntity, AiProviderEntity } from '@plaudern/persistence';
 import { AiConfigService } from './ai-config.service';
 import { AiProviderService } from './ai-provider.service';
@@ -23,6 +24,9 @@ import { OpenAiEmbeddingsClient } from './openai-embeddings.client';
 @Module({
   imports: [
     ConfigModule,
+    // The shared OpenAI clients inject AiAuditRecorder to log every external AI
+    // call (JJ-42); AuditModule exports it.
+    AuditModule,
     TypeOrmModule.forFeature([AiProviderEntity, AiCapabilitySettingEntity]),
   ],
   providers: [

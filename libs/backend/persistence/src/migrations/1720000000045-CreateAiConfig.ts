@@ -12,8 +12,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * seeds these for the pre-auth owner runs at boot (AiConfigImportService), not
  * here, so it can read the running API process's env and encrypt keys.
  */
-export class CreateAiConfig1720000000044 implements MigrationInterface {
-  name = 'CreateAiConfig1720000000044';
+export class CreateAiConfig1720000000045 implements MigrationInterface {
+  name = 'CreateAiConfig1720000000045';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

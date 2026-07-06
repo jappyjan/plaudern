@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { runWithAiAudit } from '@plaudern/audit';
 import { InboxService } from '@plaudern/inbox';
 import type { RelationExtractionPayload } from '@plaudern/contracts';
 import {
@@ -49,7 +50,12 @@ export class RelationsProcessor {
       let relationCount = 0;
       let model = this.provider.id;
       if (entities.length >= 2) {
-        const result = await this.provider.extract(item.userId, input);
+        // Attribute the external AI-provider call to this user/item so the
+        // provider adapter can audit it (JJ-42).
+        const result = await runWithAiAudit(
+          { userId: item.userId, itemId: item.id, kind: 'relations' },
+          () => this.provider.extract(item.userId, input),
+        );
         model = result.model ?? this.provider.id;
         relationCount = await this.graph.ingest(
           item.userId,

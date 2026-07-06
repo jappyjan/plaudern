@@ -68,6 +68,34 @@ export class TranscriptionService {
   }
 
   /**
+   * Record text that was already extracted by another step (e.g. OCR) as a
+   * succeeded passthrough `transcription` row, so the downstream DAG (summary,
+   * topics, entities, embeddings, …) runs on documents exactly as it does for
+   * typed notes. No provider/queue involved: the text is written straight onto
+   * the row, mirroring the passthrough branch in `TranscriptionProcessor`.
+   *
+   * Marked with `TEXT_PASSTHROUGH_PROVIDER_ID` so the summary context steers the
+   * prompt off "recording" (it is typed/scanned text, not speech).
+   */
+  async recordExtractedText(
+    inboxItemId: string,
+    params: { content: string; language?: string | null },
+  ): Promise<string> {
+    const extraction = await this.inbox.addExtraction(
+      inboxItemId,
+      'transcription',
+      TEXT_PASSTHROUGH_PROVIDER_ID,
+      TRANSCRIPTION_EXTRACTOR_VERSION,
+    );
+    await this.inbox.completeExtraction(extraction.id, {
+      status: 'succeeded',
+      content: params.content,
+      language: params.language ?? undefined,
+    });
+    return extraction.id;
+  }
+
+  /**
    * Re-run transcription for an item. Extractions are append-only, so a retry
    * simply enqueues a fresh row; older attempts stay visible in the history.
    */

@@ -14,6 +14,7 @@ import { TasksExtractor, TasksModule } from '@plaudern/tasks';
 import { FactsExtractor, FactsModule } from '@plaudern/facts';
 import { DecisionsExtractor, DecisionsModule } from '@plaudern/decisions';
 import { RemindersExtractor, RemindersModule } from '@plaudern/reminders';
+import { SentinelExtractor, SentinelModule } from '@plaudern/sensitivity';
 import { OcrExtractor, OcrModule } from '@plaudern/ocr';
 import { DocMetaExtractor, DocMetaModule } from '@plaudern/docmeta';
 import { ExtractorGraph } from './extractor-graph';
@@ -44,6 +45,7 @@ import { ExtractionController } from './extraction.controller';
     FactsModule,
     DecisionsModule,
     RemindersModule,
+    SentinelModule,
     OcrModule,
     DocMetaModule,
     TypeOrmModule.forFeature([ExtractionRunEntity, InboxItemEntity]),
@@ -65,6 +67,7 @@ import { ExtractionController } from './extraction.controller';
         FactsExtractor,
         DecisionsExtractor,
         RemindersExtractor,
+        SentinelExtractor,
         OcrExtractor,
         DocMetaExtractor,
       ],
@@ -82,6 +85,7 @@ import { ExtractionController } from './extraction.controller';
         facts: FactsExtractor,
         decisions: DecisionsExtractor,
         reminders: RemindersExtractor,
+        sentinel: SentinelExtractor,
         ocr: OcrExtractor,
         docmeta: DocMetaExtractor,
       ): Extractor[] => [
@@ -98,6 +102,7 @@ import { ExtractionController } from './extraction.controller';
         facts,
         decisions,
         reminders,
+        sentinel,
         ocr,
         docmeta,
       ],

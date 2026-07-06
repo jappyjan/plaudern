@@ -63,28 +63,18 @@ describe('Inbox events (e2e, Path A)', () => {
     const itemId = init.body.inboxItemId;
     const types = seen.filter((e) => 'itemId' in e && e.itemId === itemId);
     // Audio commit runs transcription AND diarization (both inline, with fake
-    // providers), so each contributes a full queued -> processing -> succeeded
-    // lifecycle.
-    expect(types.map((e) => e.type)).toEqual([
-      'item.committed',
-      'extraction.updated',
-      'extraction.updated',
-      'extraction.updated',
-      'extraction.updated',
-      'extraction.updated',
-      'extraction.updated',
-    ]);
-    const statuses = types
-      .filter((e) => e.type === 'extraction.updated')
-      .map((e) => (e.type === 'extraction.updated' ? e.status : ''));
-    expect(statuses).toEqual([
-      'queued',
-      'processing',
-      'succeeded',
-      'queued',
-      'processing',
-      'succeeded',
-    ]);
+    // providers); once transcription succeeds the always-on sensitivity sentinel
+    // (JJ-21) runs too. Each of the three contributes a full
+    // queued -> processing -> succeeded lifecycle. Assert by multiset (the exact
+    // interleaving of the microtask-scheduled sentinel is not contractual).
+    expect(types.filter((e) => e.type === 'item.committed')).toHaveLength(1);
+    const updated = types.filter((e) => e.type === 'extraction.updated');
+    expect(updated).toHaveLength(9);
+    const byStatus = (status: string) =>
+      updated.filter((e) => e.type === 'extraction.updated' && e.status === status).length;
+    expect(byStatus('queued')).toBe(3);
+    expect(byStatus('processing')).toBe(3);
+    expect(byStatus('succeeded')).toBe(3);
   });
 
   it('publishes item.created for inline text ingest', async () => {
