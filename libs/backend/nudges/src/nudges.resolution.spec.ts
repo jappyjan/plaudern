@@ -94,6 +94,42 @@ describe('isResolvedByLaterItems', () => {
     ).toBe(false);
   });
 
+  it('does NOT resolve a short commitment on a counterparty + single partial hit', () => {
+    // "call about the invoice" → keywords [call, invoice]. A later note that
+    // names Anna and mentions the invoice but not the call must NOT suppress —
+    // the call never happened. (Regression: short commitments require FULL
+    // keyword overlap alongside the counterparty.)
+    expect(
+      isResolvedByLaterItems({
+        description: 'call about the invoice',
+        counterpartyName: 'Anna',
+        occurredAt: new Date(NOW - 5 * DAY_MS).toISOString(),
+        laterTexts: [
+          {
+            occurredAt: new Date(NOW - DAY_MS).toISOString(),
+            text: 'ran into anna, the invoice is stressful, still need to sort it',
+          },
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it('DOES resolve a short commitment when a later item hits all keywords', () => {
+    expect(
+      isResolvedByLaterItems({
+        description: 'call about the invoice',
+        counterpartyName: 'Anna',
+        occurredAt: new Date(NOW - 5 * DAY_MS).toISOString(),
+        laterTexts: [
+          {
+            occurredAt: new Date(NOW - DAY_MS).toISOString(),
+            text: 'had the call with anna and sorted the invoice',
+          },
+        ],
+      }),
+    ).toBe(true);
+  });
+
   it('resolves without a counterparty when subject overlap is strong', () => {
     expect(
       isResolvedByLaterItems({

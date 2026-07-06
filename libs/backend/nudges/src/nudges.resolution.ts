@@ -127,10 +127,14 @@ export function isResolvedByLaterItems(params: {
     const ratio = hits / keywords.length;
 
     if (counterparty) {
-      // Either the counterparty is named alongside some subject overlap, or the
-      // subject overlap on its own is very strong.
+      // Either the counterparty is named alongside subject overlap, or the
+      // subject overlap on its own is very strong. For SHORT commitments (≤2
+      // distinctive words) a lone keyword hit is too weak — counterparties recur
+      // across recordings, so "ran into Anna, the invoice is stressful" would
+      // falsely resolve "call about the invoice". Require FULL overlap there.
       const counterpartyNamed = text.includes(counterparty);
-      if ((counterpartyNamed && ratio >= 0.5) || (hits >= 2 && ratio >= 0.8)) return true;
+      const overlapFloor = keywords.length <= 2 ? 1 : 0.5;
+      if ((counterpartyNamed && ratio >= overlapFloor) || (hits >= 2 && ratio >= 0.8)) return true;
     } else if (hits >= 2 && ratio >= 0.6) {
       return true;
     }
