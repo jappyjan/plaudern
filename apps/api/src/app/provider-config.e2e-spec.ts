@@ -72,9 +72,12 @@ describe('AI capability enablement is DB-driven (e2e, Path A)', () => {
   it('reports diarization disabled until speaker_id has a provider, and no-ops in the pipeline', async () => {
     expect(await graphNode('diarization')).toMatchObject({ kind: 'diarization', enabled: false });
 
-    // With speaker_id unconfigured the audio commit only transcribes.
+    // With speaker_id unconfigured the audio commit transcribes (and the
+    // always-on sentinel classifies sensitivity, JJ-21) but never diarizes.
     const itemId = await ingestAudio('provider-config-off');
-    expect(await kinds(itemId)).toEqual(['transcription']);
+    const gotKinds = await kinds(itemId);
+    expect(gotKinds).toContain('transcription');
+    expect(gotKinds).not.toContain('diarization');
   });
 
   it('enables diarization once a provider is assigned, and the pipeline runs it', async () => {

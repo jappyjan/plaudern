@@ -343,6 +343,9 @@ importers:
       '@plaudern/storage':
         specifier: workspace:*
         version: link:../storage
+      reflect-metadata:
+        specifier: ^0.2.0
+        version: 0.2.2
       rxjs:
         specifier: ^7.0.0
         version: 7.8.2
