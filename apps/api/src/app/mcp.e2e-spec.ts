@@ -77,10 +77,31 @@ describe('MCP server (e2e)', () => {
       .expect(401);
   });
 
-  it('lists the four memory tools', async () => {
+  it('lists the memory + knowledge-graph tools', async () => {
     const res = await mcp('tools/list').expect(200);
     const names = (res.body.result.tools as Array<{ name: string }>).map((t) => t.name).sort();
-    expect(names).toEqual(['get_item', 'ingest_text_note', 'list_recent_items', 'search_memory']);
+    // The four original memory tools plus the JJ-78 knowledge-graph read tools.
+    // Asserted in full (sorted) so the external tool surface stays guarded.
+    expect(names).toEqual([
+      'get_entity',
+      'get_item',
+      'get_journal',
+      'get_topic',
+      'ingest_text_note',
+      'list_calendar_events',
+      'list_commitments',
+      'list_decisions',
+      'list_entities',
+      'list_facts',
+      'list_journal_periods',
+      'list_questions',
+      'list_recent_items',
+      'list_relations',
+      'list_reminders',
+      'list_tasks',
+      'list_topics',
+      'search_memory',
+    ]);
   });
 
   it('captures a note through ingest_text_note and surfaces it in the inbox', async () => {
