@@ -21,6 +21,7 @@ import { RemindersModule } from '@plaudern/reminders';
 import { OcrModule } from '@plaudern/ocr';
 import { DocMetaModule } from '@plaudern/docmeta';
 import { OpenLoopsModule } from '@plaudern/open-loops';
+import { NudgesModule } from '@plaudern/nudges';
 import { IngestionModule } from '@plaudern/ingestion';
 import { PlaudSyncModule } from '@plaudern/plaud-sync';
 import { SpeakerIdModule } from '@plaudern/speaker-id';
@@ -61,6 +62,7 @@ import { HealthController } from './health.controller';
     OcrModule,
     DocMetaModule,
     OpenLoopsModule,
+    NudgesModule,
     ExtractionModule,
     IngestionModule,
     PlaudSyncModule,

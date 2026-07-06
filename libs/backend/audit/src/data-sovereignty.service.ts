@@ -31,6 +31,7 @@ import {
   NotificationCategoryPreferenceEntity,
   NotificationDeliveryEntity,
   NotificationSettingsEntity,
+  NudgeStateEntity,
   PlaudSettingsEntity,
   PushSubscriptionEntity,
   ReminderEntity,
@@ -144,6 +145,10 @@ export class DataSovereigntyService {
       await em.getRepository(TopicProposalEntity).delete({ userId });
       await em.getRepository(TopicEntity).delete({ userId });
       await em.getRepository(ReminderEntity).delete({ userId });
+      // Commitment-nudge state (JJ-26): a user-scoped table holding the user's
+      // dismiss/snooze decisions. FK-cascades with commitments on Postgres but
+      // lingers on sqlite (purge avoids cascades), so wipe it explicitly.
+      await em.getRepository(NudgeStateEntity).delete({ userId });
       await em.getRepository(JournalDocumentEntity).delete({ userId });
       // Entity-graph residue that purge's registry delete leaves behind: aliases
       // and suppressions hold the normalized NAMES of the user's people/places,
