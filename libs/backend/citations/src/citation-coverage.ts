@@ -103,22 +103,22 @@ const ABBREVIATIONS = new Set(
   ].map((abbreviation) => abbreviation.toLowerCase()),
 );
 
-/** Letters (incl. German umlauts/ß) allowed inside an abbreviation token. */
-const LETTER_RE = /[A-Za-zÄÖÜäöüß]/;
-/** Extends {@link LETTER_RE} to also allow internal `.` (e.g. "z.B."). */
+/** Characters allowed inside an abbreviation token: letters (incl. German umlauts/ß) plus internal `.` (e.g. "z.B."). */
 const ABBREVIATION_TOKEN_CHAR_RE = /[A-Za-zÄÖÜäöüß.]/;
-/** German capitalizes sentence starts, so a lowercase continuation signals an abbreviation. */
-const LOWERCASE_START_RE = /^[a-zäöüß]/;
 
 /**
- * Whether the `.` at `periodIndex` is an abbreviation/initial rather than a
- * sentence terminator. Three independent signals, any one of which suppresses
- * the split (fail-safe: prefer merging two real clauses over severing an
- * abbreviation):
- *  - the token ending at the period is a known abbreviation (`z.B.`, `etc.`, …);
- *  - the character right before the period is an isolated single letter
- *    (initials like "A." or the second half of "z.B." scanned letter-by-letter);
- *  - the next token (after whitespace) starts with a lowercase letter.
+ * Whether the `.` at `periodIndex` is a known abbreviation rather than a
+ * sentence terminator: the letter/`.` token ending at this period (`z.B.`,
+ * `etc.`, `Dr.`, …) is in the closed {@link ABBREVIATIONS} set.
+ *
+ * Deliberately NARROW — a closed set only. Earlier open-ended heuristics
+ * (single-letter-before-dot, lowercase-next-token) were removed: they MERGE two
+ * real sentences, and when the first is cited and the second is not, the
+ * second's uncited-ness is hidden and strictUncited flips low→high — an
+ * UNDER-hedge (an uncited claim served as high confidence), the one direction
+ * JJ-68 / VISION §6 forbids. Over-splitting an unlisted abbreviation (e.g.
+ * "J. Smith") is only an over-hedge, which JJ-79 explicitly accepts, so the
+ * closed set is the safe floor.
  */
 function isAbbreviationSplitPoint(content: string, periodIndex: number): boolean {
   let tokenStart = periodIndex;
@@ -126,23 +126,7 @@ function isAbbreviationSplitPoint(content: string, periodIndex: number): boolean
     tokenStart -= 1;
   }
   const token = content.slice(tokenStart, periodIndex + 1);
-  if (ABBREVIATIONS.has(token.toLowerCase())) return true;
-
-  const charBefore = content[periodIndex - 1];
-  const charBeforeThat = content[periodIndex - 2];
-  if (
-    charBefore &&
-    LETTER_RE.test(charBefore) &&
-    (!charBeforeThat || !LETTER_RE.test(charBeforeThat))
-  ) {
-    return true;
-  }
-
-  let next = periodIndex + 1;
-  while (next < content.length && /\s/.test(content[next])) next += 1;
-  if (next < content.length && LOWERCASE_START_RE.test(content[next])) return true;
-
-  return false;
+  return ABBREVIATIONS.has(token.toLowerCase());
 }
 
 /**
@@ -151,9 +135,9 @@ function isAbbreviationSplitPoint(content: string, periodIndex: number): boolean
  * "Anna is pregnant. He quit his job." yields two units, not one, and each is
  * checked for its own citation. Language-agnostic on purpose (works for the
  * German transcripts too): no verb/POS heuristics, just punctuation — except
- * a `.` is NOT treated as a boundary when it looks like an abbreviation or
- * initial (see {@link isAbbreviationSplitPoint}), so "z.B." and friends don't
- * sever a sentence into a spurious uncited claim (JJ-79).
+ * a `.` is NOT treated as a boundary when it ends a KNOWN abbreviation
+ * (see {@link isAbbreviationSplitPoint}), so "z.B." and friends don't sever a
+ * sentence into a spurious uncited claim (JJ-79).
  */
 export function splitClaims(content: string): string[] {
   const units: string[] = [];

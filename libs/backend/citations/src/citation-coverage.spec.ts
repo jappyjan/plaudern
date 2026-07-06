@@ -40,6 +40,27 @@ describe('splitClaims', () => {
       'He quit his job.',
     ]);
   });
+
+  it('never merges two real sentences — closed set only, no lowercase/single-letter heuristics (JJ-79)', () => {
+    // These were MERGED by the removed open-ended heuristics, hiding the second
+    // sentence. The abbreviation guard is a closed set, so they must still split:
+    // a lowercase-starting continuation ("iOS", "das budget") is a real sentence,
+    // and a capital letter before the period ("Vitamin D.") is not an initial we
+    // recognise. Over-splitting an unlisted case is an accepted over-hedge; MERGING
+    // is the forbidden under-hedge.
+    expect(splitClaims('Der Termin steht fest [1]. iOS wurde nie erwähnt.')).toEqual([
+      'Der Termin steht fest [1].',
+      'iOS wurde nie erwähnt.',
+    ]);
+    expect(splitClaims('Die Studie [1] nennt Vitamin D. Das ist frei erfunden.')).toEqual([
+      'Die Studie [1] nennt Vitamin D.',
+      'Das ist frei erfunden.',
+    ]);
+    expect(splitClaims('Der Plan steht [1]. das Budget wurde gestrichen.')).toEqual([
+      'Der Plan steht [1].',
+      'das Budget wurde gestrichen.',
+    ]);
+  });
 });
 
 describe('analyzeCitationCoverage — strict (memory chat contract)', () => {
@@ -86,6 +107,23 @@ describe('analyzeCitationCoverage — strict (memory chat contract)', () => {
     expect(result.totalClaims).toBe(1);
     expect(result.uncitedClaims).toBe(0);
     expect(result.confidence).toBe('high');
+  });
+
+  it('does not let a cited head hide an uncited tail — the abbreviation guard must not under-hedge (JJ-79 / JJ-68)', () => {
+    // The removed lowercase/single-letter heuristics MERGED these into one clause;
+    // the merged clause carried the head's [1], so strictUncited flipped low→high
+    // and the uncited (often fabricated) tail was served as HIGH confidence — the
+    // one regression JJ-68 / VISION §6 forbids. The closed abbreviation set splits
+    // them, so the tail's uncited-ness is caught.
+    for (const input of [
+      'Der Termin steht fest [1]. iOS wurde nie erwähnt.',
+      'Die Studie [1] nennt Vitamin D. Das ist frei erfunden.',
+      'Der Plan steht [1]. das Budget wurde gestrichen.',
+    ]) {
+      const result = analyzeCitationCoverage(input, strict);
+      expect(result.uncitedClaims).toBeGreaterThanOrEqual(1);
+      expect(result.confidence).not.toBe('high');
+    }
   });
 
   it('any single uncited substantive claim downgrades a strict answer', () => {
