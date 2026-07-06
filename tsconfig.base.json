@@ -19,6 +19,7 @@
     "baseUrl": ".",
     "paths": {
       "@plaudern/contracts": ["libs/contracts/src/index.ts"],
+      "@plaudern/audit": ["libs/backend/audit/src/index.ts"],
       "@plaudern/persistence": ["libs/backend/persistence/src/index.ts"],
       "@plaudern/storage": ["libs/backend/storage/src/index.ts"],
       "@plaudern/inbox": ["libs/backend/inbox/src/index.ts"],
