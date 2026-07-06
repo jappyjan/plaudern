@@ -57,6 +57,7 @@ function toDto(q: QuestionDto): OpenLoopDto {
     dueDate: null,
     overdue: false,
     inboxItemId: q.inboxItemId,
+    sourceTimestamp: q.sourceTimestamp,
     // A question is per-recording (no cross-item dedupe), so it is raised once.
     citationCount: 1,
     firstSeenAt: q.occurredAt,

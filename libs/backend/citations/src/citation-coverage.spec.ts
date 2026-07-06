@@ -10,6 +10,36 @@ describe('splitClaims', () => {
     expect(splitClaims('First point; second point.')).toEqual(['First point;', 'second point.']);
     expect(splitClaims('Line one\nLine two')).toEqual(['Line one', 'Line two']);
   });
+
+  it('does not split on abbreviations (JJ-79)', () => {
+    // "z.B." (German "e.g.") must not sever the sentence right after it.
+    expect(
+      splitClaims('Er hat z.B. das Auto gekauft [1].'),
+    ).toEqual(['Er hat z.B. das Auto gekauft [1].']);
+    // A handful of the other listed abbreviations, spot-checked.
+    expect(splitClaims('Das war teuer, d.h. über 10.000 Euro [1].')).toEqual([
+      'Das war teuer, d.h. über 10.000 Euro [1].',
+    ]);
+    expect(splitClaims('Sie kaufte Obst, Brot usw. beim Markt [1].')).toEqual([
+      'Sie kaufte Obst, Brot usw. beim Markt [1].',
+    ]);
+    expect(splitClaims('Dr. Meier war beim Termin dabei [1].')).toEqual([
+      'Dr. Meier war beim Termin dabei [1].',
+    ]);
+  });
+
+  it('still splits on a genuine sentence boundary right after an abbreviation-bearing clause', () => {
+    expect(
+      splitClaims('Er hat z.B. das Auto gekauft [1]. Das war teuer [2].'),
+    ).toEqual(['Er hat z.B. das Auto gekauft [1].', 'Das war teuer [2].']);
+  });
+
+  it('still splits genuine sentence boundaries (no abbreviations involved)', () => {
+    expect(splitClaims('Anna is pregnant. He quit his job.')).toEqual([
+      'Anna is pregnant.',
+      'He quit his job.',
+    ]);
+  });
 });
 
 describe('analyzeCitationCoverage — strict (memory chat contract)', () => {
@@ -46,6 +76,16 @@ describe('analyzeCitationCoverage — strict (memory chat contract)', () => {
       ).totalClaims,
     ).toBe(0);
     expect(analyzeCitationCoverage('In short: it happened [1].', strict).uncitedClaims).toBe(0);
+  });
+
+  it('keeps a cited German sentence using "z.B." at high confidence (JJ-79)', () => {
+    // Before the abbreviation guard, "z.B." severed this into two claims and
+    // the second ("das Auto gekauft [1].") lost the citation, downgrading to
+    // low confidence even though the whole sentence IS cited.
+    const result = analyzeCitationCoverage('Er hat z.B. das Auto gekauft [1].', strict);
+    expect(result.totalClaims).toBe(1);
+    expect(result.uncitedClaims).toBe(0);
+    expect(result.confidence).toBe('high');
   });
 
   it('any single uncited substantive claim downgrades a strict answer', () => {

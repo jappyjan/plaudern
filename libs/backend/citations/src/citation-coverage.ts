@@ -76,17 +76,101 @@ export interface CitationCoverage {
 }
 
 /**
+ * Abbreviations whose internal/trailing `.` must NOT be treated as a sentence
+ * terminator (JJ-79). Without this guard, a properly-cited German sentence
+ * using `z.B.` gets severed into an uncited fragment right after "z.B." and
+ * gets spuriously downgraded to low confidence. Lower-cased for comparison.
+ */
+const ABBREVIATIONS = new Set(
+  [
+    'z.B.',
+    'd.h.',
+    'u.a.',
+    'etc.',
+    'i.e.',
+    'e.g.',
+    'usw.',
+    'ca.',
+    'Nr.',
+    'vgl.',
+    'bzw.',
+    'z.T.',
+    'o.Ä.',
+    'ggf.',
+    'inkl.',
+    'Dr.',
+    'Prof.',
+  ].map((abbreviation) => abbreviation.toLowerCase()),
+);
+
+/** Letters (incl. German umlauts/ß) allowed inside an abbreviation token. */
+const LETTER_RE = /[A-Za-zÄÖÜäöüß]/;
+/** Extends {@link LETTER_RE} to also allow internal `.` (e.g. "z.B."). */
+const ABBREVIATION_TOKEN_CHAR_RE = /[A-Za-zÄÖÜäöüß.]/;
+/** German capitalizes sentence starts, so a lowercase continuation signals an abbreviation. */
+const LOWERCASE_START_RE = /^[a-zäöüß]/;
+
+/**
+ * Whether the `.` at `periodIndex` is an abbreviation/initial rather than a
+ * sentence terminator. Three independent signals, any one of which suppresses
+ * the split (fail-safe: prefer merging two real clauses over severing an
+ * abbreviation):
+ *  - the token ending at the period is a known abbreviation (`z.B.`, `etc.`, …);
+ *  - the character right before the period is an isolated single letter
+ *    (initials like "A." or the second half of "z.B." scanned letter-by-letter);
+ *  - the next token (after whitespace) starts with a lowercase letter.
+ */
+function isAbbreviationSplitPoint(content: string, periodIndex: number): boolean {
+  let tokenStart = periodIndex;
+  while (tokenStart > 0 && ABBREVIATION_TOKEN_CHAR_RE.test(content[tokenStart - 1])) {
+    tokenStart -= 1;
+  }
+  const token = content.slice(tokenStart, periodIndex + 1);
+  if (ABBREVIATIONS.has(token.toLowerCase())) return true;
+
+  const charBefore = content[periodIndex - 1];
+  const charBeforeThat = content[periodIndex - 2];
+  if (
+    charBefore &&
+    LETTER_RE.test(charBefore) &&
+    (!charBeforeThat || !LETTER_RE.test(charBeforeThat))
+  ) {
+    return true;
+  }
+
+  let next = periodIndex + 1;
+  while (next < content.length && /\s/.test(content[next])) next += 1;
+  if (next < content.length && LOWERCASE_START_RE.test(content[next])) return true;
+
+  return false;
+}
+
+/**
  * Split prose into clause-level claim units. Sentence terminators (`.!?`),
  * clause separators (`;:`), and newlines/bullets all break a unit — so
  * "Anna is pregnant. He quit his job." yields two units, not one, and each is
  * checked for its own citation. Language-agnostic on purpose (works for the
- * German transcripts too): no verb/POS heuristics, just punctuation.
+ * German transcripts too): no verb/POS heuristics, just punctuation — except
+ * a `.` is NOT treated as a boundary when it looks like an abbreviation or
+ * initial (see {@link isAbbreviationSplitPoint}), so "z.B." and friends don't
+ * sever a sentence into a spurious uncited claim (JJ-79).
  */
 export function splitClaims(content: string): string[] {
-  return content
-    .split(/(?<=[.!?;:])\s+|\n+/)
-    .map((unit) => unit.trim())
-    .filter((unit) => unit.length > 0);
+  const units: string[] = [];
+  let start = 0;
+  const boundaryRe = /[.!?;:]\s+|\n+/g;
+  let match: RegExpExecArray | null;
+  while ((match = boundaryRe.exec(content)) !== null) {
+    const isPeriodBoundary = match[0][0] === '.';
+    if (isPeriodBoundary && isAbbreviationSplitPoint(content, match.index)) {
+      continue;
+    }
+    const end = match.index + match[0].length;
+    units.push(content.slice(start, end));
+    start = end;
+  }
+  units.push(content.slice(start));
+  return units.map((unit) => unit.trim()).filter((unit) => unit.length > 0);
 }
 
 /**
