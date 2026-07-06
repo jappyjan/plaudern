@@ -98,7 +98,7 @@ import { DataSovereignty1720000000041 } from './migrations/1720000000041-DataSov
 import { CreateDocumentMetadata1720000000042 } from './migrations/1720000000042-CreateDocumentMetadata';
 import { CreateEntityMergeSuggestions1720000000043 } from './migrations/1720000000043-CreateEntityMergeSuggestions';
 import { CreateItemSensitivity1720000000044 } from './migrations/1720000000044-CreateItemSensitivity';
-import { AddDocumentDate1720000000045 } from './migrations/1720000000045-AddDocumentDate';
+import { AddDocumentDate1720000000046 } from './migrations/1720000000046-AddDocumentDate';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -201,7 +201,7 @@ export const ALL_MIGRATIONS = [
   CreateDocumentMetadata1720000000042,
   CreateEntityMergeSuggestions1720000000043,
   CreateItemSensitivity1720000000044,
-  AddDocumentDate1720000000045,
+  AddDocumentDate1720000000046,
 ];
 
 /**

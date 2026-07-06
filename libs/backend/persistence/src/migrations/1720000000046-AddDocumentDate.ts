@@ -8,8 +8,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * immutable inbox envelope is left untouched. Additive and nullable — safe on
  * existing installs (a docmeta re-run backfills older documents).
  */
-export class AddDocumentDate1720000000045 implements MigrationInterface {
-  name = 'AddDocumentDate1720000000045';
+export class AddDocumentDate1720000000046 implements MigrationInterface {
+  name = 'AddDocumentDate1720000000046';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
