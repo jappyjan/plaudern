@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { EntityManager, In, Repository } from 'typeorm';
 import type {
   FactCitationDto,
   FactListQuery,
@@ -89,6 +89,15 @@ export class FactsRegistryService {
    * even when the batch is empty (a re-run that found nothing still stales the
    * item's previous facts). Returns the number of distinct facts the item was
    * linked to.
+   *
+   * The transaction closes the READ-VISIBILITY window (JJ-31) but, on its own,
+   * does NOT stop two concurrent writers touching the SAME (subject, attribute)
+   * group from interleaving their supersession recompute — e.g. two recordings
+   * about the same person's same attribute processed by two workers at once.
+   * `lockGroups` (JJ-72) closes that gap: right before recomputing, it takes a
+   * Postgres transaction-scoped advisory lock per touched group, so a second
+   * transaction touching the same group blocks until the first commits, then
+   * re-reads the (now fully-committed) rows under READ COMMITTED.
    */
   async ingest(
     userId: string,
@@ -171,11 +180,47 @@ export class FactsRegistryService {
         touch(subjectKey, normalizedAttribute);
       }
 
+      // Serialize concurrent writers to the same group (JJ-72) BEFORE
+      // recomputing, so two overlapping ingests can't both read the
+      // pre-write state and race each other's supersession flip.
+      await this.lockGroups(em, [...touchedGroups.values()]);
+
       // The in-flight extraction id is passed through so its citations count as
       // the item's current truth even though its row isn't `succeeded` yet.
       await recomputePersonalFactSupersession(em, [...touchedGroups.values()], extractionId);
       return cited.size;
     });
+  }
+
+  /**
+   * Serialize concurrent ingests that touch the same (subject, attribute)
+   * group (JJ-72, follow-up to the JJ-31 transaction). Takes a Postgres
+   * transaction-scoped advisory lock per touched group — released
+   * automatically at COMMIT/ROLLBACK — keyed by group rather than by row, so
+   * it also covers a brand-new group with zero existing fact rows (two writers
+   * racing to create the FIRST fact for a subject+attribute, where a `SELECT
+   * ... FOR UPDATE` on the (nonexistent) rows would lock nothing). A second
+   * transaction touching the same group blocks on this call until the first
+   * commits; under READ COMMITTED its subsequent reads then see the first
+   * transaction's fully-committed writes, so the two ingests serialize instead
+   * of interleaving.
+   *
+   * Skipped on sqlite (the test driver): a single-writer, synchronous
+   * better-sqlite3 connection has no concurrent-writer race to serialize, and
+   * sqlite has no advisory-lock primitive — this keeps the ingest path
+   * sqlite-test-safe (mirrors the driver branch in TasksRegistryService's
+   * vector search).
+   */
+  private async lockGroups(em: EntityManager, groups: PersonalFactGroupKey[]): Promise<void> {
+    if (this.facts.manager.connection.options.type !== 'postgres') return;
+    // Sorted so two transactions touching multiple overlapping groups always
+    // acquire their locks in the same order, avoiding a lock-order deadlock.
+    const keys = [
+      ...new Set(groups.map((g) => `${g.userId}::${g.subjectKey}::${g.normalizedAttribute}`)),
+    ].sort();
+    for (const key of keys) {
+      await em.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [key]);
+    }
   }
 
   /** Find the existing fact row for this (subject, attribute, value) or create it. */
