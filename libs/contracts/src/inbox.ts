@@ -130,6 +130,12 @@ export const inboxItemSchema = z.object({
   sourceType: sourceTypeSchema,
   occurredAt: z.string().datetime(),
   ingestedAt: z.string().datetime(),
+  /**
+   * For scanned documents, the date printed on the document itself (resolved to
+   * an absolute ISO datetime by the `docmeta` extractor), or null. When present,
+   * clients prefer it over `occurredAt` as the item's displayed date.
+   */
+  documentDate: z.string().datetime().nullable().default(null),
   /** Free-form capture metadata (GPS location, recording device, file tags, ...). */
   metadata: z.record(z.string(), z.unknown()).nullable(),
   source: sourcePayloadSchema.nullable(),

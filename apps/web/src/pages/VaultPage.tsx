@@ -203,6 +203,8 @@ function DocumentCard({ doc }: { doc: DocumentDto }) {
         )}
 
         {doc.iban && <p className="text-xs text-default-400">IBAN {doc.iban}</p>}
+
+        <p className="text-xs text-default-400">{formatDate(doc.documentDate ?? doc.occurredAt)}</p>
       </CardBody>
     </Card>
   );

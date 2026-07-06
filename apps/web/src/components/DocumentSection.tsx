@@ -7,6 +7,7 @@ import {
   retryItemDocMeta,
   retryItemOcr,
 } from '../lib/api';
+import { formatDate } from '../lib/format';
 
 interface DocumentSectionProps {
   itemId: string;
@@ -99,6 +100,11 @@ export function DocumentSection({ itemId, contentType, sourceUrl }: DocumentSect
               <Chip size="sm" variant="flat" color="primary">
                 {doc.documentType.replace(/_/g, ' ')}
               </Chip>
+              {doc.documentDate && (
+                <Chip size="sm" variant="flat" color="default">
+                  Dated {formatDate(doc.documentDate)}
+                </Chip>
+              )}
               {doc.expiryDate && (
                 <Chip size="sm" variant="flat" color="warning">
                   Expires {doc.expiryDate}

@@ -26,6 +26,15 @@ export function formatDuration(totalSeconds: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
+/**
+ * The date to show for an item: for a scanned document with an extracted date
+ * printed on it, prefer that; otherwise the capture/upload time. Keeps a single
+ * rule so every date display stays consistent.
+ */
+export function itemDate(item: { documentDate?: string | null; occurredAt: string }): string {
+  return item.documentDate ?? item.occurredAt;
+}
+
 export function formatDate(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;

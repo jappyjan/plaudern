@@ -11,6 +11,7 @@ import type { SourceType } from '@plaudern/contracts';
 import { SourcePayloadEntity } from './source-payload.entity';
 import { ExtractedPayloadEntity } from './extracted-payload.entity';
 import { RecordingMergeEntity } from './recording-merge.entity';
+import { DocumentMetadataEntity } from './document-metadata.entity';
 
 /**
  * The inbox envelope — the source of truth. Rows are never edited in place:
@@ -57,6 +58,14 @@ export class InboxItemEntity {
 
   @OneToMany(() => ExtractedPayloadEntity, (extracted) => extracted.inboxItem)
   extractions!: ExtractedPayloadEntity[];
+
+  /**
+   * Structured document metadata (present only for scanned documents that ran
+   * the `docmeta` extractor). Lives outside the immutable aggregate — read-only
+   * here, used to surface the extracted document date on the item read model.
+   */
+  @OneToOne(() => DocumentMetadataEntity, (doc) => doc.inboxItem)
+  documentMetadata!: DocumentMetadataEntity | null;
 
   /** Present (non-empty) only on items produced by merging other recordings. */
   @OneToMany(() => RecordingMergeEntity, (link) => link.mergedItem)

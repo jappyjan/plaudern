@@ -241,7 +241,12 @@ export class InboxService {
   async getItem(userId: string, id: string): Promise<InboxItemEntity> {
     const item = await this.items.findOne({
       where: { id, userId },
-      relations: { source: true, extractions: true, mergeSources: true },
+      relations: {
+        source: true,
+        extractions: true,
+        mergeSources: true,
+        documentMetadata: true,
+      },
     });
     if (!item) throw new NotFoundException('inbox item not found');
     return item;
@@ -472,6 +477,7 @@ export class InboxService {
       .leftJoinAndSelect('item.source', 'source')
       .leftJoinAndSelect('item.extractions', 'extractions')
       .leftJoinAndSelect('item.mergeSources', 'mergeSources')
+      .leftJoinAndSelect('item.documentMetadata', 'documentMetadata')
       .where('item.userId = :userId', { userId })
       .andWhere((sub) => {
         const hidden = sub

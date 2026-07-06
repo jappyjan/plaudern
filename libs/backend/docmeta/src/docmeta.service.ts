@@ -29,7 +29,7 @@ const ACTIVE_STATUSES: ExtractionStatus[] = ['queued', 'processing'];
  * row. Bump when the output meaningfully improves (better model or prompt) so
  * backfill runs can catch older items up.
  */
-export const DOCMETA_EXTRACTOR_VERSION = 1;
+export const DOCMETA_EXTRACTOR_VERSION = 2;
 
 /**
  * Owns the docmeta pipeline step (JJ-30/JJ-16). WHEN it runs is decided by the
@@ -152,6 +152,7 @@ export function toDocumentDto(row: DocumentMetadataEntity, occurredAt: string): 
     amount: row.amount,
     currency: row.currency,
     iban: row.iban,
+    documentDate: row.documentDate,
     expiryDate: row.expiryDate,
     cancellationDate: row.cancellationDate,
     contact: row.contact,
