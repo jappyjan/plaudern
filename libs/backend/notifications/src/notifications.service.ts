@@ -201,6 +201,36 @@ export class NotificationsService {
     const outcome = sentChannels.length > 0 ? 'sent' : anyFailed ? 'failed' : 'no_channels';
     return { category: req.category, outcome, channels: results, retryAfter: null };
   }
+
+  /**
+   * Deliver a one-off email to an ARBITRARY address that is not necessarily a
+   * user of this instance — the dead-man's-switch release (JJ-80) reaching a
+   * trusted contact. This deliberately bypasses per-user preference / quiet-hours
+   * / frequency-cap gating (the recipient has no account to hold preferences, and
+   * a safety-critical release must not be silently suppressed) but still routes
+   * through the same audited email channel/transport as every other send, so a
+   * test's fake `EMAIL_SENDER` observes it and an unconfigured SMTP is a clean
+   * no-op. Never throws; the boolean says whether the mail actually went out.
+   */
+  async notifyEmailAddress(
+    to: string,
+    message: { title: string; body: string; url?: string },
+    category: NotificationCategory = 'dead_mans_switch',
+  ): Promise<{ sent: boolean; detail: string | null }> {
+    const handler = this.byChannel.get('email');
+    if (!handler || !handler.isConfigured()) {
+      this.logger.warn(`email channel not configured — cannot notify ${to}`);
+      return { sent: false, detail: 'email channel not configured' };
+    }
+    const result = await handler.send(
+      { userId: '', emailAddress: to },
+      { category, title: message.title, body: message.body, url: message.url },
+    );
+    if (result.status !== 'sent') {
+      this.logger.warn(`direct email to ${to} not sent: ${result.status} ${result.detail ?? ''}`);
+    }
+    return { sent: result.status === 'sent', detail: result.detail ?? null };
+  }
 }
 
 function dedupe<T>(values: T[]): T[] {

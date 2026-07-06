@@ -52,3 +52,4 @@ export * from './ai-capability-setting.entity';
 export * from './ai-capability-group-setting.entity';
 export * from './ai-provider-call.entity';
 export * from './dead-mans-switch.entity';
+export * from './dead-mans-switch-release.entity';

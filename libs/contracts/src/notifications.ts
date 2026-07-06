@@ -30,6 +30,7 @@ export const notificationCategorySchema = z.enum([
   'commitment_nudge',
   'drift_alert',
   'weekly_digest',
+  'dead_mans_switch',
 ]);
 export type NotificationCategory = z.infer<typeof notificationCategorySchema>;
 
@@ -40,6 +41,7 @@ export const NOTIFICATION_CATEGORY_LABELS: Record<NotificationCategory, string> 
   commitment_nudge: 'Commitment nudges',
   drift_alert: 'Relationship drift alerts',
   weekly_digest: 'Weekly digest',
+  dead_mans_switch: 'Emergency-access switch',
 };
 
 export const NOTIFICATION_CATEGORY_DESCRIPTIONS: Record<NotificationCategory, string> = {
@@ -49,6 +51,8 @@ export const NOTIFICATION_CATEGORY_DESCRIPTIONS: Record<NotificationCategory, st
   commitment_nudge: 'Reminders about promises you made or are owed.',
   drift_alert: 'A heads-up when you have not been in touch with someone in a while.',
   weekly_digest: 'A weekly summary email of everything that happened.',
+  dead_mans_switch:
+    'Alerts when your dead-man’s switch is about to release, or has released, emergency access to your archive.',
 };
 
 /** `HH:MM` 24-hour local time. */
@@ -196,6 +200,8 @@ export const DEFAULT_CATEGORY_PREFERENCES: Record<
   commitment_nudge: { channels: ['web_push'], maxPerDay: 5 },
   drift_alert: { channels: ['email'], maxPerDay: 2 },
   weekly_digest: { channels: ['email'], maxPerDay: 1 },
+  // Safety-critical and rare: reach the owner on every channel, never capped.
+  dead_mans_switch: { channels: ['web_push', 'email'], maxPerDay: null },
 };
 
 /** The default per-category preference array, in stable category order. */
