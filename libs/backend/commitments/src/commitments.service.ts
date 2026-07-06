@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Repository } from 'typeorm';
+import { AiConfigService } from '@plaudern/ai-config';
 import { InboxService, SelfProfileService } from '@plaudern/inbox';
 import type {
   CommitmentDto,
@@ -60,14 +61,15 @@ export class CommitmentsService {
     @InjectRepository(InboxItemEntity)
     private readonly items: Repository<InboxItemEntity>,
     private readonly selfProfile: SelfProfileService,
+    private readonly aiConfig: AiConfigService,
   ) {}
 
   /**
-   * Whether commitment extraction is configured (COMMITMENTS_API_KEY present,
-   * or COMMITMENTS_ENABLED=true for keyless local endpoints like Ollama).
+   * Whether commitment extraction is configured — a provider is assigned to the
+   * `commitments` capability in the user's Settings → AI.
    */
-  get enabled(): boolean {
-    return this.provider.enabled;
+  isEnabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'commitments');
   }
 
   // ---- Pipeline ----
@@ -78,9 +80,9 @@ export class CommitmentsService {
    * history); persisted commitments are upserted so the user's statuses survive.
    */
   async retry(userId: string, inboxItemId: string): Promise<string> {
-    if (!this.provider.enabled) {
+    if (!(await this.isEnabled(userId))) {
       throw new BadRequestException(
-        'commitment extraction is not configured (set COMMITMENTS_API_KEY, or COMMITMENTS_ENABLED=true for keyless local endpoints such as Ollama)',
+        'commitment extraction is not configured — assign a provider to the commitments capability in Settings → AI',
       );
     }
     if (!(await this.selfProfile.hasOwner(userId))) {

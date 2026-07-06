@@ -80,7 +80,7 @@ export class TopicDocumentProcessor {
       const result = await runWithAiAudit(
         { userId: job.userId, itemId: null, kind: 'topic-document' },
         () =>
-          this.provider.generate({
+          this.provider.generate(job.userId, {
             topicName: topic.name,
             topicDescription: topic.description,
             sources: sources.map((s) => ({

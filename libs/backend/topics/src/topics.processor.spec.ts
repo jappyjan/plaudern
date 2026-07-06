@@ -56,9 +56,8 @@ function fakeProvider(
   const calls: TopicClassificationInput[] = [];
   return {
     id: 'test:classifier',
-    enabled: true,
     calls,
-    classify: async (input) => {
+    classify: async (_userId: string, input: TopicClassificationInput) => {
       calls.push(input);
       return respond(input);
     },

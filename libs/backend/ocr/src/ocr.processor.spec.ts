@@ -34,6 +34,11 @@ function fakeInbox(): {
     async setExtractionStatus() {
       /* no-op */
     },
+    // The processor loads the item to attribute the per-user AI call (OcrJob
+    // carries no userId).
+    async getItemById(id: string) {
+      return { id, userId: 'user-1' };
+    },
     async completeExtraction(id: string, result: { status: string; content?: string }) {
       completed.push({ id, result });
     },
@@ -44,7 +49,6 @@ function fakeInbox(): {
 function fakeProvider(result: { text: string; language?: string }): OcrProvider {
   return {
     id: 'test:ocr',
-    enabled: true,
     recognize: async () => result,
   };
 }

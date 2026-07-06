@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { AiConfigService } from '@plaudern/ai-config';
 import type { Extractor, ExtractorDependency } from '@plaudern/inbox';
 import type { InboxItemEntity } from '@plaudern/persistence';
 import { RemindersService, REMINDERS_EXTRACTOR_VERSION } from './reminders.service';
@@ -18,10 +19,13 @@ export class RemindersExtractor implements Extractor {
     { kind: 'transcription', requires: 'succeeded' },
   ];
 
-  constructor(private readonly reminders: RemindersService) {}
+  constructor(
+    private readonly reminders: RemindersService,
+    private readonly aiConfig: AiConfigService,
+  ) {}
 
-  enabled(): boolean {
-    return this.reminders.enabled;
+  enabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'reminders');
   }
 
   appliesTo(item: InboxItemEntity): boolean {

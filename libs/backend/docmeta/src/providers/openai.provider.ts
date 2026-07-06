@@ -1,5 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable } from '@nestjs/common';
+import { AiConfigService, OpenAiChatClient } from '@plaudern/ai-config';
 import { extractedDocMetaSchema, type ExtractedDocMeta } from '@plaudern/contracts';
 import type {
   DocMetaInput,
@@ -7,86 +7,41 @@ import type {
   DocMetaResult,
 } from '../docmeta.provider';
 
-interface ChatChoice {
-  message?: { content?: string | null };
-}
-interface ChatResponse {
-  choices?: ChatChoice[];
-  model?: string;
-}
-
 /**
  * Extracts structured document metadata from OCR text via an OpenAI-compatible
- * `/chat/completions` endpoint. Defaults to DeepSeek (`deepseek-chat`) — the
- * cheapest capable text option — since it reads the OCR TEXT, not the image;
- * override DOCMETA_BASE_URL/MODEL for another provider (incl. a local Ollama
- * server), mirroring the reminders/decisions extractors.
+ * `/chat/completions` endpoint. The endpoint/model come from the user's
+ * DB-backed AI config (`@plaudern/ai-config`, capability `docmeta`) — it reads
+ * the OCR TEXT, not the image, so any provider exposing the OpenAI schema works
+ * (DeepSeek, OpenAI, OpenRouter, a local Ollama/llama.cpp server, …).
  */
 @Injectable()
 export class OpenAiDocMetaProvider implements DocMetaProvider {
-  readonly id: string;
-  private readonly logger = new Logger(OpenAiDocMetaProvider.name);
-  private readonly baseUrl: string;
-  private readonly apiKey: string;
-  private readonly model: string;
-  private readonly timeoutMs: number;
-  private readonly explicitlyEnabled: boolean;
+  readonly id = 'openai';
 
-  constructor(config: ConfigService) {
-    this.baseUrl = config
-      .get<string>('DOCMETA_BASE_URL', 'https://api.deepseek.com/v1')
-      .replace(/\/+$/, '');
-    this.apiKey = config.get<string>('DOCMETA_API_KEY', '');
-    this.model = config.get<string>('DOCMETA_MODEL', 'deepseek-chat');
-    this.timeoutMs = Number(config.get<string>('DOCMETA_TIMEOUT_MS', String(2 * 60_000)));
-    this.explicitlyEnabled = config.get<string>('DOCMETA_ENABLED', 'false') === 'true';
-    this.id = `openai:${this.model}`;
-  }
+  constructor(
+    private readonly aiConfig: AiConfigService,
+    private readonly chat: OpenAiChatClient,
+  ) {}
 
-  get enabled(): boolean {
-    return this.apiKey.length > 0 || this.explicitlyEnabled;
-  }
-
-  async extract(input: DocMetaInput): Promise<DocMetaResult> {
-    if (!this.enabled) {
+  async extract(userId: string, input: DocMetaInput): Promise<DocMetaResult> {
+    const config = await this.aiConfig.resolve(userId, 'docmeta');
+    if (!config) {
       throw new Error(
-        'document-metadata extraction is disabled — set DOCMETA_API_KEY (cloud endpoints) or ' +
-          'DOCMETA_ENABLED=true (keyless local endpoints such as Ollama) to enable it',
+        'document-metadata extraction is not configured — assign a provider to the docmeta ' +
+          'capability in Settings → AI',
       );
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    try {
-      const headers: Record<string, string> = { 'content-type': 'application/json' };
-      if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
-      const res = await fetch(`${this.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: this.model,
-          temperature: 0,
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
-            { role: 'user', content: buildUserPrompt(input) },
-          ],
-        }),
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        throw new Error(
-          `document-metadata request failed: ${res.status} ${body.slice(0, 500)}`,
-        );
-      }
-      const json = (await res.json()) as ChatResponse;
-      const content = json.choices?.[0]?.message?.content ?? '';
-      const docMeta = parseDocMetaResponse(content);
-      return { docMeta, model: json.model ?? this.model, raw: json };
-    } finally {
-      clearTimeout(timer);
-    }
+    const response = await this.chat.chat(config, {
+      temperature: 0,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: buildUserPrompt(input) },
+      ],
+    });
+    const docMeta = parseDocMetaResponse(this.chat.contentOf(response));
+    return { docMeta, model: response.model ?? config.model, raw: response };
   }
 }
 

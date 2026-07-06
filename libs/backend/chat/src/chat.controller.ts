@@ -29,10 +29,10 @@ import { ChatService } from './chat.service';
 export class ChatController {
   constructor(private readonly chat: ChatService) {}
 
-  /** Whether chat can run (disabled until a CHAT_/SUMMARIZATION_ key exists). */
+  /** Whether chat can run (a provider is assigned to the chat capability). */
   @Get('status')
-  status(): ChatStatusDto {
-    return this.chat.status();
+  status(@CurrentUser() user: AuthenticatedUser): Promise<ChatStatusDto> {
+    return this.chat.status(user.id);
   }
 
   @Post()

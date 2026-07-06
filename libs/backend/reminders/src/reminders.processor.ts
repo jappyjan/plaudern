@@ -45,7 +45,7 @@ export class RemindersProcessor {
 
       const result = await runWithAiAudit(
         { userId: item.userId, itemId: item.id, kind: 'reminders' },
-        () => this.provider.extract(input),
+        () => this.provider.extract(item.userId, input),
       );
       const occurredAt = input.occurredAt ?? toIso(item.occurredAt);
       const reminderCount = await this.persistence.persist(

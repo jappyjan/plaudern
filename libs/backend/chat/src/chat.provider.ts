@@ -19,9 +19,7 @@ export interface ChatCompletionResult {
  */
 export interface ChatCompletionProvider {
   readonly id: string;
-  /** Whether the provider is configured enough to run (e.g. has an API key). */
-  readonly enabled: boolean;
-  complete(messages: ChatCompletionMessage[]): Promise<ChatCompletionResult>;
+  complete(userId: string, messages: ChatCompletionMessage[]): Promise<ChatCompletionResult>;
 }
 
 export const CHAT_COMPLETION_PROVIDER = Symbol('CHAT_COMPLETION_PROVIDER');

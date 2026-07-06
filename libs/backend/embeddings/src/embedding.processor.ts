@@ -43,7 +43,7 @@ export class EmbeddingProcessor {
       // provider adapter can audit the bytes it sends (JJ-42).
       const { vectors, model, dimensions } = await runWithAiAudit(
         { userId: item.userId, itemId: item.id, kind: 'embedding' },
-        () => this.provider.embed(chunks.map((c) => c.text)),
+        () => this.provider.embed(item.userId, chunks.map((c) => c.text)),
       );
 
       const rows = chunks.map((chunk, i) =>

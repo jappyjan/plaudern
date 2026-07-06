@@ -13,6 +13,7 @@ import type {
   ExtractionStatus,
   ItemDocMetaResponse,
 } from '@plaudern/contracts';
+import { AiConfigService } from '@plaudern/ai-config';
 import { InboxService } from '@plaudern/inbox';
 import {
   DocumentMetadataEntity,
@@ -45,6 +46,7 @@ export const DOCMETA_EXTRACTOR_VERSION = 2;
 export class DocMetaService {
   constructor(
     private readonly inbox: InboxService,
+    private readonly aiConfig: AiConfigService,
     @Inject(DOCMETA_PROVIDER) private readonly provider: DocMetaProvider,
     @Inject(DOCMETA_QUEUE) private readonly queue: DocMetaQueue,
     @InjectRepository(DocumentMetadataEntity)
@@ -53,9 +55,9 @@ export class DocMetaService {
     private readonly items: Repository<InboxItemEntity>,
   ) {}
 
-  /** Whether docmeta extraction is configured (DOCMETA_API_KEY / DOCMETA_ENABLED). */
-  get enabled(): boolean {
-    return this.provider.enabled;
+  /** Whether docmeta extraction is configured for this user. */
+  isEnabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'docmeta');
   }
 
   // ---- Pipeline ----
@@ -74,9 +76,9 @@ export class DocMetaService {
 
   /** Manually (re)run docmeta for an item — e.g. after a failure or model change. */
   async retry(userId: string, inboxItemId: string): Promise<string> {
-    if (!this.provider.enabled) {
+    if (!(await this.aiConfig.isEnabled(userId, 'docmeta'))) {
       throw new BadRequestException(
-        'document-metadata extraction is not configured (set DOCMETA_API_KEY, or DOCMETA_ENABLED=true for keyless local endpoints)',
+        'document-metadata extraction is not configured — assign a provider to the docmeta capability in Settings → AI',
       );
     }
     const item = await this.inbox.getItem(userId, inboxItemId);

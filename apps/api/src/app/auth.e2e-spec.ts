@@ -18,6 +18,7 @@ import { AuthService, SESSION_COOKIE, SessionService } from '@plaudern/auth';
 import { DEFAULT_USER_ID, InboxItemEntity, UserEntity } from '@plaudern/persistence';
 import { InMemoryStorageService, StorageService } from '@plaudern/storage';
 import { createE2eApp } from '../testing/e2e-app';
+import { seedAiCapability } from '../testing/seed-ai-config';
 
 describe('Authentication & multi-user isolation (e2e, Path A)', () => {
   let app: INestApplication;
@@ -143,6 +144,10 @@ describe('Authentication & multi-user isolation (e2e, Path A)', () => {
       const alice = await createUserSession('alice');
       const bob = await createUserSession('bob');
       const server = app.getHttpServer();
+
+      // Diarization (which mints Alice's voice profiles below) is gated on the
+      // speaker_id capability being configured for that specific user.
+      await seedAiCapability(app, 'speaker_id', { userId: alice.userId });
 
       // Alice ingests an audio item end to end.
       const audio = Buffer.from('alice-private-audio');

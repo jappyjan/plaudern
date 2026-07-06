@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { DataSource } from 'typeorm';
 import { ALL_ENTITIES, ExtractedPayloadEntity, InboxItemEntity } from '@plaudern/persistence';
 import type { InboxService } from '@plaudern/inbox';
+import type { AiConfigService } from '@plaudern/ai-config';
 import type { ExtractionKind } from '@plaudern/contracts';
 import type { EntityExtractionProvider } from './entities.provider';
 import type { EntityExtractionJob, EntityExtractionQueue } from './entities.job';
@@ -32,12 +33,20 @@ function fakeInbox(dataSource: DataSource): InboxService {
   } as unknown as InboxService;
 }
 
-function fakeProvider(enabled = true): EntityExtractionProvider {
+function fakeProvider(): EntityExtractionProvider {
   return {
     id: 'test:entities',
-    enabled,
     extract: async () => ({ entities: [] }),
   };
+}
+
+/** Enablement now comes from AiConfigService (capability entity_extraction), not the provider. */
+function fakeAiConfig(enabled = true): AiConfigService {
+  return {
+    isEnabled: async () => enabled,
+    resolve: async () => (enabled ? ({} as never) : null),
+    invalidate() {},
+  } as unknown as AiConfigService;
 }
 
 describe('EntitiesService', () => {
@@ -45,13 +54,13 @@ describe('EntitiesService', () => {
   let service: EntitiesService;
   let enqueued: EntityExtractionJob[];
 
-  function buildService(provider: EntityExtractionProvider = fakeProvider()): EntitiesService {
+  function buildService(enabled = true): EntitiesService {
     const queue: EntityExtractionQueue = {
       enqueue: async (job) => {
         enqueued.push(job);
       },
     };
-    return new EntitiesService(fakeInbox(dataSource), provider, queue);
+    return new EntitiesService(fakeInbox(dataSource), fakeAiConfig(enabled), fakeProvider(), queue);
   }
 
   beforeEach(async () => {
@@ -119,7 +128,7 @@ describe('EntitiesService', () => {
     });
 
     it('rejects when entity extraction is not configured', async () => {
-      service = buildService(fakeProvider(false));
+      service = buildService(false);
       const item = await createItem();
       await createExtraction(item, 'transcription', 'succeeded');
       await expect(service.retry(USER, item)).rejects.toBeInstanceOf(BadRequestException);

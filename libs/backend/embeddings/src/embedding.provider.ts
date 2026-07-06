@@ -21,12 +21,10 @@ export interface EmbeddingResult {
  */
 export interface EmbeddingProvider {
   readonly id: string;
-  /** Whether the provider is configured enough to run (e.g. has an API key). */
-  readonly enabled: boolean;
-  /** Dimension the provider emits — used to validate/allocate the vector column. */
-  readonly dimensions: number;
+  /** Whether embeddings are configured for this user (per-user DB AI config). */
+  isEnabled(userId: string): Promise<boolean>;
   /** Embed a batch of texts; returns one vector per input, order preserved. */
-  embed(texts: string[]): Promise<EmbeddingResult>;
+  embed(userId: string, texts: string[]): Promise<EmbeddingResult>;
 }
 
 export const EMBEDDING_PROVIDER = Symbol('EMBEDDING_PROVIDER');

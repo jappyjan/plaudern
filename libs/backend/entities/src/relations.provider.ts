@@ -32,9 +32,7 @@ export interface RelationExtractionResult {
  */
 export interface RelationExtractionProvider {
   readonly id: string;
-  /** Whether the provider is configured enough to run (e.g. has an API key). */
-  readonly enabled: boolean;
-  extract(input: RelationExtractionInput): Promise<RelationExtractionResult>;
+  extract(userId: string, input: RelationExtractionInput): Promise<RelationExtractionResult>;
 }
 
 export const RELATION_EXTRACTION_PROVIDER = Symbol('RELATION_EXTRACTION_PROVIDER');

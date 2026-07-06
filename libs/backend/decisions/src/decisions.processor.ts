@@ -48,7 +48,7 @@ export class DecisionsProcessor {
 
       const result = await runWithAiAudit(
         { userId: item.userId, itemId: item.id, kind: 'decisions' },
-        () => this.provider.extract(input),
+        () => this.provider.extract(item.userId, input),
       );
       const decisionCount = await this.persistence.persist(
         item.userId,

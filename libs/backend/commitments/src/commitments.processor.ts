@@ -55,7 +55,7 @@ export class CommitmentsProcessor {
         ctx.kind === 'ready'
           ? await runWithAiAudit(
               { userId: item.userId, itemId: item.id, kind: 'commitments' },
-              () => this.provider.extract(ctx.input),
+              () => this.provider.extract(item.userId, ctx.input),
             )
           : { commitments: [], model: this.provider.id };
       const commitmentCount = await this.persistence.persist(

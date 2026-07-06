@@ -112,8 +112,8 @@ export class TasksRegistryService {
 
     // Embed all titles up front (one request). If embeddings are unconfigured or
     // the request fails, every vector stays null and we dedupe on text alone.
-    const vectors = await this.embedTitles(cleaned.map((c) => c.title));
-    const model = this.embeddings.enabled ? this.embeddings.id : null;
+    const vectors = await this.embedTitles(userId, cleaned.map((c) => c.title));
+    const model = (await this.embeddings.isEnabled(userId)) ? this.embeddings.id : null;
 
     const cited = new Set<string>();
     for (let i = 0; i < cleaned.length; i++) {
@@ -232,12 +232,12 @@ export class TasksRegistryService {
   }
 
   /** Embed the candidate titles; returns a null per title when unavailable. */
-  private async embedTitles(titles: string[]): Promise<(number[] | null)[]> {
-    if (!this.embeddings.enabled || titles.length === 0) {
+  private async embedTitles(userId: string, titles: string[]): Promise<(number[] | null)[]> {
+    if (titles.length === 0 || !(await this.embeddings.isEnabled(userId))) {
       return titles.map(() => null);
     }
     try {
-      const { vectors } = await this.embeddings.embed(titles);
+      const { vectors } = await this.embeddings.embed(userId, titles);
       return titles.map((_, i) => (vectors[i]?.length ? vectors[i] : null));
     } catch (err) {
       this.logger.warn(

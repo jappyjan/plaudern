@@ -50,7 +50,7 @@ export class TasksProcessor {
         ctx.kind === 'ready'
           ? await runWithAiAudit(
               { userId: item.userId, itemId: item.id, kind: 'tasks' },
-              () => this.provider.extract(ctx.input),
+              () => this.provider.extract(item.userId, ctx.input),
             )
           : { tasks: [], model: this.provider.id };
       const segments = transcriptionSegments(item);

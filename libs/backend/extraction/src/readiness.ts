@@ -32,16 +32,18 @@ export type Readiness =
  * Pure function so it is unit-testable and shared by the event-driven
  * pipeline and backfill runs.
  */
-export function evaluateReadiness(
+export async function evaluateReadiness(
   extractor: Extractor,
   item: InboxItemEntity,
   graph: ExtractorGraph,
-): Readiness {
+): Promise<Readiness> {
   let generationTs = 0;
   for (const dep of extractor.dependsOn) {
     const depExtractor = graph.get(dep.kind);
     const depApplies =
-      depExtractor !== undefined && depExtractor.enabled() && depExtractor.appliesTo(item);
+      depExtractor !== undefined &&
+      (await depExtractor.enabled(item.userId)) &&
+      depExtractor.appliesTo(item);
     const latest = latestOfKind(item.extractions ?? [], dep.kind);
 
     if (!latest) {

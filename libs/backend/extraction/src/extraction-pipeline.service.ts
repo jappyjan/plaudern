@@ -77,7 +77,7 @@ export class ExtractionPipelineService implements OnModuleInit, OnModuleDestroy 
    */
   async processCommitted(item: InboxItemEntity): Promise<void> {
     for (const extractor of this.graph.roots()) {
-      if (!extractor.enabled() || !extractor.appliesTo(item)) continue;
+      if (!(await extractor.enabled(item.userId)) || !extractor.appliesTo(item)) continue;
       await extractor.enqueue(item);
     }
   }
@@ -89,15 +89,15 @@ export class ExtractionPipelineService implements OnModuleInit, OnModuleDestroy 
    * "run each step exactly once per input generation".
    */
   private async maybeRun(inboxItemId: string, extractor: Extractor): Promise<void> {
-    if (!extractor.enabled()) return;
     const key = `${inboxItemId}:${extractor.kind}`;
     if (this.evaluating.has(key)) return;
     this.evaluating.add(key);
     try {
       const item = await this.inbox.getItemById(inboxItemId);
       if (!item || !extractor.appliesTo(item)) return;
+      if (!(await extractor.enabled(item.userId))) return;
 
-      const readiness = evaluateReadiness(extractor, item, this.graph);
+      const readiness = await evaluateReadiness(extractor, item, this.graph);
       if (!readiness.ready) return;
       if (isGenerationCovered(item.extractions ?? [], extractor.kind, readiness.generationTs)) {
         return; // this generation is already extracted or in progress

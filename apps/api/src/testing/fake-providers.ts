@@ -45,7 +45,15 @@ const voiceprintOf = (bytes: Buffer) => `vp:${sha(bytes)}`;
 export class FakeTranscriptionProvider implements TranscriptionProvider {
   readonly id = 'fake-transcription';
 
-  async transcribe(input: TranscriptionInput): Promise<TranscriptionResult> {
+  async isEnabled(): Promise<boolean> {
+    return true;
+  }
+
+  async providerId(): Promise<string> {
+    return this.id;
+  }
+
+  async transcribe(_userId: string, input: TranscriptionInput): Promise<TranscriptionResult> {
     return {
       text: `[test transcription, ${input.contentType}]`,
       language: 'en',
@@ -146,9 +154,8 @@ export class FakePyannoteAiClient {
  */
 export class FakeSummarizationProvider implements SummarizationProvider {
   readonly id = 'fake-summarization';
-  readonly enabled = true;
 
-  async summarize(input: SummarizationInput): Promise<SummarizationResult> {
+  async summarize(_userId: string, input: SummarizationInput): Promise<SummarizationResult> {
     const mentions = input.speakers.map((s) => `@[${s.label}]`).join(' and ');
     const markdown = [
       '## Summary',
@@ -184,10 +191,13 @@ export const FAKE_EMBEDDING_DIMENSIONS = 1536;
  */
 export class FakeEmbeddingProvider implements EmbeddingProvider {
   readonly id = 'fake-embedding';
-  readonly enabled = true;
-  readonly dimensions = FAKE_EMBEDDING_DIMENSIONS;
+  private readonly dimensions = FAKE_EMBEDDING_DIMENSIONS;
 
-  async embed(texts: string[]): Promise<EmbeddingResult> {
+  async isEnabled(): Promise<boolean> {
+    return true;
+  }
+
+  async embed(_userId: string, texts: string[]): Promise<EmbeddingResult> {
     return {
       vectors: texts.map((text) => deterministicVector(text, this.dimensions)),
       model: 'fake-embedding-model',

@@ -189,6 +189,18 @@ import {
   type ChatConversationDetailDto,
   type ChatConversationListResponse,
   type ChatStatusDto,
+  aiProviderSchema,
+  aiProviderListSchema,
+  aiCapabilitiesResponseSchema,
+  aiCapabilitySettingSchema,
+  type AiProviderDto,
+  type AiProviderListDto,
+  type AiCapabilitiesResponseDto,
+  type AiCapabilitySettingDto,
+  type AiCapability,
+  type CreateAiProviderRequest,
+  type UpdateAiProviderRequest,
+  type UpdateAiCapabilityRequest,
   auditLogListResponseSchema,
   panicDeleteResponseSchema,
   deadMansSwitchSchema,
@@ -1284,6 +1296,55 @@ export async function getChatConversation(id: string): Promise<ChatConversationD
 
 export async function deleteChatConversation(id: string): Promise<void> {
   return requestVoid(`/chat/conversations/${id}`, { method: 'DELETE' });
+}
+
+// ---- Per-user AI configuration: provider connections + capability assignments ----
+
+/** Every saved AI provider connection (credentials are write-only). */
+export async function listAiProviders(): Promise<AiProviderListDto> {
+  return aiProviderListSchema.parse(await requestJson('/settings/ai/providers'));
+}
+
+/** Save a new provider connection; omit/blank `apiKey` for keyless local endpoints. */
+export async function createAiProvider(req: CreateAiProviderRequest): Promise<AiProviderDto> {
+  return aiProviderSchema.parse(
+    await requestJson('/settings/ai/providers', { method: 'POST', body: JSON.stringify(req) }),
+  );
+}
+
+/** Partial update; omit `apiKey` to keep the stored key, '' to clear it. */
+export async function updateAiProvider(
+  id: string,
+  req: UpdateAiProviderRequest,
+): Promise<AiProviderDto> {
+  return aiProviderSchema.parse(
+    await requestJson(`/settings/ai/providers/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(req),
+    }),
+  );
+}
+
+export async function deleteAiProvider(id: string): Promise<void> {
+  return requestVoid(`/settings/ai/providers/${id}`, { method: 'DELETE' });
+}
+
+/** The capability catalog plus this user's per-capability provider assignments. */
+export async function getAiCapabilities(): Promise<AiCapabilitiesResponseDto> {
+  return aiCapabilitiesResponseSchema.parse(await requestJson('/settings/ai/capabilities'));
+}
+
+/** Assign/tune one capability (provider, model, timeout, enabled, params). */
+export async function updateAiCapability(
+  capability: AiCapability,
+  req: UpdateAiCapabilityRequest,
+): Promise<AiCapabilitySettingDto> {
+  return aiCapabilitySettingSchema.parse(
+    await requestJson(`/settings/ai/capabilities/${capability}`, {
+      method: 'PUT',
+      body: JSON.stringify(req),
+    }),
+  );
 }
 
 // ---- AI-provider audit log & data sovereignty (JJ-42) ----

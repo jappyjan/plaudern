@@ -66,14 +66,20 @@ export class ExtractorGraph {
     return this.dependents.get(kind) ?? [];
   }
 
-  /** Introspection DTO for GET /v1/extractions/graph. */
-  toDto(): ExtractorNodeDto[] {
-    return this.all().map((extractor) => ({
-      kind: extractor.kind,
-      version: extractor.version,
-      enabled: extractor.enabled(),
-      dependsOn: extractor.dependsOn.map((dep) => ({ kind: dep.kind, requires: dep.requires })),
-    }));
+  /**
+   * Introspection DTO for GET /v1/extractions/graph. Per-user, because
+   * enablement is now per-user (DB-backed AI config): `enabled` reflects
+   * whether this user has configured the capability.
+   */
+  async toDto(userId: string): Promise<ExtractorNodeDto[]> {
+    return Promise.all(
+      this.all().map(async (extractor) => ({
+        kind: extractor.kind,
+        version: extractor.version,
+        enabled: await extractor.enabled(userId),
+        dependsOn: extractor.dependsOn.map((dep) => ({ kind: dep.kind, requires: dep.requires })),
+      })),
+    );
   }
 
   /** Kahn's algorithm: if not every node can be topologically ordered, there is a cycle. */

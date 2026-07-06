@@ -6,15 +6,16 @@
 # Run only the infra (and api/web via `nx serve api` / `nx serve web`) with:
 #   docker compose up -d postgres minio minio-init redis
 #
-# Transcription (ElevenLabs Scribe) and diarization (pyannoteAI) run on hosted
-# APIs: set ELEVENLABS_API_KEY and PYANNOTEAI_API_KEY. Without keys the stack
-# still works — those extraction jobs just fail with a clear error.
+# AI is configured PER USER inside the app (Settings → AI), not via env vars:
+# add a provider connection (DeepSeek/OpenAI/ElevenLabs/pyannoteAI/Ollama/…) and
+# assign it to capabilities (summarization, transcription, diarization, OCR, …).
+# The stack runs with no AI configured — those extraction jobs just no-op until
+# a user sets a provider up.
 #
-# Fully local model tier (no cloud AI at all — see ATT-662/ATT-687): set
-# TRANSCRIPTION_PROVIDER=whisper + WHISPER_BASE_URL, and
-# SUMMARIZATION_ENABLED=true + SUMMARIZATION_BASE_URL pointing at Ollama.
-# Uncomment the `whisper` and `ollama` services below to run both locally
-# alongside this stack.
+# Fully local model tier (no cloud AI at all): uncomment the `whisper` and
+# `ollama` services below, then in Settings → AI add a Whisper provider pointing
+# at http://whisper:8000/v1 (assign it to transcription) and an OpenAI-compatible
+# provider pointing at http://ollama:11434/v1 (assign it to the LLM capabilities).
 services:
   web:
     build:
@@ -75,32 +76,14 @@ services:
       PLAUD_POLL_INTERVAL_MS: ${PLAUD_POLL_INTERVAL_MS:-300000}
       # Calendar feeds: APP_ENCRYPTION_SECRET also encrypts the feed URLs.
       CALENDAR_POLL_INTERVAL_MS: ${CALENDAR_POLL_INTERVAL_MS:-900000}
-      # --- AI summarization ---
-      # Empty API key = summarization disabled (UI just shows the transcript),
-      # unless SUMMARIZATION_ENABLED=true (for keyless local endpoints like
-      # Ollama — see the commented `ollama` service below).
-      # Defaults target DeepSeek; point BASE_URL/MODEL at any OpenAI-compatible
-      # endpoint (OpenAI, OpenRouter, a local Ollama/llama.cpp gateway, …).
-      SUMMARIZATION_ENABLED: ${SUMMARIZATION_ENABLED:-false}
-      SUMMARIZATION_API_KEY: ${SUMMARIZATION_API_KEY:-}
-      SUMMARIZATION_BASE_URL: ${SUMMARIZATION_BASE_URL:-https://api.deepseek.com/v1}
-      SUMMARIZATION_MODEL: ${SUMMARIZATION_MODEL:-deepseek-chat}
-      # --- Transcription ---
-      # elevenlabs = hosted ElevenLabs Scribe API (default, pushes audio bytes
-      #              to ElevenLabs directly; storage stays private)
-      # whisper    = self-hosted Whisper-compatible server (local-model tier,
-      #              see the commented `whisper` service below)
-      TRANSCRIPTION_PROVIDER: ${TRANSCRIPTION_PROVIDER:-elevenlabs}
-      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
-      WHISPER_BASE_URL: ${WHISPER_BASE_URL:-http://whisper:8000/v1}
-      WHISPER_MODEL: ${WHISPER_MODEL:-Systran/faster-whisper-small}
-      # --- Speaker diarization (hosted pyannoteAI API) ---
-      # pyannoteai = diarize + match voices via api.pyannote.ai (default)
-      # off        = disabled
-      # Audio is uploaded to pyannoteAI directly, so storage stays private.
-      SPEAKER_ID_PROVIDER: ${SPEAKER_ID_PROVIDER:-pyannoteai}
-      PYANNOTEAI_API_KEY: ${PYANNOTEAI_API_KEY:-}
-      PYANNOTEAI_MODEL: ${PYANNOTEAI_MODEL:-precision-2}
+      # --- AI configuration ---
+      # NOTE: AI provider credentials and per-capability settings (summarization,
+      # transcription, diarization, embeddings, OCR, and every LLM extractor) are
+      # now configured PER USER in the app, under Settings → AI — NOT via env
+      # vars. There is nothing to set here. On upgrade from an env-based install,
+      # the old AI env is imported once into the DB (AiConfigImportService).
+      # Future maintainers: do NOT reintroduce AI env vars — add a capability to
+      # the DB-backed registry instead (libs/backend/ai-config).
       # --- Native Google Calendar (optional) ---
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
@@ -170,13 +153,12 @@ services:
       timeout: 5s
       retries: 10
 
-  # --- Local model tier (fully self-hostable, no cloud AI — ATT-662/ATT-687) ---
-  # Uncomment both services below, then set on the `api` service:
-  #   TRANSCRIPTION_PROVIDER=whisper
-  #   SUMMARIZATION_ENABLED=true
-  #   SUMMARIZATION_BASE_URL=http://ollama:11434/v1
-  #   SUMMARIZATION_MODEL=llama3.1   # or whichever model you `ollama pull`
-  # (WHISPER_BASE_URL already defaults to http://whisper:8000/v1 above.)
+  # --- Local model tier (fully self-hostable, no cloud AI) ---
+  # Uncomment both services below, then configure them PER USER in Settings → AI:
+  #   - a Whisper provider at http://whisper:8000/v1  → assign to transcription
+  #   - an OpenAI-compatible provider at http://ollama:11434/v1 (model e.g.
+  #     llama3.1, `ollama pull` it first) → assign to summarization and the
+  #     other LLM capabilities.
 
   # whisper:
   #   # OpenAI-compatible `/v1/audio/transcriptions` server; no model weights

@@ -14,6 +14,7 @@ import {
   JournalDocumentEntity,
 } from '@plaudern/persistence';
 import { analyzeCitationCoverage } from '@plaudern/citations';
+import { AiConfigService } from '@plaudern/ai-config';
 import { JOURNAL_PROVIDER, type JournalProvider } from './journal.provider';
 import { JOURNAL_QUEUE, type JournalQueue } from './journal.job';
 import { previewOf } from './journal-context';
@@ -49,6 +50,7 @@ export class JournalService {
   private readonly logger = new Logger(JournalService.name);
 
   constructor(
+    private readonly aiConfig: AiConfigService,
     @Inject(JOURNAL_PROVIDER)
     private readonly provider: JournalProvider,
     @Inject(JOURNAL_QUEUE)
@@ -61,9 +63,9 @@ export class JournalService {
     private readonly events: Repository<CalendarEventEntity>,
   ) {}
 
-  /** Whether journal composition is configured (JOURNAL_API_KEY, …). */
-  get enabled(): boolean {
-    return this.provider.enabled;
+  /** Whether journal composition is configured for this user. */
+  isEnabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'journal');
   }
 
   // ---- Write path ----
@@ -84,7 +86,7 @@ export class JournalService {
     periodType: JournalPeriodType,
     periodKey: string,
   ): Promise<string | null> {
-    if (!this.provider.enabled) return null;
+    if (!(await this.isEnabled(userId))) return null;
 
     const inFlight = await this.documents.findOne({
       where: { userId, periodType, periodKey, status: In(['queued', 'processing']) },
@@ -129,9 +131,9 @@ export class JournalService {
     periodType: JournalPeriodType,
     periodKey: string,
   ): Promise<string | null> {
-    if (!this.provider.enabled) {
+    if (!(await this.isEnabled(userId))) {
       throw new BadRequestException(
-        'auto-journal is not configured (set JOURNAL_API_KEY, or JOURNAL_ENABLED=true for keyless local endpoints such as Ollama)',
+        'auto-journal is not configured — assign a provider to the journal capability in Settings → AI',
       );
     }
     if (!isValidPeriodKey(periodType, periodKey)) {
@@ -183,7 +185,7 @@ export class JournalService {
       error: latest?.status === 'failed' ? latest.error : null,
       generatedAt: current ? iso(current.updatedAt) : null,
       updatedAt: latest ? iso(latest.updatedAt) : null,
-      enabled: this.enabled,
+      enabled: await this.isEnabled(userId),
     };
   }
 
@@ -212,7 +214,7 @@ export class JournalService {
         generatedAt: iso(r.updatedAt),
       });
     }
-    return { periodType, periods, enabled: this.enabled };
+    return { periodType, periods, enabled: await this.isEnabled(userId) };
   }
 
   /** Metadata for every succeeded version of a period's entry, newest first. */

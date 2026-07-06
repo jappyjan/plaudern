@@ -6,6 +6,7 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "dependencies": {
+    "@plaudern/ai-config": "workspace:*",
     "@plaudern/audit": "workspace:*",
     "@plaudern/contracts": "workspace:*",
     "@plaudern/inbox": "workspace:*",

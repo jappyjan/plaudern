@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
 } from '@nestjs/common';
+import { AiConfigService } from '@plaudern/ai-config';
 import { InboxService } from '@plaudern/inbox';
 import {
   summaryPayloadSchema,
@@ -39,15 +40,16 @@ export class SummarizationService {
   constructor(
     private readonly inbox: InboxService,
     private readonly context: SummaryContextService,
+    private readonly aiConfig: AiConfigService,
     @Inject(SUMMARIZATION_PROVIDER)
     private readonly provider: SummarizationProvider,
     @Inject(SUMMARIZATION_QUEUE)
     private readonly queue: SummarizationQueue,
   ) {}
 
-  /** Whether summarization is configured (SUMMARIZATION_API_KEY present). */
-  get enabled(): boolean {
-    return this.provider.enabled;
+  /** Whether summarization is configured for this user. */
+  isEnabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'summarization');
   }
 
   /**
@@ -55,8 +57,10 @@ export class SummarizationService {
    * get a fresh take. Appends a new summary row; older ones stay in history.
    */
   async retrySummary(userId: string, inboxItemId: string): Promise<string> {
-    if (!this.provider.enabled) {
-      throw new BadRequestException('summarization is not configured (set SUMMARIZATION_API_KEY)');
+    if (!(await this.aiConfig.isEnabled(userId, 'summarization'))) {
+      throw new BadRequestException(
+        'summarization is not configured (assign a provider in Settings → AI)',
+      );
     }
     const item = await this.inbox.getItem(userId, inboxItemId);
     const extractions = item.extractions ?? [];
@@ -117,11 +121,11 @@ export class SummarizationService {
    * (the redaction itself has already taken effect on the transcript read model).
    */
   async regenerateForItems(inboxItemIds: string[]): Promise<void> {
-    if (!this.provider.enabled) return;
     for (const inboxItemId of inboxItemIds) {
       try {
         const item = await this.inbox.getItemById(inboxItemId);
         if (!item) continue;
+        if (!(await this.aiConfig.isEnabled(item.userId, 'summarization'))) continue;
         const transcription = latestOfKind(item.extractions ?? [], 'transcription');
         if (transcription?.status !== 'succeeded') continue;
         const summary = latestOfKind(item.extractions ?? [], 'summary');

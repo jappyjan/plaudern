@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { AiConfigService } from '@plaudern/ai-config';
 import { hasDocumentPayload } from '@plaudern/contracts';
 import type { Extractor, ExtractorDependency } from '@plaudern/inbox';
 import type { InboxItemEntity } from '@plaudern/persistence';
@@ -17,10 +18,13 @@ export class DocMetaExtractor implements Extractor {
   readonly version = DOCMETA_EXTRACTOR_VERSION;
   readonly dependsOn: ExtractorDependency[] = [{ kind: 'ocr', requires: 'succeeded' }];
 
-  constructor(private readonly docmeta: DocMetaService) {}
+  constructor(
+    private readonly docmeta: DocMetaService,
+    private readonly aiConfig: AiConfigService,
+  ) {}
 
-  enabled(): boolean {
-    return this.docmeta.enabled;
+  enabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'docmeta');
   }
 
   appliesTo(item: InboxItemEntity): boolean {

@@ -50,9 +50,10 @@ export interface CommitmentExtractionResult {
  */
 export interface CommitmentExtractionProvider {
   readonly id: string;
-  /** Whether the provider is configured enough to run (e.g. has an API key). */
-  readonly enabled: boolean;
-  extract(input: CommitmentExtractionInput): Promise<CommitmentExtractionResult>;
+  extract(
+    userId: string,
+    input: CommitmentExtractionInput,
+  ): Promise<CommitmentExtractionResult>;
 }
 
 export const COMMITMENT_EXTRACTION_PROVIDER = Symbol('COMMITMENT_EXTRACTION_PROVIDER');

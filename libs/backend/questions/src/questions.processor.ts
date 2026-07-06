@@ -48,7 +48,7 @@ export class QuestionsProcessor {
 
       const result = await runWithAiAudit(
         { userId: item.userId, itemId: item.id, kind: 'questions' },
-        () => this.provider.extract(input),
+        () => this.provider.extract(item.userId, input),
       );
       const questionCount = await this.persistence.persist(
         item.userId,

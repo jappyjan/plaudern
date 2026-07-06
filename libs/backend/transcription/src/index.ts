@@ -7,3 +7,4 @@ export * from './transcription.controller';
 export * from './transcription.module';
 export * from './providers/elevenlabs.provider';
 export * from './providers/whisper.provider';
+export * from './providers/transcription-dispatch.provider';

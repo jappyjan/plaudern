@@ -21,8 +21,8 @@ export class ExtractionController {
   ) {}
 
   @Get('graph')
-  getGraph(): ExtractionGraphResponse {
-    return { extractors: this.graph.toDto() };
+  async getGraph(@CurrentUser() user: AuthenticatedUser): Promise<ExtractionGraphResponse> {
+    return { extractors: await this.graph.toDto(user.id) };
   }
 
   @Post('backfills')

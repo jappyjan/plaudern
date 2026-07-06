@@ -1,105 +1,49 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { AiAuditRecorder } from '@plaudern/audit';
+import { AiConfigService, OpenAiChatClient } from '@plaudern/ai-config';
 import type {
   JournalProvider,
   JournalProviderInput,
   JournalProviderResult,
 } from '../journal.provider';
 
-interface ChatChoice {
-  message?: { content?: string | null };
-}
-interface ChatResponse {
-  choices?: ChatChoice[];
-  model?: string;
-}
-
 /**
  * Composes a journal entry via an OpenAI-compatible `/chat/completions`
- * endpoint. Defaults to DeepSeek (`deepseek-chat`) but any provider exposing the
- * OpenAI schema works by overriding JOURNAL_BASE_URL/MODEL, including a local
- * Ollama/llama.cpp gateway (JOURNAL_ENABLED=true for keyless local servers).
- * Only derived text (summaries/transcripts, or the daily entries themselves for
- * a rollup) is sent, never audio, and only to the endpoint the operator
- * configures.
+ * endpoint. The endpoint/model come from the user's DB-backed AI config
+ * (`@plaudern/ai-config`, capability `journal`, which inherits the
+ * summarization assignment when unset). Only derived text
+ * (summaries/transcripts, or the daily entries themselves for a rollup) is
+ * sent, never audio, and only to the configured LLM endpoint.
  */
 @Injectable()
 export class OpenAiJournalProvider implements JournalProvider {
-  readonly id: string;
-  private readonly baseUrl: string;
-  private readonly apiKey: string;
-  private readonly model: string;
-  private readonly timeoutMs: number;
-  private readonly explicitlyEnabled: boolean;
+  readonly id = 'openai';
 
   constructor(
-    config: ConfigService,
-    private readonly audit: AiAuditRecorder,
-  ) {
-    // Falls back to the summarization tier so one DeepSeek key lights up every
-    // LLM feature; JOURNAL_* overrides diverge the model/endpoint per kind.
-    this.baseUrl = config
-      .get<string>(
-        'JOURNAL_BASE_URL',
-        config.get<string>('SUMMARIZATION_BASE_URL', 'https://api.deepseek.com/v1'),
-      )
-      .replace(/\/+$/, '');
-    this.apiKey = config.get<string>(
-      'JOURNAL_API_KEY',
-      config.get<string>('SUMMARIZATION_API_KEY', ''),
-    );
-    this.model = config.get<string>('JOURNAL_MODEL', 'deepseek-chat');
-    this.timeoutMs = Number(config.get<string>('JOURNAL_TIMEOUT_MS', String(3 * 60_000)));
-    this.explicitlyEnabled = config.get<string>('JOURNAL_ENABLED', 'false') === 'true';
-    this.id = `openai:${this.model}`;
-  }
+    private readonly aiConfig: AiConfigService,
+    private readonly chat: OpenAiChatClient,
+  ) {}
 
-  get enabled(): boolean {
-    return this.apiKey.length > 0 || this.explicitlyEnabled;
-  }
-
-  async generate(input: JournalProviderInput): Promise<JournalProviderResult> {
-    if (!this.enabled) {
+  async generate(userId: string, input: JournalProviderInput): Promise<JournalProviderResult> {
+    const config = await this.aiConfig.resolve(userId, 'journal');
+    if (!config) {
       throw new Error(
-        'auto-journal is disabled — set JOURNAL_API_KEY (cloud endpoints) or ' +
-          'JOURNAL_ENABLED=true (keyless local endpoints such as Ollama) to enable it',
+        'auto-journal is not configured — assign a provider to the journal capability in Settings → AI',
       );
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    try {
-      const headers: Record<string, string> = { 'content-type': 'application/json' };
-      if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
-      const endpoint = `${this.baseUrl}/chat/completions`;
-      const body = JSON.stringify({
-        model: this.model,
-        temperature: 0.4,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: systemPrompt(input.periodType) },
-          { role: 'user', content: buildUserPrompt(input) },
-        ],
-      });
-      // Audit the exact bytes leaving the box before they leave (JJ-42).
-      await this.audit.record({ provider: this.id, endpoint, payload: body });
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body,
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        throw new Error(`journal request failed: ${res.status} ${body.slice(0, 500)}`);
-      }
-      const json = (await res.json()) as ChatResponse;
-      const content = json.choices?.[0]?.message?.content ?? '';
-      return { markdown: parseJournalResponse(content), model: json.model ?? this.model, raw: json };
-    } finally {
-      clearTimeout(timer);
-    }
+    const response = await this.chat.chat(config, {
+      temperature: 0.4,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: systemPrompt(input.periodType) },
+        { role: 'user', content: buildUserPrompt(input) },
+      ],
+    });
+    return {
+      markdown: parseJournalResponse(this.chat.contentOf(response)),
+      model: response.model ?? config.model,
+      raw: response,
+    };
   }
 }
 

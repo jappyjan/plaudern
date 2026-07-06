@@ -8,6 +8,7 @@ import {
   TopicEntity,
 } from '@plaudern/persistence';
 import type { InboxService } from '@plaudern/inbox';
+import type { AiConfigService } from '@plaudern/ai-config';
 import type { ExtractionKind, TopicAssignmentDto } from '@plaudern/contracts';
 import type { TopicClassificationProvider } from './topics.provider';
 import type { TopicsJob, TopicsQueue } from './topics.job';
@@ -38,12 +39,20 @@ function fakeInbox(dataSource: DataSource): InboxService {
   } as unknown as InboxService;
 }
 
-function fakeProvider(enabled = true): TopicClassificationProvider {
+function fakeProvider(): TopicClassificationProvider {
   return {
     id: 'test:classifier',
-    enabled,
     classify: async () => ({ assignments: [] }),
   };
+}
+
+/** A minimal AiConfigService whose `topics` capability is on/off. */
+function fakeAiConfig(enabled: boolean): AiConfigService {
+  return {
+    resolve: async () => (enabled ? ({} as never) : null),
+    isEnabled: async () => enabled,
+    invalidate: () => {},
+  } as unknown as AiConfigService;
 }
 
 describe('TopicsService', () => {
@@ -51,7 +60,10 @@ describe('TopicsService', () => {
   let service: TopicsService;
   let enqueued: TopicsJob[];
 
-  function buildService(provider: TopicClassificationProvider = fakeProvider()): TopicsService {
+  function buildService(
+    enabled = true,
+    provider: TopicClassificationProvider = fakeProvider(),
+  ): TopicsService {
     const queue: TopicsQueue = {
       enqueue: async (job) => {
         enqueued.push(job);
@@ -64,6 +76,7 @@ describe('TopicsService', () => {
       dataSource.getRepository(InboxItemEntity),
       provider,
       queue,
+      fakeAiConfig(enabled),
     );
   }
 
@@ -311,7 +324,7 @@ describe('TopicsService', () => {
     });
 
     it('rejects when classification is not configured', async () => {
-      service = buildService(fakeProvider(false));
+      service = buildService(false);
       const item = await createItem();
       await expect(service.retry(USER, item)).rejects.toBeInstanceOf(BadRequestException);
     });

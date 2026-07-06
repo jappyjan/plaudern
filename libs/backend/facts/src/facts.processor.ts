@@ -50,7 +50,7 @@ export class FactsProcessor {
 
       const result = await runWithAiAudit(
         { userId: item.userId, itemId: item.id, kind: 'facts' },
-        () => this.provider.extract(input),
+        () => this.provider.extract(item.userId, input),
       );
       const segments = transcriptionSegments(item);
       const candidates: FactCandidate[] = result.facts.map((fact) => {

@@ -15,7 +15,7 @@ function extractor(
     kind,
     version: 1,
     dependsOn,
-    enabled: () => enabled,
+    enabled: async () => enabled,
     appliesTo: () => true,
     enqueue: async () => 'id',
   };
@@ -50,10 +50,14 @@ function sqliteDataSource(): DataSource {
 }
 
 describe('StartupBackfillService', () => {
-  it('sweeps only ENABLED kinds, in dependency order (upstream first)', async () => {
+  it('sweeps ALL registered kinds, in dependency order (upstream first)', async () => {
+    // Enablement is per-user (DB-backed) now, so the sweep no longer filters
+    // kinds by global enablement — it starts a run for every registered kind in
+    // topological order. Per-item enablement is enforced later by
+    // ExtractionRunsService.shouldEnqueue (keyed by each item's owner).
     const graph = new ExtractorGraph([
       extractor('transcription', true),
-      extractor('diarization', false), // disabled → skipped
+      extractor('diarization', false), // globally "disabled" but still swept
       extractor('summary', true, [
         { kind: 'transcription', requires: 'succeeded' },
         { kind: 'diarization', requires: 'settled' },
@@ -64,8 +68,7 @@ describe('StartupBackfillService', () => {
 
     await svc.sweep();
 
-    expect(calls).toEqual(['transcription', 'summary']);
-    expect(runs.startStartupBackfill).not.toHaveBeenCalledWith('diarization');
+    expect(calls).toEqual(['transcription', 'diarization', 'summary']);
   });
 
   it('does not touch the DB advisory lock on sqlite (single-process dev)', async () => {

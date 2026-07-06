@@ -26,8 +26,8 @@ export class CommitmentsExtractor implements Extractor {
 
   constructor(private readonly commitments: CommitmentsService) {}
 
-  enabled(): boolean {
-    return this.commitments.enabled;
+  enabled(userId: string): Promise<boolean> {
+    return this.commitments.isEnabled(userId);
   }
 
   appliesTo(item: InboxItemEntity): boolean {

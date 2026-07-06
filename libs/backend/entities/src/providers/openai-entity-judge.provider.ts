@@ -1,5 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable } from '@nestjs/common';
+import { AiConfigService, OpenAiChatClient } from '@plaudern/ai-config';
 import { entityTypeSchema, type EntityType } from '@plaudern/contracts';
 import type {
   EntityJudgeDecision,
@@ -9,89 +9,45 @@ import type {
 } from '../entity-judge.provider';
 import { extractJsonObject } from './openai.provider';
 
-interface ChatChoice {
-  message?: { content?: string | null };
-}
-interface ChatResponse {
-  choices?: ChatChoice[];
-  model?: string;
-}
-
 /**
  * Judges whether two extracted entities are the same real-world thing (and, if
  * so, the correct type + which to keep) via an OpenAI-compatible
- * `/chat/completions` endpoint. Configured through ENTITY_JUDGE_* env vars, each
- * falling back to the ENTITY_EXTRACTION_* equivalent — so wherever entity
- * extraction already runs (DeepSeek by default, or a local Ollama), judging
- * works with zero extra setup.
+ * `/chat/completions` endpoint. The endpoint/model come from the user's
+ * DB-backed AI config (`@plaudern/ai-config`, capability `entity_judge`, which
+ * inherits from `entity_extraction` when unset) — so wherever entity extraction
+ * already runs, judging works with zero extra setup.
  *
  * Only the two entities' names/types/aliases (+ optional web snippets) are sent
  * — never transcripts or audio.
  */
 @Injectable()
 export class OpenAiEntityJudgeProvider implements EntityJudgeProvider {
-  readonly id: string;
-  private readonly logger = new Logger(OpenAiEntityJudgeProvider.name);
-  private readonly baseUrl: string;
-  private readonly apiKey: string;
-  private readonly model: string;
-  private readonly timeoutMs: number;
-  private readonly explicitlyEnabled: boolean;
+  readonly id = 'openai';
 
-  constructor(config: ConfigService) {
-    const inherit = (key: string, fallback: string) =>
-      config.get<string>(`ENTITY_JUDGE_${key}`) ??
-      config.get<string>(`ENTITY_EXTRACTION_${key}`, fallback);
-    this.baseUrl = inherit('BASE_URL', 'https://api.deepseek.com/v1').replace(/\/+$/, '');
-    this.apiKey = inherit('API_KEY', '');
-    this.model = inherit('MODEL', 'deepseek-chat');
-    this.timeoutMs = Number(inherit('TIMEOUT_MS', String(60_000)));
-    this.explicitlyEnabled = inherit('ENABLED', 'false') === 'true';
-    this.id = `openai:${this.model}`;
-  }
+  constructor(
+    private readonly aiConfig: AiConfigService,
+    private readonly chat: OpenAiChatClient,
+  ) {}
 
-  get enabled(): boolean {
-    return this.apiKey.length > 0 || this.explicitlyEnabled;
-  }
-
-  async judge(input: EntityJudgeInput): Promise<EntityJudgeResult> {
-    if (!this.enabled) {
+  async judge(userId: string, input: EntityJudgeInput): Promise<EntityJudgeResult> {
+    const config = await this.aiConfig.resolve(userId, 'entity_judge');
+    if (!config) {
       throw new Error(
-        'entity judging is disabled — set ENTITY_JUDGE_API_KEY / ENTITY_EXTRACTION_API_KEY ' +
-          '(cloud) or ENTITY_JUDGE_ENABLED=true (local) to enable it',
+        'entity judging is not configured — assign a provider to the ' +
+          'entity_judge capability in Settings → AI',
       );
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    try {
-      const headers: Record<string, string> = { 'content-type': 'application/json' };
-      if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
-      const res = await fetch(`${this.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: this.model,
-          temperature: 0,
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: JUDGE_SYSTEM_PROMPT },
-            { role: 'user', content: buildJudgePrompt(input) },
-          ],
-        }),
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        throw new Error(`entity judge request failed: ${res.status} ${body.slice(0, 500)}`);
-      }
-      const json = (await res.json()) as ChatResponse;
-      const content = json.choices?.[0]?.message?.content ?? '';
-      const decision = parseJudgeResponse(content, input);
-      return { decision, model: json.model ?? this.model, raw: json };
-    } finally {
-      clearTimeout(timer);
-    }
+    const response = await this.chat.chat(config, {
+      temperature: 0,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: JUDGE_SYSTEM_PROMPT },
+        { role: 'user', content: buildJudgePrompt(input) },
+      ],
+    });
+    const decision = parseJudgeResponse(this.chat.contentOf(response), input);
+    return { decision, model: response.model ?? config.model, raw: response };
   }
 }
 

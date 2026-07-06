@@ -45,6 +45,5 @@ export interface ContactResolutionResult {
 
 export interface ContactResolutionProvider {
   readonly id: string;
-  readonly enabled: boolean;
-  resolve(input: ContactResolutionInput): Promise<ContactResolutionResult>;
+  resolve(userId: string, input: ContactResolutionInput): Promise<ContactResolutionResult>;
 }

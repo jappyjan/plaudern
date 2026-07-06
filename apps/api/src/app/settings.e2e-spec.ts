@@ -14,6 +14,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { PlaudApiClient, type PlaudRecording } from '@plaudern/plaud-sync';
 import { createE2eApp } from '../testing/e2e-app';
+import { seedAiCapability } from '../testing/seed-ai-config';
 
 const RECORDINGS: PlaudRecording[] = [
   {
@@ -57,6 +58,10 @@ describe('Plaud settings + sync (e2e)', () => {
         .overrideProvider(PlaudApiClient)
         .useValue(fakeClient),
     );
+
+    // Imported Plaud audio is transcribed and diarized; diarization is gated on
+    // the speaker_id capability being configured for the test user.
+    await seedAiCapability(app, 'speaker_id');
   });
 
   afterAll(async () => {

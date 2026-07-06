@@ -66,7 +66,7 @@ export class TopicsProcessor {
         const result = await runWithAiAudit(
           { userId: item.userId, itemId: item.id, kind: 'topics' },
           () =>
-            this.provider.classify({
+            this.provider.classify(item.userId, {
               content: content.content,
               language: content.language,
               topics: activeTopics.map((t) => ({

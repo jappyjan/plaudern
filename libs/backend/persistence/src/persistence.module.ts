@@ -2,7 +2,9 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
+  AiCapabilitySettingEntity,
   AiProviderCallEntity,
+  AiProviderEntity,
   AuthSessionEntity,
   CalendarEventEntity,
   CalendarFeedEntity,
@@ -98,6 +100,7 @@ import { DataSovereignty1720000000041 } from './migrations/1720000000041-DataSov
 import { CreateDocumentMetadata1720000000042 } from './migrations/1720000000042-CreateDocumentMetadata';
 import { CreateEntityMergeSuggestions1720000000043 } from './migrations/1720000000043-CreateEntityMergeSuggestions';
 import { CreateItemSensitivity1720000000044 } from './migrations/1720000000044-CreateItemSensitivity';
+import { CreateAiConfig1720000000045 } from './migrations/1720000000045-CreateAiConfig';
 import { AddDocumentDate1720000000046 } from './migrations/1720000000046-AddDocumentDate';
 
 export const ALL_ENTITIES = [
@@ -149,6 +152,8 @@ export const ALL_ENTITIES = [
   NotificationCategoryPreferenceEntity,
   PushSubscriptionEntity,
   NotificationDeliveryEntity,
+  AiProviderEntity,
+  AiCapabilitySettingEntity,
   AiProviderCallEntity,
   DeadMansSwitchEntity,
 ];
@@ -201,6 +206,7 @@ export const ALL_MIGRATIONS = [
   CreateDocumentMetadata1720000000042,
   CreateEntityMergeSuggestions1720000000043,
   CreateItemSensitivity1720000000044,
+  CreateAiConfig1720000000045,
   AddDocumentDate1720000000046,
 ];
 

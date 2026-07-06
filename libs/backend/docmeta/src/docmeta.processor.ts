@@ -38,7 +38,7 @@ export class DocMetaProcessor {
         throw new Error('no succeeded OCR text to extract document metadata from');
       }
 
-      const result = await this.provider.extract(input);
+      const result = await this.provider.extract(item.userId, input);
       const occurredAt = input.occurredAt ?? toIso(item.occurredAt);
 
       if (!result.docMeta) {

@@ -30,6 +30,5 @@ export interface WebResearchResult {
 }
 
 export interface WebResearchProvider {
-  readonly enabled: boolean;
-  research(input: WebResearchInput): Promise<WebResearchResult>;
+  research(userId: string, input: WebResearchInput): Promise<WebResearchResult>;
 }

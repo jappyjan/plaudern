@@ -11,7 +11,8 @@ import {
   InboxItemEntity,
   VoiceProfileEntity,
 } from '@plaudern/persistence';
-import type { ExtractedEntity } from '@plaudern/contracts';
+import type { AiCapability, ExtractedEntity } from '@plaudern/contracts';
+import type { AiConfigService, ResolvedAiConfig } from '@plaudern/ai-config';
 import { EntitiesRegistryService } from './entities-registry.service';
 import { EntityReconciliationService } from './entity-reconciliation.service';
 import type {
@@ -27,10 +28,9 @@ import type {
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
 
-/** A judge fake whose enabled state and verdict tests can control. */
+/** A judge fake whose verdict tests can control (enablement lives in AiConfig now). */
 class FakeJudge implements EntityJudgeProvider {
   readonly id = 'fake-judge';
-  enabled = false;
   lastInput: EntityJudgeInput | null = null;
   decision: EntityJudgeResult['decision'] = {
     sameThing: true,
@@ -40,21 +40,32 @@ class FakeJudge implements EntityJudgeProvider {
     rationale: 'same thing',
   };
 
-  judge(input: EntityJudgeInput): Promise<EntityJudgeResult> {
+  judge(_userId: string, input: EntityJudgeInput): Promise<EntityJudgeResult> {
     this.lastInput = input;
     return Promise.resolve({ decision: this.decision, model: this.id });
   }
 }
 
-/** A web-research fake whose enabled state and snippets tests can control. */
+/** A web-research fake whose snippets tests can control (enablement lives in AiConfig now). */
 class FakeWebResearch implements WebResearchProvider {
-  enabled = false;
   lastInput: WebResearchInput | null = null;
   snippets: string[] = [];
 
-  research(input: WebResearchInput): Promise<WebResearchResult> {
+  research(_userId: string, input: WebResearchInput): Promise<WebResearchResult> {
     this.lastInput = input;
     return Promise.resolve({ snippets: this.snippets, usedWeb: this.snippets.length > 0 });
+  }
+}
+
+/** AiConfig fake with per-capability enablement tests can flip on and off. */
+class FakeAiConfig {
+  readonly enabled = new Set<AiCapability>();
+  resolve = async (_userId: string, cap: AiCapability): Promise<ResolvedAiConfig | null> =>
+    this.enabled.has(cap) ? ({} as ResolvedAiConfig) : null;
+  isEnabled = async (_userId: string, cap: AiCapability): Promise<boolean> =>
+    this.enabled.has(cap);
+  invalidate(): void {
+    /* no-op */
   }
 }
 
@@ -64,6 +75,7 @@ describe('EntityReconciliationService', () => {
   let reconciliation: EntityReconciliationService;
   let judge: FakeJudge;
   let web: FakeWebResearch;
+  let aiConfig: FakeAiConfig;
 
   beforeEach(async () => {
     dataSource = new DataSource({
@@ -83,11 +95,13 @@ describe('EntityReconciliationService', () => {
     );
     judge = new FakeJudge();
     web = new FakeWebResearch();
+    aiConfig = new FakeAiConfig();
     reconciliation = new EntityReconciliationService(
       registry,
       dataSource.getRepository(EntityRegistryEntity),
       dataSource.getRepository(EntityMentionEntity),
       dataSource.getRepository(EntityMergeSuggestionEntity),
+      aiConfig as unknown as AiConfigService,
       judge,
       web,
     );
@@ -233,7 +247,7 @@ describe('EntityReconciliationService', () => {
     const org = rows.find((r) => r.type === 'organization')!;
     const product = rows.find((r) => r.type === 'product')!;
 
-    judge.enabled = false;
+    // entity_judge capability left unconfigured (disabled).
     expect(await reconciliation.recommend(USER, product.id, org.id)).toBeNull();
   });
 
@@ -246,7 +260,7 @@ describe('EntityReconciliationService', () => {
     const org = rows.find((r) => r.type === 'organization')!;
     const product = rows.find((r) => r.type === 'product')!;
 
-    judge.enabled = true;
+    aiConfig.enabled.add('entity_judge');
     judge.decision = {
       sameThing: true,
       recommendedType: 'product',
@@ -278,8 +292,8 @@ describe('EntityReconciliationService', () => {
     const org = rows.find((r) => r.type === 'organization')!;
     const product = rows.find((r) => r.type === 'product')!;
 
-    judge.enabled = true;
-    web.enabled = true;
+    aiConfig.enabled.add('entity_judge');
+    aiConfig.enabled.add('web_research');
     web.snippets = ['Foo is a SaaS product.'];
 
     // web not requested → no research call, usedWeb false.
@@ -287,8 +301,8 @@ describe('EntityReconciliationService', () => {
     expect(web.lastInput).toBeNull();
     expect(noWeb!.usedWeb).toBe(false);
 
-    // web requested but provider disabled → still no call.
-    web.enabled = false;
+    // web requested but capability disabled → still no call.
+    aiConfig.enabled.delete('web_research');
     await reconciliation.recommend(USER, product.id, org.id, { web: true });
     expect(web.lastInput).toBeNull();
   });
@@ -302,8 +316,8 @@ describe('EntityReconciliationService', () => {
     const org = rows.find((r) => r.type === 'organization')!;
     const product = rows.find((r) => r.type === 'product')!;
 
-    judge.enabled = true;
-    web.enabled = true;
+    aiConfig.enabled.add('entity_judge');
+    aiConfig.enabled.add('web_research');
     web.snippets = ['Foo is a SaaS product.'];
 
     const rec = await reconciliation.recommend(USER, product.id, org.id, { web: true });

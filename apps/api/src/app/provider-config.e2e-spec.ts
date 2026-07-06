@@ -9,44 +9,82 @@ process.env.QUEUE_DRIVER = 'inline';
 process.env.AUTH_DISABLED = 'true'; // single-user mode — auth has its own spec
 process.env.GEOCODER = 'stub';
 
-import { Test } from '@nestjs/testing';
-import { AppModule } from './app.module';
+import { INestApplication } from '@nestjs/common';
+import request from 'supertest';
+import type { ExtractorNodeDto } from '@plaudern/contracts';
+import { InMemoryStorageService, StorageService } from '@plaudern/storage';
+import { createE2eApp } from '../testing/e2e-app';
+import { seedAiCapability } from '../testing/seed-ai-config';
 
-// The provider factories read env at app init, so flipping process.env per
-// test is enough (same pattern as the geocoding e2e).
-async function bootAttempt(): Promise<void> {
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-  const app = moduleRef.createNestApplication();
-  await app.init();
-  await app.close();
-}
+/**
+ * Provider selection is no longer env-driven (the old `SPEAKER_ID_PROVIDER`
+ * fail-fast boot check is gone). A capability is off until the user assigns it a
+ * provider connection in the DB — this spec pins that contract end to end: the
+ * extractor graph reports the capability disabled and the pipeline no-ops, then
+ * seeding a provider flips it on.
+ */
+describe('AI capability enablement is DB-driven (e2e, Path A)', () => {
+  let app: INestApplication;
+  let storage: InMemoryStorageService;
 
-describe('Provider config fail-fast (e2e, Path A)', () => {
-  afterEach(() => {
-    delete process.env.SPEAKER_ID_PROVIDER;
+  beforeAll(async () => {
+    app = await createE2eApp();
+    storage = app.get(StorageService) as InMemoryStorageService;
   });
 
-  it('boots with the real-provider defaults (no provider env set)', async () => {
-    await expect(bootAttempt()).resolves.toBeUndefined();
+  afterAll(async () => {
+    await app.close();
   });
 
-  it('rejects the removed local-sidecar SPEAKER_ID_PROVIDER=pyannote', async () => {
-    process.env.SPEAKER_ID_PROVIDER = 'pyannote';
-    await expect(bootAttempt()).rejects.toThrow('SPEAKER_ID_PROVIDER=pyannote was removed');
+  async function graphNode(kind: string): Promise<ExtractorNodeDto | undefined> {
+    const res = await request(app.getHttpServer()).get('/api/v1/extractions/graph').expect(200);
+    return (res.body.extractors as ExtractorNodeDto[]).find((e) => e.kind === kind);
+  }
+
+  async function ingestAudio(idempotencyKey: string): Promise<string> {
+    const audio = Buffer.from(`fake-audio-${idempotencyKey}`);
+    const init = await request(app.getHttpServer())
+      .post('/api/v1/ingest/init')
+      .send({
+        sourceType: 'audio',
+        contentType: 'audio/mpeg',
+        byteSize: audio.byteLength,
+        occurredAt: '2026-07-01T09:30:00.000Z',
+        idempotencyKey,
+      })
+      .expect(201);
+    await storage.putObject(init.body.storageKey, audio, 'audio/mpeg');
+    await request(app.getHttpServer())
+      .post(`/api/v1/ingest/${init.body.inboxItemId}/commit`)
+      .expect(201);
+    return init.body.inboxItemId;
+  }
+
+  async function kinds(itemId: string): Promise<string[]> {
+    const res = await request(app.getHttpServer()).get(`/api/v1/inbox/${itemId}`).expect(200);
+    return (res.body.extractions as { kind: string }[]).map((e) => e.kind);
+  }
+
+  it('always enables transcription (it runs without a configured provider)', async () => {
+    expect(await graphNode('transcription')).toMatchObject({ kind: 'transcription', enabled: true });
   });
 
-  it('rejects the removed SPEAKER_ID_PROVIDER=stub', async () => {
-    process.env.SPEAKER_ID_PROVIDER = 'stub';
-    await expect(bootAttempt()).rejects.toThrow('SPEAKER_ID_PROVIDER=stub was removed');
+  it('reports diarization disabled until speaker_id has a provider, and no-ops in the pipeline', async () => {
+    expect(await graphNode('diarization')).toMatchObject({ kind: 'diarization', enabled: false });
+
+    // With speaker_id unconfigured the audio commit transcribes (and the
+    // always-on sentinel classifies sensitivity, JJ-21) but never diarizes.
+    const itemId = await ingestAudio('provider-config-off');
+    const gotKinds = await kinds(itemId);
+    expect(gotKinds).toContain('transcription');
+    expect(gotKinds).not.toContain('diarization');
   });
 
-  it('rejects an unknown SPEAKER_ID_PROVIDER', async () => {
-    process.env.SPEAKER_ID_PROVIDER = 'nonsense';
-    await expect(bootAttempt()).rejects.toThrow("unknown SPEAKER_ID_PROVIDER 'nonsense'");
-  });
+  it('enables diarization once a provider is assigned, and the pipeline runs it', async () => {
+    await seedAiCapability(app, 'speaker_id');
+    expect(await graphNode('diarization')).toMatchObject({ kind: 'diarization', enabled: true });
 
-  it('accepts SPEAKER_ID_PROVIDER=off', async () => {
-    process.env.SPEAKER_ID_PROVIDER = 'off';
-    await expect(bootAttempt()).resolves.toBeUndefined();
+    const itemId = await ingestAudio('provider-config-on');
+    expect(await kinds(itemId)).toEqual(expect.arrayContaining(['transcription', 'diarization']));
   });
 });

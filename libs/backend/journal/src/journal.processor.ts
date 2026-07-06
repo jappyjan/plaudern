@@ -92,7 +92,7 @@ export class JournalProcessor {
       const result = await runWithAiAudit(
         { userId: job.userId, itemId: null, kind: 'journal' },
         () =>
-          this.provider.generate({
+          this.provider.generate(job.userId, {
             periodType: job.periodType,
             periodKey: job.periodKey,
             periodLabel: periodLabel(job.periodType, job.periodKey),

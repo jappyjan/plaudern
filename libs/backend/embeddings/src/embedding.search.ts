@@ -48,20 +48,20 @@ export class EmbeddingSearchService {
   ) {}
 
   /** Whether semantic search can run (the embedding provider is configured). */
-  get enabled(): boolean {
-    return this.provider.enabled;
+  isEnabled(userId: string): Promise<boolean> {
+    return this.provider.isEnabled(userId);
   }
 
   async search(userId: string, queryText: string, limit: number): Promise<EmbeddingSearchHit[]> {
-    if (!this.provider.enabled) {
+    if (!(await this.provider.isEnabled(userId))) {
       throw new BadRequestException(
-        'semantic search is unavailable because embeddings are not configured (set EMBEDDINGS_API_KEY, or EMBEDDINGS_ENABLED=true for keyless local endpoints such as Ollama)',
+        'semantic search is unavailable because embeddings are not configured — assign a provider to the embeddings capability in Settings → AI',
       );
     }
     const trimmed = queryText.trim();
     if (!trimmed) throw new BadRequestException('search query must not be empty');
 
-    const { vectors } = await this.provider.embed([trimmed]);
+    const { vectors } = await this.provider.embed(userId, [trimmed]);
     const queryVector = vectors[0];
     if (!queryVector?.length) return [];
 

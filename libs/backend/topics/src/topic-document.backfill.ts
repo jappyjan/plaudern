@@ -50,10 +50,9 @@ export class TopicDocumentBackfillService implements OnApplicationBootstrap, OnM
       this.logger.log('topic document backfill disabled (TOPIC_DOCS_BACKFILL_ENABLED=false)');
       return;
     }
-    if (!this.documents.enabled) {
-      this.logger.log('topic document backfill skipped — generation is not configured');
-      return;
-    }
+    // Whether generation is configured is now a per-user decision resolved
+    // inside `enqueueRegeneration`, so the sweep can't short-circuit globally;
+    // users without a topic_docs provider are simply skipped when enqueuing.
     const delay = this.delayMs();
     this.logger.log(`topic document backfill armed; sweeping in ${delay}ms`);
     this.timer = setTimeout(() => {
@@ -71,7 +70,7 @@ export class TopicDocumentBackfillService implements OnApplicationBootstrap, OnM
 
   /** Run the sweep once: reap orphans, then enqueue missing/stale documents. */
   async sweep(): Promise<void> {
-    if (this.destroyed || !this.documents.enabled) return;
+    if (this.destroyed) return;
     await this.withLock(async () => {
       const orphans = await this.documents.pruneOrphans();
       if (orphans > 0) this.logger.log(`topic document backfill: reaped ${orphans} orphan(s)`);

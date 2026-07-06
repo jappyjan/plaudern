@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Not, IsNull, Repository } from 'typeorm';
+import { AiConfigService, numberParam } from '@plaudern/ai-config';
 import { AiAuditRecorder } from '@plaudern/audit';
 import { StorageService } from '@plaudern/storage';
 import { VoiceProfileEntity } from '@plaudern/persistence';
@@ -32,45 +32,45 @@ import {
 export class PyannoteAiSpeakerIdentifier implements SpeakerIdentifier {
   readonly id = 'pyannoteai';
 
-  private readonly threshold: number;
-  private readonly baseUrl: string;
-
   constructor(
-    config: ConfigService,
+    private readonly aiConfig: AiConfigService,
     private readonly storage: StorageService,
-    private readonly client: PyannoteAiClient,
     private readonly matcher: VoiceprintMatcherService,
     @InjectRepository(VoiceProfileEntity)
     private readonly profiles: Repository<VoiceProfileEntity>,
     private readonly audit: AiAuditRecorder,
-  ) {
-    this.baseUrl = config
-      .get<string>('PYANNOTEAI_BASE_URL', 'https://api.pyannote.ai/v1')
-      .replace(/\/+$/, '');
-    // pyannoteAI's confidence scale (0-100) differs from cosine, so it has its
-    // own knob. It is passed to /identify as matching.threshold: the minimum
-    // confidence to accept a voiceprint match. 0 means "always take the closest
-    // voiceprint no matter how low the confidence", which — with exclusive
-    // matching — forces every known voice onto some speaker in every recording.
-    // Default to pyannoteAI's recommended strict-matching floor so a voice only
-    // matches when it's actually present; raise toward 70 for stricter, lower
-    // for more lenient.
-    this.threshold = Number(config.get<string>('PYANNOTEAI_MATCH_THRESHOLD', '50'));
-  }
+  ) {}
 
   async identify(job: SpeakerIdentificationJob): Promise<SpeakerIdentificationResult> {
+    const cfg = await this.aiConfig.resolve(job.userId, 'speaker_id');
+    if (!cfg) {
+      throw new Error(
+        'speaker identification is not configured — assign a provider in Settings → AI',
+      );
+    }
+    const client = PyannoteAiClient.fromResolvedConfig(cfg);
+    // pyannoteAI's confidence scale (0-100) differs from cosine, so it has its
+    // own knob passed to /identify as matching.threshold: the minimum confidence
+    // to accept a voiceprint match. 0 means "always take the closest voiceprint
+    // no matter how low the confidence", which — with exclusive matching —
+    // forces every known voice onto some speaker in every recording. The default
+    // is pyannoteAI's recommended strict-matching floor so a voice only matches
+    // when it's actually present; raise toward 70 for stricter, lower for more
+    // lenient.
+    const threshold = numberParam(cfg, 'matchThreshold', 50);
+
     // Push the bytes to pyannoteAI (private storage stays private) and work off
     // the returned media:// handle.
     const bytes = await this.readObject(job.storageKey);
     // Audit the audio bytes uploaded to the hosted diarizer (JJ-42). The
     // identifier carries the owner/item directly, so pass explicit attribution.
     await this.audit.record({
-      provider: this.id,
-      endpoint: `${this.baseUrl}/media/input`,
+      provider: `pyannoteai:${cfg.model}`,
+      endpoint: `${cfg.baseUrl}/media/input`,
       payload: bytes,
       context: { userId: job.userId, itemId: job.inboxItemId, kind: 'diarization' },
     });
-    const audioUrl = await this.client.upload(bytes, job.contentType, randomUUID());
+    const audioUrl = await client.upload(bytes, job.contentType, randomUUID());
 
     // Known profiles with a voiceprint become /identify candidates, keyed by id.
     const known = await this.profiles.find({
@@ -80,15 +80,15 @@ export class PyannoteAiSpeakerIdentifier implements SpeakerIdentifier {
 
     const diar =
       known.length > 0
-        ? await this.client.identify(
+        ? await client.identify(
             audioUrl,
             known.map((p) => ({ label: p.id, voiceprint: p.voiceprint as string })),
-            this.threshold,
+            threshold,
           )
-        : await this.client.diarize(audioUrl);
+        : await client.diarize(audioUrl);
 
     const speakers = this.groupSpeakers(diar, knownById);
-    await this.matcher.assignSpeakers(job, speakers);
+    await this.matcher.assignSpeakers(job, speakers, client, cfg);
 
     // Segments carry the canonical labels the matcher persisted as occurrences.
     const canonicalByRaw = new Map(speakers.flatMap((s) => s.rawLabels.map((r) => [r, s.label])));

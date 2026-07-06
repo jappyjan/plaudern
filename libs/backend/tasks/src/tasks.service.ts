@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
+import { AiConfigService } from '@plaudern/ai-config';
 import { InboxService, SelfProfileService } from '@plaudern/inbox';
 import type { ExtractionStatus } from '@plaudern/contracts';
 import type { ExtractedPayloadEntity } from '@plaudern/persistence';
@@ -35,14 +36,15 @@ export class TasksService {
     private readonly queue: TaskExtractionQueue,
     private readonly context: TaskContextService,
     private readonly selfProfile: SelfProfileService,
+    private readonly aiConfig: AiConfigService,
   ) {}
 
   /**
-   * Whether task extraction is configured (TASKS_API_KEY present, or
-   * TASKS_ENABLED=true for keyless local endpoints such as Ollama).
+   * Whether task extraction is configured for the user (a provider is assigned
+   * to the `tasks` capability in their AI settings).
    */
-  get enabled(): boolean {
-    return this.provider.enabled;
+  isEnabled(userId: string): Promise<boolean> {
+    return this.aiConfig.isEnabled(userId, 'tasks');
   }
 
   /**
@@ -51,9 +53,9 @@ export class TasksService {
    * history); the registry supersedes old citations on success.
    */
   async retry(userId: string, inboxItemId: string): Promise<string> {
-    if (!this.provider.enabled) {
+    if (!(await this.isEnabled(userId))) {
       throw new BadRequestException(
-        'task extraction is not configured (set TASKS_API_KEY, or TASKS_ENABLED=true for keyless local endpoints such as Ollama)',
+        'task extraction is not configured — assign a provider to the tasks capability in Settings → AI',
       );
     }
     if (!(await this.selfProfile.hasOwner(userId))) {
