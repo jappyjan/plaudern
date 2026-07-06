@@ -42,13 +42,19 @@ describe('Ingestion pipeline (integration, real Postgres + MinIO + Redis)', () =
     process.env.GEOCODER = 'stub';
     process.env.AUTH_DISABLED = 'true'; // single-user mode — auth has its own spec
 
+    // Diarization builds its pyannoteAI client per job via the static
+    // `PyannoteAiClient.fromResolvedConfig` (not a DI provider anymore), so a
+    // provider override no longer intercepts it — spy the factory instead
+    // (mirrors testing/e2e-app.ts).
+    jest
+      .spyOn(PyannoteAiClient, 'fromResolvedConfig')
+      .mockReturnValue(new FakePyannoteAiClient() as unknown as PyannoteAiClient);
+
     const moduleRef = await Test.createTestingModule({
       imports: [(await import('./app.module')).AppModule],
     })
       .overrideProvider(TRANSCRIPTION_PROVIDER)
       .useValue(new FakeTranscriptionProvider())
-      .overrideProvider(PyannoteAiClient)
-      .useValue(new FakePyannoteAiClient())
       .overrideProvider(CLIP_EXTRACTOR)
       .useValue(new FakeClipExtractor())
       .compile();
