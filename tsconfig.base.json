@@ -44,6 +44,7 @@
       "@plaudern/ocr": ["libs/backend/ocr/src/index.ts"],
       "@plaudern/docmeta": ["libs/backend/docmeta/src/index.ts"],
       "@plaudern/open-loops": ["libs/backend/open-loops/src/index.ts"],
+      "@plaudern/nudges": ["libs/backend/nudges/src/index.ts"],
       "@plaudern/plaud-sync": ["libs/backend/plaud-sync/src/index.ts"],
       "@plaudern/email-ingest": ["libs/backend/email-ingest/src/index.ts"],
       "@plaudern/geocoding": ["libs/backend/geocoding/src/index.ts"],

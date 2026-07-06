@@ -32,6 +32,7 @@
     "@plaudern/journal": "workspace:*",
     "@plaudern/mcp": "workspace:*",
     "@plaudern/notifications": "workspace:*",
+    "@plaudern/nudges": "workspace:*",
     "@plaudern/ocr": "workspace:*",
     "@plaudern/open-loops": "workspace:*",
     "@plaudern/persistence": "workspace:*",

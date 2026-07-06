@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { AuditModule } from '@plaudern/audit';
 import { InboxModule } from '@plaudern/inbox';
 import { StorageModule } from '@plaudern/storage';
 import { TranscriptionModule } from '@plaudern/transcription';
@@ -13,7 +14,7 @@ import { OcrExtractor } from './ocr.extractor';
 import { InboxOcrController } from './inbox-ocr.controller';
 
 @Module({
-  imports: [ConfigModule, InboxModule, StorageModule, TranscriptionModule],
+  imports: [ConfigModule, AuditModule, InboxModule, StorageModule, TranscriptionModule],
   providers: [
     OpenAiVisionOcrProvider,
     {

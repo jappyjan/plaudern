@@ -1,35 +1,51 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import {
   HELD_NEEDS_LOCAL_MODEL,
   isLocalOnlyTier,
+  type AiCapability,
   type ExtractionKind,
   type SensitivityRoutingDecision,
   type SensitivityTier,
 } from '@plaudern/contracts';
+import { AiConfigService } from '@plaudern/ai-config';
 import { ItemSensitivityEntity } from '@plaudern/persistence';
 
 /**
- * The `<KIND>_BASE_URL` env each gated extractor's provider reads (with the
- * provider's own external default). The routing guard reads the SAME variable
- * the provider reads, so its view of "where will this kind's LLM call go" is
- * exactly the endpoint the provider will use — no drift, no override needed.
- * `entities` and `relations` share the entity-extraction endpoint.
+ * The AI CAPABILITY each gated extractor's provider resolves its endpoint from.
+ * Since #107 moved AI config out of env vars into per-user DB settings, a
+ * provider's base URL comes from `AiConfigService.resolve(userId, capability)`
+ * — so the routing guard MUST resolve the SAME capability, per-user, to see the
+ * exact endpoint the provider will call. This is the JJ-21 invariant restated
+ * for the DB world: "the guard reads the SAME endpoint the provider reads".
+ * Reading a now-stale `<KIND>_BASE_URL` env (as this service used to) would let
+ * the guard approve "release to local" against an endpoint the provider no
+ * longer uses (a LEAK), or hold-forever when env is unset but the DB is local.
+ *
+ * `relations` resolves `entity_relations` (which inherits the
+ * `entity_extraction` connection when unset — exactly what the provider does).
+ * `ocr`/`docmeta` (JJ-85) resolve the `ocr`/`docmeta` capabilities. Note: `ocr`
+ * itself is NOT a gated `EXTERNAL_LLM_KIND` (it is the classification-enabling
+ * FIRST external call over a scanned document, so gating it would hold-forever);
+ * its capability is mapped here only so an endpoint lookup is available and
+ * consistent. `docmeta` and every text extractor downstream of the OCR-derived
+ * transcript ARE gated on the sentinel's classification of that text.
  */
-const KIND_BASE_URL_ENV: Partial<Record<ExtractionKind, { env: string; fallback: string }>> = {
-  summary: { env: 'SUMMARIZATION_BASE_URL', fallback: 'https://api.deepseek.com/v1' },
-  embedding: { env: 'EMBEDDINGS_BASE_URL', fallback: 'https://api.openai.com/v1' },
-  entities: { env: 'ENTITY_EXTRACTION_BASE_URL', fallback: 'https://api.deepseek.com/v1' },
-  relations: { env: 'ENTITY_EXTRACTION_BASE_URL', fallback: 'https://api.deepseek.com/v1' },
-  topics: { env: 'TOPICS_BASE_URL', fallback: 'https://api.deepseek.com/v1' },
-  commitments: { env: 'COMMITMENTS_BASE_URL', fallback: 'https://api.deepseek.com/v1' },
-  tasks: { env: 'TASKS_BASE_URL', fallback: 'https://api.deepseek.com/v1' },
-  facts: { env: 'FACTS_BASE_URL', fallback: 'https://api.deepseek.com/v1' },
-  questions: { env: 'QUESTIONS_BASE_URL', fallback: 'https://api.deepseek.com/v1' },
-  decisions: { env: 'DECISIONS_BASE_URL', fallback: 'https://api.deepseek.com/v1' },
-  reminders: { env: 'REMINDERS_BASE_URL', fallback: 'https://api.deepseek.com/v1' },
+const KIND_CAPABILITY: Partial<Record<ExtractionKind, AiCapability>> = {
+  summary: 'summarization',
+  embedding: 'embeddings',
+  entities: 'entity_extraction',
+  relations: 'entity_relations',
+  topics: 'topics',
+  commitments: 'commitments',
+  tasks: 'tasks',
+  facts: 'facts',
+  questions: 'questions',
+  decisions: 'decisions',
+  reminders: 'reminders',
+  ocr: 'ocr',
+  docmeta: 'docmeta',
 };
 
 /**
@@ -38,46 +54,58 @@ const KIND_BASE_URL_ENV: Partial<Record<ExtractionKind, { env: string; fallback:
  * LLM endpoint, or be held — never an external one, under any config.**
  *
  * A `sensitive`/`secret` item may run an external-LLM extractor ONLY when that
- * kind's configured endpoint (`<KIND>_BASE_URL`, the exact var its provider
- * reads) resolves to a loopback/private address. Because the guard reads the
- * same env the provider reads, releasing the item means the provider will make
- * its call to that already-validated local endpoint — no per-run override, no
- * trust in operator intent. Any kind still pointed at a cloud endpoint HOLDS
- * ("held: needs local model") rather than leaking. `public`/`normal` items are
- * unaffected and use the configured endpoint as before.
+ * kind's configured endpoint — the one its provider resolves from the user's
+ * DB-backed AI config (`AiConfigService.resolve(userId, capability)`, the exact
+ * connection the provider will use) — points at a loopback/private address.
+ * Because the guard resolves the SAME per-user capability the provider resolves,
+ * releasing the item means the provider will make its call to that
+ * already-validated local endpoint — no per-run override, no trust in operator
+ * intent. Any kind still resolving to a cloud endpoint HOLDS ("held: needs local
+ * model") rather than leaking. `public`/`normal` items are unaffected and use
+ * the configured endpoint as before.
  */
 @Injectable()
 export class SensitivityRoutingService {
   private readonly logger = new Logger(SensitivityRoutingService.name);
 
   constructor(
-    private readonly config: ConfigService,
+    private readonly aiConfig: AiConfigService,
     @InjectRepository(ItemSensitivityEntity)
     private readonly rows: Repository<ItemSensitivityEntity>,
   ) {}
 
-  /** The endpoint a gated kind's provider will call (same env the provider reads). */
-  kindBaseUrl(kind: ExtractionKind): string | null {
-    const map = KIND_BASE_URL_ENV[kind];
-    if (!map) return null;
-    return (this.config.get<string>(map.env, map.fallback) ?? map.fallback).replace(/\/+$/, '');
+  /**
+   * The endpoint a gated kind's provider will call FOR THIS USER — resolved
+   * through the same DB-backed `AiConfigService` the provider uses, so the guard
+   * never validates a different endpoint than the one bytes actually go to.
+   * Returns null when the capability has no usable provider (unconfigured /
+   * disabled): the extractor won't run in that case, and null is treated as
+   * non-local (fail-closed) by `isLocalEndpoint`.
+   */
+  async kindBaseUrl(userId: string, kind: ExtractionKind): Promise<string | null> {
+    const capability = KIND_CAPABILITY[kind];
+    if (!capability) return null;
+    const resolved = await this.aiConfig.resolve(userId, capability);
+    return resolved ? resolved.baseUrl : null;
   }
 
-  /** Whether a gated kind is configured to call a validated-LOCAL endpoint. */
-  kindRoutesLocal(kind: ExtractionKind): boolean {
-    return isLocalEndpoint(this.kindBaseUrl(kind));
+  /** Whether a gated kind resolves to a validated-LOCAL endpoint for this user. */
+  async kindRoutesLocal(userId: string, kind: ExtractionKind): Promise<boolean> {
+    return isLocalEndpoint(await this.kindBaseUrl(userId, kind));
   }
 
   /**
-   * Pure routing decision for a known tier + kind (no item lookup). Never
-   * returns `local` for an external endpoint — the invariant lives here.
+   * Pure routing decision for a known tier + kind + user. Never returns `local`
+   * for an external endpoint — the invariant lives here. Async because the
+   * endpoint is now a per-user DB resolution, not an env read.
    */
-  resolveTier(
+  async resolveTier(
     tier: SensitivityTier,
+    userId: string,
     kind: ExtractionKind,
-  ): Exclude<SensitivityRoutingDecision, 'wait'> {
+  ): Promise<Exclude<SensitivityRoutingDecision, 'wait'>> {
     if (!isLocalOnlyTier(tier)) return 'external';
-    return this.kindRoutesLocal(kind) ? 'local' : 'hold';
+    return (await this.kindRoutesLocal(userId, kind)) ? 'local' : 'hold';
   }
 
   /** The effective tier for an item (manual override folded over detected). */
@@ -96,14 +124,19 @@ export class SensitivityRoutingService {
   }
 
   /**
-   * The routing decision for one item + gated kind. `wait` means the sentinel
-   * hasn't classified the item yet — the caller should skip and re-evaluate on
-   * sentinel completion.
+   * The routing decision for one item + gated kind. `userId` is the item owner
+   * — the user whose DB config resolves the provider endpoint (per-item decision,
+   * per-user resolution). `wait` means the sentinel hasn't classified the item
+   * yet — the caller should skip and re-evaluate on sentinel completion.
    */
-  async decide(inboxItemId: string, kind: ExtractionKind): Promise<SensitivityRoutingDecision> {
+  async decide(
+    userId: string,
+    inboxItemId: string,
+    kind: ExtractionKind,
+  ): Promise<SensitivityRoutingDecision> {
     const row = await this.rows.findOne({ where: { inboxItemId } });
     if (!row) return 'wait';
-    return this.resolveTier(this.effectiveTierOf(row), kind);
+    return this.resolveTier(this.effectiveTierOf(row), userId, kind);
   }
 
   /** Mark an item held for lack of a local endpoint (idempotent). */

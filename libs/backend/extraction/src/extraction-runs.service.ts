@@ -214,7 +214,7 @@ export class ExtractionRunsService {
             // sensitive content externally either. Hold / skip the same way the
             // event pipeline does.
             if (isExternalLlmKind(run.kind)) {
-              const decision = await this.routing.decide(item.id, run.kind);
+              const decision = await this.routing.decide(item.userId, item.id, run.kind);
               if (decision === 'hold') {
                 await this.routing.markHeld(item.id);
                 run.itemsSkipped += 1;

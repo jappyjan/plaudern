@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { runWithAiAudit } from '@plaudern/audit';
 import { AiConfigService } from '@plaudern/ai-config';
 import { CITATION_VERIFIER, type CitationVerifier } from './verification.provider';
 
@@ -53,7 +54,10 @@ export class VerificationService {
     if (usable.length === 0 || !answer.trim()) return SKIPPED;
 
     try {
-      const result = await this.verifier.verify(userId, { answer, passages: usable });
+      const result = await runWithAiAudit(
+        { userId, kind: 'verification' },
+        () => this.verifier.verify(userId, { answer, passages: usable }),
+      );
       const unsupported = result.fields.filter((f) => !f.supported).map((f) => f.value);
       return { ran: true, unsupported };
     } catch (cause) {

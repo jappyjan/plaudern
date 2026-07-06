@@ -38,6 +38,7 @@ export * from './commitment.entity';
 export * from './question.entity';
 export * from './decision.entity';
 export * from './reminder.entity';
+export * from './nudge-state.entity';
 export * from './item-sensitivity.entity';
 export * from './document-metadata.entity';
 export * from './task.entity';

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AiAuditRecorder } from '@plaudern/audit';
 import { sensitivityCategorySchema, sensitivityTierSchema } from '@plaudern/contracts';
 import type {
   SentinelClassifyInput,
@@ -33,7 +34,10 @@ export class OpenAiSentinelProvider implements SentinelLlmProvider {
   private readonly timeoutMs: number;
   private readonly explicitlyEnabled: boolean;
 
-  constructor(config: ConfigService) {
+  constructor(
+    config: ConfigService,
+    private readonly audit: AiAuditRecorder,
+  ) {
     this.baseUrl = config
       .get<string>('SENTINEL_LLM_BASE_URL', 'https://api.deepseek.com/v1')
       .replace(/\/+$/, '');
@@ -60,18 +64,24 @@ export class OpenAiSentinelProvider implements SentinelLlmProvider {
     try {
       const headers: Record<string, string> = { 'content-type': 'application/json' };
       if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
-      const res = await fetch(`${this.baseUrl}/chat/completions`, {
+      const endpoint = `${this.baseUrl}/chat/completions`;
+      const body = JSON.stringify({
+        model: this.model,
+        temperature: 0,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: SENTINEL_SYSTEM_PROMPT },
+          { role: 'user', content: buildSentinelPrompt(input) },
+        ],
+      });
+      // Audit the exact bytes leaving the box before they leave (JJ-42/JJ-81).
+      // The sentinel classifier is itself an external LLM call; the {user, item}
+      // attribution is read from the AsyncLocalStorage context the processor set.
+      await this.audit.record({ provider: this.id, endpoint, payload: body });
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          model: this.model,
-          temperature: 0,
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: SENTINEL_SYSTEM_PROMPT },
-            { role: 'user', content: buildSentinelPrompt(input) },
-          ],
-        }),
+        body,
         signal: controller.signal,
       });
       if (!res.ok) {

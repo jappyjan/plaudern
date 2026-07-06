@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { runWithAiAudit } from '@plaudern/audit';
 import { InboxService } from '@plaudern/inbox';
 import type { SentinelPayload } from '@plaudern/contracts';
 import { SentinelContextService } from './sentinel.context';
@@ -33,9 +34,14 @@ export class SentinelProcessor {
       if (!item) throw new Error('inbox item no longer exists');
 
       const input = await this.context.build(item);
-      if (!input) throw new Error('no succeeded transcription to classify');
+      if (!input) throw new Error('no succeeded transcription or OCR text to classify');
 
-      const classification = await this.classifier.classify(input);
+      // Attribute the sentinel's own (optional) external LLM call to this
+      // user/item so its provider adapter audits it (JJ-42/JJ-81).
+      const classification = await runWithAiAudit(
+        { userId: item.userId, itemId: item.id, kind: 'sensitivity' },
+        () => this.classifier.classify(input),
+      );
       await this.persistence.upsert(
         item.userId,
         item.id,
