@@ -62,7 +62,7 @@ import {
   TrashIcon,
   UnlinkIcon,
 } from '../components/icons';
-import { formatBytes, formatDate, formatDateTime, formatTimeRange } from '../lib/format';
+import { formatBytes, formatDate, formatDateTime, formatTimeRange, itemDate } from '../lib/format';
 import type { GeoLocation } from '../lib/geolocation';
 
 // SSE delivers updates instantly; polling is only a fallback for proxies
@@ -644,7 +644,10 @@ export function ItemDetailPage() {
           <h2 className="text-sm font-semibold">Details</h2>
         </CardHeader>
         <CardBody className="gap-2 text-sm">
-          <DetailRow label={audio ? 'Recorded' : 'Created'} value={formatDateTime(item.occurredAt)} />
+          <DetailRow
+            label={audio ? 'Recorded' : item.documentDate ? 'Document date' : 'Created'}
+            value={formatDateTime(itemDate(item))}
+          />
           <DetailRow label="Added to inbox" value={formatDateTime(item.ingestedAt)} />
           {mergedFromCount > 0 && (
             <DetailRow label="Merged from" value={`${mergedFromCount} recordings`} />

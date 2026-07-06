@@ -77,6 +77,7 @@ const baseDoc: ExtractedDocMeta = {
   amount: null,
   currency: null,
   iban: null,
+  documentDate: null,
   expiryDate: null,
   cancellationDate: null,
   contact: null,
@@ -188,5 +189,27 @@ describe('DocMetaPersistenceService', () => {
       iban: 'DE89370400440532013000',
     });
     expect(saved[0].fields).toEqual([{ label: 'Invoice no.', value: 'R-2026-0192' }]);
+  });
+
+  it('resolves the document date to an absolute ISO instant', async () => {
+    const { service, saved } = makeService();
+    await service.persist(USER, ITEM, EXTRACTION, OCCURRED_AT, {
+      ...baseDoc,
+      documentType: 'invoice',
+      title: 'Invoice',
+      documentDate: '14.03.2026', // German day-first date printed on the scan
+    });
+    expect(saved[0].documentDate).toBe('2026-03-14T00:00:00.000Z');
+  });
+
+  it('stores a null document date when none is present or parseable', async () => {
+    const { service, saved } = makeService();
+    await service.persist(USER, ITEM, EXTRACTION, OCCURRED_AT, {
+      ...baseDoc,
+      documentType: 'letter',
+      title: 'A letter',
+      documentDate: 'sometime last spring',
+    });
+    expect(saved[0].documentDate).toBeNull();
   });
 });

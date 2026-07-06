@@ -9,6 +9,7 @@ import type {
 import { DocumentMetadataEntity } from '@plaudern/persistence';
 import { RemindersPersistenceService } from '@plaudern/reminders';
 import { EntitiesRegistryService } from '@plaudern/entities';
+import { resolveDocumentDate } from './document-date';
 
 /** Caps so adversarial/verbose model output can't store huge strings. */
 const MAX_TITLE_CHARS = 500;
@@ -76,6 +77,10 @@ export class DocMetaPersistenceService {
   ): Promise<DocMetaPersistResult> {
     const expiryDate = clampOrNull(docMeta.expiryDate, MAX_FIELD_CHARS);
     const cancellationDate = clampOrNull(docMeta.cancellationDate, MAX_FIELD_CHARS);
+    // The document's own date, resolved to an absolute ISO datetime against the
+    // scan time. Stored only when it parses (it becomes the item's displayed
+    // date); an unparseable/absent date leaves the capture time in place.
+    const documentDate = resolveDocumentDate(docMeta.documentDate, occurredAt);
 
     const fields = (docMeta.fields ?? [])
       .slice(0, MAX_FIELDS)
@@ -102,6 +107,7 @@ export class DocMetaPersistenceService {
       amount: docMeta.amount ?? null,
       currency: clampOrNull(docMeta.currency, 8),
       iban: clampOrNull(docMeta.iban, 64),
+      documentDate,
       expiryDate,
       cancellationDate,
       contact: contact ?? null,

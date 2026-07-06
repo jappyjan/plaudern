@@ -5,6 +5,7 @@ import {
   Index,
   JoinColumn,
   ManyToOne,
+  OneToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
@@ -37,7 +38,9 @@ export class DocumentMetadataEntity {
   @Column({ type: 'uuid' })
   userId!: string;
 
-  @ManyToOne(() => InboxItemEntity, { onDelete: 'CASCADE' })
+  @OneToOne(() => InboxItemEntity, (item) => item.documentMetadata, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'inboxItemId' })
   inboxItem!: InboxItemEntity;
 
@@ -76,6 +79,14 @@ export class DocumentMetadataEntity {
 
   @Column({ type: 'varchar', nullable: true })
   iban!: string | null;
+
+  /**
+   * The document's own date (issue/invoice/letter/statement date), resolved to
+   * an absolute ISO datetime, or null when the document carries no clear date.
+   * Preferred over the item's capture time as the displayed date.
+   */
+  @Column({ type: 'varchar', nullable: true })
+  documentDate!: string | null;
 
   /** Resolved absolute ISO date when parseable, else the raw phrase, or null. */
   @Column({ type: 'varchar', nullable: true })

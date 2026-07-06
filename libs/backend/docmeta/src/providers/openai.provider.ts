@@ -64,6 +64,8 @@ export const SYSTEM_PROMPT = [
   '    "amount": the primary monetary amount as a number or null,',
   '    "currency": ISO-4217 code (e.g. "EUR") or null,',
   '    "iban": an IBAN found on the document or null,',
+  '    "documentDate": the date the document itself is dated (issue/invoice/letter/',
+  '        statement date) as YYYY-MM-DD, or null,',
   '    "expiryDate": when the document/entitlement expires (YYYY-MM-DD or phrase) or null,',
   '    "cancellationDate": the LAST DAY TO CANCEL / Kündigungsfrist deadline or null,',
   '    "contact": for a business_card only: { "fullName", "organization", "jobTitle",',
@@ -75,6 +77,10 @@ export const SYSTEM_PROMPT = [
   '- Pay special attention to Kündigungsfrist / cancellation windows and expiry',
   '  dates on contracts, insurance and warranties — those become reminders.',
   '- For a business card, fill "contact" and set documentType to business_card.',
+  '- "documentDate" is the date the document was issued/written/dated (e.g. the',
+  '  invoice date, the letter date, the statement period date) — NOT the scan',
+  '  date, NOT a deadline. Resolve it to an absolute YYYY-MM-DD against the scan',
+  '  date. If the document has no clear date of its own, use null.',
   '- Keep fields concise. If a value is unknown, use null / omit it.',
 ].join('\n');
 

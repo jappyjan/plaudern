@@ -79,6 +79,12 @@ export const extractedDocMetaSchema = z.object({
   currency: z.string().nullable().default(null),
   /** An IBAN found on the document (for invoices/bank statements), or null. */
   iban: z.string().nullable().default(null),
+  /**
+   * The date the document itself is dated with (issue/invoice/letter/statement
+   * date) — YYYY-MM-DD or a raw phrase, or null. The server resolves it to an
+   * absolute date and, when parseable, prefers it as the item's displayed date.
+   */
+  documentDate: z.string().nullable().default(null),
   /** When the document / entitlement expires — ISO date or phrase, or null. */
   expiryDate: z.string().nullable().default(null),
   /**
@@ -120,6 +126,12 @@ export const documentSchema = z.object({
   amount: z.number().nullable(),
   currency: z.string().nullable(),
   iban: z.string().nullable(),
+  /**
+   * The document's own date (issue/invoice/letter/statement date) resolved to an
+   * absolute ISO datetime, or null when the document carries no clear date. When
+   * present it is preferred over the item's capture time as the displayed date.
+   */
+  documentDate: z.string().datetime().nullable(),
   /** Resolved absolute ISO date when parseable, else the raw phrase, or null. */
   expiryDate: z.string().nullable(),
   /** Resolved absolute ISO date when parseable, else the raw phrase, or null. */

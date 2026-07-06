@@ -49,6 +49,9 @@ export function toInboxItemDto(entity: InboxItemEntity): InboxItemDto {
     sourceType: entity.sourceType,
     occurredAt: iso(entity.occurredAt)!,
     ingestedAt: iso(entity.ingestedAt)!,
+    // Extracted document date (scanned docs only); null when the relation isn't
+    // loaded or no date was found, so clients fall back to occurredAt.
+    documentDate: entity.documentMetadata?.documentDate ?? null,
     metadata: entity.metadata ?? null,
     source: entity.source ? toSourcePayloadDto(entity.source) : null,
     extractions: (entity.extractions ?? [])

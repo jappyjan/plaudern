@@ -103,6 +103,7 @@ import { CreateDocumentMetadata1720000000042 } from './migrations/1720000000042-
 import { CreateEntityMergeSuggestions1720000000043 } from './migrations/1720000000043-CreateEntityMergeSuggestions';
 import { CreateItemSensitivity1720000000044 } from './migrations/1720000000044-CreateItemSensitivity';
 import { CreateAiConfig1720000000045 } from './migrations/1720000000045-CreateAiConfig';
+import { AddDocumentDate1720000000046 } from './migrations/1720000000046-AddDocumentDate';
 import { CreateNudgeState1720000000047 } from './migrations/1720000000047-CreateNudgeState';
 import { SimplifyAiConfig1720000000048 } from './migrations/1720000000048-SimplifyAiConfig';
 
@@ -212,6 +213,7 @@ export const ALL_MIGRATIONS = [
   CreateEntityMergeSuggestions1720000000043,
   CreateItemSensitivity1720000000044,
   CreateAiConfig1720000000045,
+  AddDocumentDate1720000000046,
   CreateNudgeState1720000000047,
   SimplifyAiConfig1720000000048,
 ];

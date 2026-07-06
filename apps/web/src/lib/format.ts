@@ -27,6 +27,15 @@ export function formatDuration(totalSeconds: number): string {
 }
 
 /**
+ * The date to show for an item: for a scanned document with an extracted date
+ * printed on it, prefer that; otherwise the capture/upload time. Keeps a single
+ * rule so every date display stays consistent.
+ */
+export function itemDate(item: { documentDate?: string | null; occurredAt: string }): string {
+  return item.documentDate ?? item.occurredAt;
+}
+
+/**
  * Deep link to a recording, optionally seeking to a moment (`?t=<sec>`). The
  * item detail page reads `t` and the audio player jumps there once the duration
  * is known — the same contract memory-chat citations use. Null timestamp → a
