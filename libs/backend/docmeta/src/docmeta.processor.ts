@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { runWithAiAudit } from '@plaudern/audit';
 import { InboxService } from '@plaudern/inbox';
 import type { DocMetaExtractionPayload } from '@plaudern/contracts';
 import { DOCMETA_PROVIDER, type DocMetaProvider } from './docmeta.provider';
@@ -38,7 +39,10 @@ export class DocMetaProcessor {
         throw new Error('no succeeded OCR text to extract document metadata from');
       }
 
-      const result = await this.provider.extract(item.userId, input);
+      const result = await runWithAiAudit(
+        { userId: item.userId, itemId: item.id, kind: 'docmeta' },
+        () => this.provider.extract(item.userId, input),
+      );
       const occurredAt = input.occurredAt ?? toIso(item.occurredAt);
 
       if (!result.docMeta) {
