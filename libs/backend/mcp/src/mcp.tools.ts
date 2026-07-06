@@ -43,7 +43,7 @@ import { QuestionsService } from '@plaudern/questions';
 import { DecisionsService } from '@plaudern/decisions';
 import { RemindersService } from '@plaudern/reminders';
 import { TopicsService } from '@plaudern/topics';
-import { JournalService } from '@plaudern/journal';
+import { JournalService, childTypeOf } from '@plaudern/journal';
 import { CalendarEventsService } from '@plaudern/calendar';
 
 /** A single hybrid-search hit as returned to an MCP client. */
@@ -266,11 +266,12 @@ export class McpToolsService {
 
   /**
    * list_relations: the asserted (non-co-occurrence) knowledge-graph edges
-   * touching one entity, plus the connected neighbors' names. The aggregated
-   * edge read model exposes no per-evidence item id, so edges are gated by
-   * ENDPOINT VISIBILITY — an edge shows only when both its entities are
-   * independently visible in non-sensitive content (fail-closed proxy). Optional
-   * `relationType` filter; cursor-paginated.
+   * touching one entity, plus the connected neighbors' names. Each edge is gated
+   * by its OWN evidence — an edge shows only when at least one of the recordings
+   * it was extracted from is externally allowed (so "A spouse_of B" asserted
+   * solely from a secret recording is dropped even when A and B are both visible
+   * elsewhere) AND its neighbor is itself visible. `evidenceCount` is recomputed
+   * from the surviving (allowed) evidence. Optional `relationType`; paginated.
    */
   async listRelations(
     userId: string,
@@ -283,13 +284,23 @@ export class McpToolsService {
     const visible = await this.visibleEntityIds(userId, [args.entityId]);
     if (!visible.has(args.entityId)) throw new NotFoundException('entity not found');
     const edges = await this.entityGraph.edgesFor(userId, args.entityId, args.relationType, false);
+    const evidence = await this.entityGraph.edgeEvidenceItemIds(
+      userId,
+      args.entityId,
+      args.relationType,
+      false,
+    );
+    const allowedEvidence = await this.allowedItemIds([...evidence.values()].flat());
     const neighborIds = [
       ...new Set(edges.flatMap((e) => [e.sourceEntityId, e.targetEntityId])),
     ].filter((id) => id !== args.entityId);
     const visibleNeighbors = await this.visibleEntityIds(userId, neighborIds);
-    const gated = edges.filter((e) => {
+    const gated = edges.flatMap((e) => {
       const other = e.sourceEntityId === args.entityId ? e.targetEntityId : e.sourceEntityId;
-      return visibleNeighbors.has(other);
+      if (!visibleNeighbors.has(other)) return [];
+      const allowedItems = (evidence.get(edgeKey(e)) ?? []).filter((i) => allowedEvidence.has(i));
+      if (allowedItems.length === 0) return []; // no non-sensitive evidence — fail closed
+      return [{ ...e, evidenceCount: allowedItems.length }];
     });
     const { page, nextCursor } = paginate(gated, args.limit, args.cursor);
     const pageNeighborIds = [
@@ -320,11 +331,20 @@ export class McpToolsService {
     const allowed = await this.allowedItemIds(
       [...citationRefs.values()].flatMap((refs) => refs.map((r) => r.inboxItemId)),
     );
-    const gated = facts.filter((f) =>
-      (citationRefs.get(f.id) ?? []).some((r) => allowed.has(r.inboxItemId)),
-    );
+    // Keep a fact only if ≥1 citation survives, and recompute citationCount from
+    // the SURVIVING (allowed) citations so a dropped sensitive source never even
+    // shows up in the count (mirrors the dossier's per-fact redaction).
+    const gated = facts.flatMap((f) => {
+      const allowedItems = new Set(
+        (citationRefs.get(f.id) ?? [])
+          .filter((r) => allowed.has(r.inboxItemId))
+          .map((r) => r.inboxItemId),
+      );
+      if (allowedItems.size === 0) return [];
+      return [{ fact: f, citationCount: allowedItems.size }];
+    });
     const { page, nextCursor } = paginate(gated, args.limit, args.cursor);
-    return { facts: page.map(toFactListEntry), nextCursor };
+    return { facts: page.map(({ fact, citationCount }) => toFactListEntry(fact, citationCount)), nextCursor };
   }
 
   /**
@@ -490,29 +510,84 @@ export class McpToolsService {
   }
 
   /**
-   * get_journal: one rollup's composed narrative for a period. If ANY direct
-   * source-item citation is sensitive/unclassified the markdown body is withheld
-   * (`markdown` null, `redacted` true) and that citation is dropped, since the
-   * synthesized text could quote it. NB: weekly/monthly/yearly rollups also cite
-   * child day entries (`kind: 'journal'`) transitively — only DIRECT item
-   * citations are gated here; deeper transitive gating is a follow-up.
+   * get_journal: one rollup's composed narrative for a period. A day entry cites
+   * its source items directly (`kind: 'item'`); a week/month rollup composes from
+   * child DAY narratives and a year from child MONTHS, citing them as
+   * `kind: 'journal'` (refId = the child period key) — so its own citations carry
+   * NO item ids. To avoid leaking sensitive content that a rollup transitively
+   * summarizes, child-journal citations are resolved recursively down to their
+   * item citations and ALL are gated. The markdown body is returned only when
+   * every transitively-reachable source item is externally allowed AND every
+   * child journal resolved; otherwise it is withheld (`markdown` null,
+   * `redacted` true) and disallowed direct item citations are dropped.
    */
   async getJournal(
     userId: string,
     args: { periodType: JournalPeriodType; periodKey: string },
   ): Promise<JournalDocumentResponse & { redacted: boolean }> {
     const doc = await this.journal.getJournal(userId, args.periodType, args.periodKey);
-    const itemRefs = doc.citations
-      .filter((c: JournalCitation) => c.kind === 'item')
-      .map((c) => c.refId);
+    const { itemRefs, resolvable } = await this.collectJournalItemRefs(
+      userId,
+      args.periodType,
+      doc,
+    );
     const allowed = await this.allowedItemIds(itemRefs);
-    if (itemRefs.every((r) => allowed.has(r))) return { ...doc, redacted: false };
+    if (resolvable && itemRefs.every((r) => allowed.has(r))) {
+      return { ...doc, redacted: false };
+    }
     return {
       ...doc,
       markdown: null,
       citations: doc.citations.filter((c) => !(c.kind === 'item' && !allowed.has(c.refId))),
       redacted: true,
     };
+  }
+
+  /**
+   * Every source-item id a journal document transitively derives from, following
+   * `kind: 'journal'` citations down into child periods (year → months → days).
+   * `resolvable` is false — forcing get_journal to fail closed — if any child
+   * journal can't be re-derived to a current succeeded version (deleted/failed,
+   * so its embedded narrative can't be re-gated) or the recursion is impossibly
+   * deep. `kind: 'event'` citations are calendar-feed (not item) content and are
+   * ignored, mirroring list_calendar_events.
+   */
+  private async collectJournalItemRefs(
+    userId: string,
+    periodType: JournalPeriodType,
+    doc: { citations: JournalCitation[]; version: number | null },
+    depth = 0,
+  ): Promise<{ itemRefs: string[]; resolvable: boolean }> {
+    if (depth > 4) return { itemRefs: [], resolvable: false };
+    const itemRefs: string[] = [];
+    let resolvable = true;
+    for (const c of doc.citations) {
+      if (c.kind === 'item') {
+        itemRefs.push(c.refId);
+      } else if (c.kind === 'journal') {
+        if (periodType === 'day') {
+          // A day entry citing a journal is unexpected; can't resolve it → fail closed.
+          resolvable = false;
+          continue;
+        }
+        const child = await this.journal.getJournal(userId, childTypeOf(periodType), c.refId);
+        // No current succeeded version ⇒ the parent embedded a narrative we can
+        // no longer re-derive/re-gate. Fail closed.
+        if (child.version === null) {
+          resolvable = false;
+          continue;
+        }
+        const nested = await this.collectJournalItemRefs(
+          userId,
+          childTypeOf(periodType),
+          child,
+          depth + 1,
+        );
+        itemRefs.push(...nested.itemRefs);
+        if (!nested.resolvable) resolvable = false;
+      }
+    }
+    return { itemRefs, resolvable };
   }
 
   /**
@@ -616,15 +691,33 @@ export class McpToolsService {
     const openQuestions = dossier.openQuestions.filter((q) => allowed.has(q.inboxItemId));
     const recentItems = dossier.recentItems.filter((r) => allowed.has(r.inboxItemId));
 
-    // Relations: keep only edges whose OTHER endpoint is itself visible.
+    // Relations: keep an edge only when its OTHER endpoint is visible AND at
+    // least one recording it was extracted from is externally allowed (so an
+    // edge asserted solely from a sensitive item is dropped even if both its
+    // entities are visible elsewhere). The dossier's neighborhood includes weak
+    // co-occurrence edges, so evidence is fetched with includeCooccurrence=true
+    // to line up with dossier.relations. evidenceCount is recomputed from the
+    // surviving evidence.
     const visibleNeighbors = await this.visibleEntityIds(
       userId,
       dossier.neighbors.map((n) => n.id),
     );
-    const relations = dossier.relations.filter((e) => {
+    const edgeEvidence = await this.entityGraph.edgeEvidenceItemIds(
+      userId,
+      dossier.entity.id,
+      undefined,
+      true,
+    );
+    const allowedEdgeEvidence = await this.allowedItemIds([...edgeEvidence.values()].flat());
+    const relations = dossier.relations.flatMap((e) => {
       const other =
         e.sourceEntityId === dossier.entity.id ? e.targetEntityId : e.sourceEntityId;
-      return other === dossier.entity.id || visibleNeighbors.has(other);
+      if (other !== dossier.entity.id && !visibleNeighbors.has(other)) return [];
+      const allowedItems = (edgeEvidence.get(edgeKey(e)) ?? []).filter((i) =>
+        allowedEdgeEvidence.has(i),
+      );
+      if (allowedItems.length === 0) return [];
+      return [{ ...e, evidenceCount: allowedItems.length }];
     });
     const keptNeighbors = new Set(
       relations
@@ -693,7 +786,7 @@ export interface FactListEntry {
   lastSeenAt: string;
 }
 
-function toFactListEntry(f: PersonalFactDto): FactListEntry {
+function toFactListEntry(f: PersonalFactDto, citationCount: number): FactListEntry {
   return {
     id: f.id,
     personEntityId: f.personEntityId,
@@ -702,9 +795,14 @@ function toFactListEntry(f: PersonalFactDto): FactListEntry {
     value: f.value,
     active: f.active,
     exclusive: f.exclusive,
-    citationCount: f.citationCount,
+    citationCount,
     lastSeenAt: f.lastSeenAt,
   };
+}
+
+/** The `toEdges` grouping key for one aggregated relation edge (JJ-78 gating). */
+function edgeKey(e: EntityRelationEdgeDto): string {
+  return `${e.sourceEntityId}:${e.targetEntityId}:${e.relationType}`;
 }
 
 /** A connected entity's identity, returned alongside list_relations edges. */

@@ -9,7 +9,7 @@ type Fakes = {
   ingestion: { ingestText: jest.Mock };
   sensitivity: { effectiveTiers: jest.Mock };
   entitiesRegistry: { list: jest.Mock; mentionItemIds: jest.Mock };
-  entityGraph: { edgesFor: jest.Mock };
+  entityGraph: { edgesFor: jest.Mock; edgeEvidenceItemIds: jest.Mock };
   dossier: { build: jest.Mock };
   facts: { listWithCitations: jest.Mock };
   tasks: { list: jest.Mock; citationItemIds: jest.Mock };
@@ -30,7 +30,10 @@ function build(): { service: McpToolsService; fakes: Fakes } {
     // JJ-78 knowledge-graph read deps + the JJ-21 sensitivity gate.
     sensitivity: { effectiveTiers: jest.fn().mockResolvedValue(new Map()) },
     entitiesRegistry: { list: jest.fn(), mentionItemIds: jest.fn() },
-    entityGraph: { edgesFor: jest.fn() },
+    entityGraph: {
+      edgesFor: jest.fn().mockResolvedValue([]),
+      edgeEvidenceItemIds: jest.fn().mockResolvedValue(new Map()),
+    },
     dossier: { build: jest.fn() },
     facts: { listWithCitations: jest.fn() },
     tasks: { list: jest.fn(), citationItemIds: jest.fn() },
@@ -573,6 +576,142 @@ describe('McpToolsService', () => {
         '2026-07-02T00:00:00.000Z',
       );
       expect(result.events[0].linkedRecordingIds).toEqual(['ok']);
+    });
+  });
+
+  describe('getJournal rollups (transitive sensitivity gate)', () => {
+    /** A journal.getJournal fake that dispatches on (periodType, periodKey). */
+    function journalDocs(
+      docs: Record<string, { version: number | null; markdown: string | null; citations: unknown[] }>,
+    ): jest.Mock {
+      return jest.fn(async (_uid: string, periodType: string, periodKey: string) => {
+        const doc = docs[`${periodType}:${periodKey}`];
+        return {
+          periodType,
+          periodKey,
+          version: doc?.version ?? null,
+          markdown: doc?.markdown ?? null,
+          citations: doc?.citations ?? [],
+        };
+      });
+    }
+
+    it('withholds a WEEK body when a transitive child-day item is sensitive', async () => {
+      const { service, fakes } = build();
+      fakes.journal.getJournal = journalDocs({
+        'week:2026-W26': {
+          version: 1,
+          markdown: 'week narrative summarizing both days',
+          citations: [
+            { marker: 1, kind: 'journal', refId: '2026-06-29' },
+            { marker: 2, kind: 'journal', refId: '2026-06-30' },
+          ],
+        },
+        'day:2026-06-29': { version: 1, markdown: 'ok day', citations: [{ kind: 'item', refId: 'ok' }] },
+        'day:2026-06-30': {
+          version: 1,
+          markdown: 'secret day',
+          citations: [{ kind: 'item', refId: 'secret' }],
+        },
+      });
+      fakes.sensitivity.effectiveTiers = tierMap({ ok: 'normal', secret: 'secret' });
+
+      const result = await service.getJournal('user-1', { periodType: 'week', periodKey: '2026-W26' });
+      // The rollup has NO kind:'item' citations of its own, but it transitively
+      // summarizes a secret day → body must be withheld, not leaked.
+      expect(result.redacted).toBe(true);
+      expect(result.markdown).toBeNull();
+    });
+
+    it('returns a WEEK body when every transitive child-day item is allowed', async () => {
+      const { service, fakes } = build();
+      fakes.journal.getJournal = journalDocs({
+        'week:2026-W26': {
+          version: 1,
+          markdown: 'clean week narrative',
+          citations: [{ marker: 1, kind: 'journal', refId: '2026-06-29' }],
+        },
+        'day:2026-06-29': { version: 1, markdown: 'ok day', citations: [{ kind: 'item', refId: 'ok' }] },
+      });
+      fakes.sensitivity.effectiveTiers = tierMap({ ok: 'normal' });
+
+      const result = await service.getJournal('user-1', { periodType: 'week', periodKey: '2026-W26' });
+      expect(result.redacted).toBe(false);
+      expect(result.markdown).toBe('clean week narrative');
+    });
+
+    it('fails closed when a child journal has no current succeeded version', async () => {
+      const { service, fakes } = build();
+      fakes.journal.getJournal = journalDocs({
+        'month:2026-06': {
+          version: 1,
+          markdown: 'month narrative',
+          citations: [{ marker: 1, kind: 'journal', refId: '2026-06-15' }],
+        },
+        // child day resolves to no succeeded version (version null) — unre-derivable.
+        'day:2026-06-15': { version: null, markdown: null, citations: [] },
+      });
+      fakes.sensitivity.effectiveTiers = tierMap({});
+
+      const result = await service.getJournal('user-1', { periodType: 'month', periodKey: '2026-06' });
+      expect(result.redacted).toBe(true);
+      expect(result.markdown).toBeNull();
+    });
+  });
+
+  describe('listRelations (edge-evidence sensitivity gate)', () => {
+    function edge(over: Partial<Record<string, unknown>> = {}) {
+      return {
+        sourceEntityId: (over.sourceEntityId as string) ?? 'e-1',
+        targetEntityId: (over.targetEntityId as string) ?? 'n-1',
+        relationType: (over.relationType as string) ?? 'related_to',
+        label: (over.label as string | null) ?? 'spouse',
+        confidence: 0.9,
+        origin: 'llm',
+        evidenceCount: (over.evidenceCount as number) ?? 3,
+        firstSeenAt: '2026-07-01T00:00:00.000Z',
+        lastSeenAt: '2026-07-01T00:00:00.000Z',
+      };
+    }
+    function mentions(src: Record<string, string[]>): jest.Mock {
+      return jest.fn(async (_u: string, ids: string[]) => {
+        const m = new Map<string, string[]>();
+        for (const id of ids) m.set(id, src[id] ?? []);
+        return m;
+      });
+    }
+
+    it('drops an edge whose only evidence is a secret item, even when both endpoints are visible', async () => {
+      const { service, fakes } = build();
+      fakes.entitiesRegistry.mentionItemIds = mentions({ 'e-1': ['ok'], 'n-1': ['ok2'] });
+      fakes.entityGraph.edgesFor.mockResolvedValue([edge()]);
+      // The A–B edge was asserted SOLELY from a secret recording.
+      fakes.entityGraph.edgeEvidenceItemIds.mockResolvedValue(
+        new Map([['e-1:n-1:related_to', ['secret']]]),
+      );
+      fakes.sensitivity.effectiveTiers = tierMap({ ok: 'normal', ok2: 'normal', secret: 'secret' });
+
+      const result = await service.listRelations('user-1', { entityId: 'e-1', limit: 20 });
+      expect(result.relations).toEqual([]);
+    });
+
+    it('keeps an edge with mixed evidence and recomputes evidenceCount from allowed items', async () => {
+      const { service, fakes } = build();
+      fakes.entitiesRegistry.mentionItemIds = mentions({ 'e-1': ['ok'], 'n-1': ['ok2'] });
+      fakes.entityGraph.edgesFor.mockResolvedValue([edge({ evidenceCount: 3 })]);
+      fakes.entityGraph.edgeEvidenceItemIds.mockResolvedValue(
+        new Map([['e-1:n-1:related_to', ['ok', 'secret', 'new']]]),
+      );
+      fakes.entitiesRegistry.list.mockResolvedValue([
+        { id: 'n-1', canonicalName: 'Neighbor', type: 'person', aliases: [] },
+      ]);
+      fakes.sensitivity.effectiveTiers = tierMap({ ok: 'normal', ok2: 'normal', secret: 'secret' });
+
+      const result = await service.listRelations('user-1', { entityId: 'e-1', limit: 20 });
+      expect(result.relations).toHaveLength(1);
+      // 3 raw evidence items but only 'ok' is allowed ⇒ recomputed to 1.
+      expect(result.relations[0].evidenceCount).toBe(1);
+      expect(result.neighbors).toEqual([{ id: 'n-1', canonicalName: 'Neighbor', type: 'person' }]);
     });
   });
 });
