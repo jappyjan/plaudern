@@ -30,25 +30,28 @@ export class TaskOpenLoopSource implements OpenLoopSource {
   async list(userId: string, includeResolved: boolean): Promise<OpenLoopDto[]> {
     const tasks = await this.registry.list(userId, includeResolved ? undefined : 'open');
     if (tasks.length === 0) return [];
-    const latestItem = await this.latestItemByTask(tasks.map((t) => t.id));
-    return tasks.map((task) => this.toDto(task, latestItem.get(task.id) ?? null));
+    const latest = await this.latestCitationByTask(tasks.map((t) => t.id));
+    return tasks.map((task) => this.toDto(task, latest.get(task.id) ?? null));
   }
 
   async updateState(userId: string, id: string, state: OpenLoopState): Promise<OpenLoopDto> {
     const task = await this.registry.updateStatus(userId, id, toTaskStatus(state));
-    const latestItem = await this.latestItemByTask([task.id]);
-    return this.toDto(task, latestItem.get(task.id) ?? null);
+    const latest = await this.latestCitationByTask([task.id]);
+    return this.toDto(task, latest.get(task.id) ?? null);
   }
 
   /**
-   * Most-recent citation's inbox item per task, for the deep-link. Uses raw
-   * createdAt (not the latest-succeeded-extraction filter the registry applies
-   * to counts): a newer extraction always appends newer citation rows, so the
-   * max-createdAt citation is the freshest mention — an acceptable, cheap
+   * Most-recent citation per task, for the provenance deep-link (its inbox item
+   * plus the segment start, so the ledger row jumps to the cited moment). Uses
+   * raw createdAt (not the latest-succeeded-extraction filter the registry
+   * applies to counts): a newer extraction always appends newer citation rows,
+   * so the max-createdAt citation is the freshest mention — an acceptable, cheap
    * approximation for a link target.
    */
-  private async latestItemByTask(taskIds: string[]): Promise<Map<string, string>> {
-    const map = new Map<string, string>();
+  private async latestCitationByTask(
+    taskIds: string[],
+  ): Promise<Map<string, { inboxItemId: string; startSeconds: number | null }>> {
+    const map = new Map<string, { inboxItemId: string; startSeconds: number | null }>();
     if (taskIds.length === 0) return map;
     const rows = await this.citations.find({ where: { taskId: In(taskIds) } });
     const newest = new Map<string, Date>();
@@ -56,13 +59,16 @@ export class TaskOpenLoopSource implements OpenLoopSource {
       const seen = newest.get(row.taskId);
       if (!seen || row.createdAt > seen) {
         newest.set(row.taskId, row.createdAt);
-        map.set(row.taskId, row.inboxItemId);
+        map.set(row.taskId, { inboxItemId: row.inboxItemId, startSeconds: row.startSeconds });
       }
     }
     return map;
   }
 
-  private toDto(task: TaskDto, inboxItemId: string | null): OpenLoopDto {
+  private toDto(
+    task: TaskDto,
+    latest: { inboxItemId: string; startSeconds: number | null } | null,
+  ): OpenLoopDto {
     return {
       id: task.id,
       kind: 'task',
@@ -72,7 +78,8 @@ export class TaskOpenLoopSource implements OpenLoopSource {
       counterpartyName: null,
       dueDate: task.dueDate,
       overdue: isOverdue(task.dueDate),
-      inboxItemId,
+      inboxItemId: latest?.inboxItemId ?? null,
+      sourceTimestamp: latest?.startSeconds ?? null,
       citationCount: task.citationCount,
       firstSeenAt: task.firstSeenAt,
       lastSeenAt: task.lastSeenAt,

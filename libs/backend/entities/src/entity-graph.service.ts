@@ -168,6 +168,41 @@ export class EntityGraphService {
     return this.toEdges(await this.currentRows(rows));
   }
 
+  /**
+   * Current evidence inbox-item ids per aggregated edge touching `entityId`, for
+   * external-surface sensitivity gating (JJ-78). The aggregated `EntityRelationEdgeDto`
+   * `edgesFor` returns drops the per-evidence item id, so a caller can't tell
+   * whether an edge's only support is a sensitive recording — this exposes it.
+   * Keyed by the SAME `${sourceEntityId}:${targetEntityId}:${relationType}` that
+   * `toEdges` groups on, restricted to each item's LATEST succeeded `relations`
+   * extraction (mirrors `edgesFor`). Pass the SAME `(relationType,
+   * includeCooccurrence)` you passed `edgesFor` so the evidence lines up 1:1.
+   */
+  async edgeEvidenceItemIds(
+    userId: string,
+    entityId: string,
+    relationType?: RelationType,
+    includeCooccurrence = true,
+  ): Promise<Map<string, string[]>> {
+    const filter = relationType ? { relationType } : {};
+    const originFilter = includeCooccurrence ? {} : { origin: 'llm' as const };
+    const rows = await this.relations.find({
+      where: [
+        { userId, sourceEntityId: entityId, ...filter, ...originFilter },
+        { userId, targetEntityId: entityId, ...filter, ...originFilter },
+      ],
+    });
+    const map = new Map<string, string[]>();
+    for (const row of await this.currentRows(rows)) {
+      const key = `${row.sourceEntityId}:${row.targetEntityId}:${row.relationType}`;
+      const list = map.get(key) ?? [];
+      list.push(row.inboxItemId);
+      map.set(key, list);
+    }
+    for (const [key, items] of map) map.set(key, [...new Set(items)]);
+    return map;
+  }
+
   /** One hop around an entity: its edges plus the entities they connect to. */
   async neighborhood(
     userId: string,

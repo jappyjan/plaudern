@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { runWithAiAudit } from '@plaudern/audit';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { AiConfigService } from '@plaudern/ai-config';
@@ -325,7 +326,10 @@ export class TopicProposalsService {
     if (samples.length === 0) return null;
 
     try {
-      const result = await this.labeler.label(userId, { samples, language });
+      const result = await runWithAiAudit(
+        { userId, kind: 'topic_proposals' },
+        () => this.labeler.label(userId, { samples, language }),
+      );
       const label = result.label.trim();
       if (!label) return null;
       return { label, description: result.description };

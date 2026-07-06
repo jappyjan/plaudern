@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Card, CardBody, Chip, Spinner, Switch } from '@heroui/react';
 import { Link } from 'react-router-dom';
-import type { CommitmentDirection, OpenLoopDto, OpenLoopKind, OpenLoopState } from '@plaudern/contracts';
-import { listOpenLoops, updateOpenLoopState } from '../lib/api';
+import type {
+  CommitmentDirection,
+  NudgeDto,
+  OpenLoopDto,
+  OpenLoopKind,
+  OpenLoopState,
+} from '@plaudern/contracts';
+import { actOnNudge, listNudges, listOpenLoops, updateOpenLoopState } from '../lib/api';
+import { itemDeepLink } from '../lib/format';
 import { LoopIcon } from '../components/icons';
 
 type KindFilter = 'all' | 'task' | 'commitment' | 'question';
@@ -80,6 +87,8 @@ export function OpenLoopsPage() {
           Every unresolved thread across your recordings, oldest and most pressing first.
         </p>
       </div>
+
+      <NudgesSection />
 
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap gap-1.5">
@@ -276,12 +285,12 @@ function OpenLoopCard({
           {loop.inboxItemId && (
             <Button
               as={Link}
-              to={`/items/${loop.inboxItemId}`}
+              to={itemDeepLink(loop.inboxItemId, loop.sourceTimestamp)}
               size="sm"
               variant="light"
               className="ml-auto"
             >
-              Open recording
+              {loop.sourceTimestamp !== null ? 'Jump to moment' : 'Open recording'}
             </Button>
           )}
         </div>
@@ -340,4 +349,193 @@ function relativeAge(iso: string): string {
   if (days < 14) return `${days} days ago`;
   if (days < 60) return `${Math.floor(days / 7)} weeks ago`;
   return `${Math.floor(days / 30)} months ago`;
+}
+
+const SNOOZE_OPTIONS: { label: string; days: number }[] = [
+  { label: '1 day', days: 1 },
+  { label: '3 days', days: 3 },
+  { label: '1 week', days: 7 },
+];
+
+/**
+ * Proactive commitment nudges (JJ-26), surfaced above the ledger: promises whose
+ * deadline is approaching with no evidence you followed through, and stale
+ * incoming promises worth chasing. Only unresolved commitments appear (a later
+ * recording mentioning it was done drops it). Each nudge can be snoozed or
+ * dismissed, and carries a ready-to-copy follow-up draft.
+ */
+function NudgesSection() {
+  const [nudges, setNudges] = useState<NudgeDto[] | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [snoozeOpenFor, setSnoozeOpenFor] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void listNudges()
+      .then((res) => {
+        if (!cancelled) setNudges(res.nudges);
+      })
+      .catch(() => {
+        // A nudge fetch failure must never break the ledger — just show nothing.
+        if (!cancelled) setNudges([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const act = async (n: NudgeDto, days?: number) => {
+    setBusyId(n.commitmentId);
+    setSnoozeOpenFor(null);
+    try {
+      await actOnNudge(n.commitmentId, days ? { action: 'snooze', snoozeDays: days } : { action: 'dismiss' });
+      setNudges((existing) => existing?.filter((x) => x.commitmentId !== n.commitmentId) ?? existing);
+    } catch {
+      // Leave the nudge in place on failure; the next load reconciles.
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  if (!nudges || nudges.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <h2 className="text-sm font-semibold">Nudges</h2>
+        <Chip size="sm" variant="flat" color="warning">
+          {nudges.length}
+        </Chip>
+      </div>
+      <div className="flex flex-col gap-2">
+        {nudges.map((n) => (
+          <NudgeCard
+            key={n.commitmentId}
+            nudge={n}
+            busy={busyId === n.commitmentId}
+            snoozeOpen={snoozeOpenFor === n.commitmentId}
+            onToggleSnooze={() =>
+              setSnoozeOpenFor((cur) => (cur === n.commitmentId ? null : n.commitmentId))
+            }
+            onSnooze={(days) => void act(n, days)}
+            onDismiss={() => void act(n)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NudgeCard({
+  nudge,
+  busy,
+  snoozeOpen,
+  onToggleSnooze,
+  onSnooze,
+  onDismiss,
+}: {
+  nudge: NudgeDto;
+  busy: boolean;
+  snoozeOpen: boolean;
+  onToggleSnooze: () => void;
+  onSnooze: (days: number) => void;
+  onDismiss: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const mine = nudge.direction === 'owed_by_me';
+
+  const copyDraft = async () => {
+    try {
+      await navigator.clipboard.writeText(nudge.draftText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard unavailable (e.g. insecure context) — no-op.
+    }
+  };
+
+  return (
+    <Card className="border border-warning-200 bg-warning-50/40">
+      <CardBody className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1.5">
+          <p className="text-sm font-medium">{nudge.description}</p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Chip size="sm" variant="flat" color={mine ? 'warning' : 'secondary'}>
+              {mine ? 'I owe' : 'Owed to me'}
+            </Chip>
+            <NudgeReasonChip reason={nudge.reason} dueDate={nudge.dueDate} />
+          </div>
+          <p className="text-xs text-default-400">
+            {nudge.counterpartyName ? `${nudge.counterpartyName} · ` : ''}
+            promised {relativeAge(nudge.occurredAt)}
+          </p>
+        </div>
+
+        <div className="rounded-medium bg-default-100 p-2.5">
+          <p className="text-xs text-default-600">{nudge.draftText}</p>
+          <Button size="sm" variant="light" className="mt-1 h-7 min-w-0 px-2" onPress={() => void copyDraft()}>
+            {copied ? 'Copied' : 'Copy draft'}
+          </Button>
+        </div>
+
+        <div className="relative flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="flat" isDisabled={busy} onPress={onToggleSnooze}>
+            Snooze
+          </Button>
+          {snoozeOpen && (
+            // Plain toggled div (not a HeroUI dropdown/popover) so the overlay
+            // opens reliably on iOS PWA.
+            <div className="absolute bottom-full left-0 z-10 mb-1 flex flex-col gap-0.5 rounded-medium border border-default-200 bg-content1 p-1 shadow-medium">
+              {SNOOZE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.days}
+                  type="button"
+                  className="rounded-small px-3 py-1.5 text-left text-sm hover:bg-default-100"
+                  onClick={() => onSnooze(opt.days)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
+          <Button size="sm" variant="flat" isLoading={busy} onPress={onDismiss}>
+            Dismiss
+          </Button>
+          {nudge.inboxItemId && (
+            <Button
+              as={Link}
+              to={`/items/${nudge.inboxItemId}`}
+              size="sm"
+              variant="light"
+              className="ml-auto"
+            >
+              Open recording
+            </Button>
+          )}
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+function NudgeReasonChip({ reason, dueDate }: { reason: NudgeDto['reason']; dueDate: string | null }) {
+  if (reason === 'overdue') {
+    return (
+      <Chip size="sm" variant="flat" color="danger">
+        overdue{dueDate ? ` · ${formatDate(dueDate)}` : ''}
+      </Chip>
+    );
+  }
+  if (reason === 'due_soon') {
+    return (
+      <Chip size="sm" variant="flat" color="warning">
+        due {dueDate ? formatDate(dueDate) : 'soon'}
+      </Chip>
+    );
+  }
+  return (
+    <Chip size="sm" variant="flat">
+      stale
+    </Chip>
+  );
 }

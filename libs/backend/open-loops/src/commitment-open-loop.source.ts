@@ -49,6 +49,7 @@ function toDto(c: CommitmentDto): OpenLoopDto {
     dueDate: c.dueDate,
     overdue: c.dueDate !== null && Date.parse(c.dueDate) < Date.now(),
     inboxItemId: c.inboxItemId,
+    sourceTimestamp: c.sourceTimestamp,
     // A commitment is per-recording (no cross-item dedupe), so it is raised once.
     citationCount: 1,
     firstSeenAt: c.occurredAt,

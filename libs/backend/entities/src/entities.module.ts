@@ -155,6 +155,10 @@ import { RelationsExtractor } from './relations.extractor';
     RelationsService,
     RelationsExtractor,
     EntitiesRegistryService,
+    // Read models wrapped by the MCP server (JJ-78): the knowledge graph and the
+    // per-person dossier. Provider-only until an external read surface needed them.
+    EntityGraphService,
+    DossierService,
   ],
 })
 export class EntitiesModule {}

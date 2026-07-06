@@ -51,6 +51,7 @@ describe('QuestionOpenLoopSource', () => {
         question: 'When does the lease end?',
         occurredAt: '2026-05-20T09:00:00.000Z',
         inboxItemId: '7d1a2f30-0000-4000-8000-00000000abcd',
+        sourceTimestamp: 42.5,
       }),
     ]);
     const [loop] = await src.list('u1', false);
@@ -64,6 +65,8 @@ describe('QuestionOpenLoopSource', () => {
       dueDate: null,
       overdue: false,
       inboxItemId: '7d1a2f30-0000-4000-8000-00000000abcd',
+      // Carried through so the ledger row deep-links to the cited moment (JJ-71).
+      sourceTimestamp: 42.5,
       citationCount: 1,
       firstSeenAt: '2026-05-20T09:00:00.000Z',
       lastSeenAt: '2026-05-20T09:00:00.000Z',

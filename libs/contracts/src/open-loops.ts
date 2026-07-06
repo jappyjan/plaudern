@@ -57,6 +57,13 @@ export const openLoopSchema = z.object({
    * recent recording that mentioned a task. Null when no single item applies.
    */
   inboxItemId: z.string().uuid().nullable(),
+  /**
+   * Segment start (seconds into `inboxItemId`'s recording) the loop was heard at,
+   * so the ledger row deep-links to the exact moment (`/items/:id?t=<sec>`) the
+   * same way a memory-chat citation does. Null when the source has no timestamp
+   * or it couldn't be resolved from the transcript.
+   */
+  sourceTimestamp: z.number().nonnegative().nullable().default(null),
   /** Distinct recordings that raised this loop — a "keeps coming up" importance signal. */
   citationCount: z.number().int().nonnegative(),
   /** When the loop first opened (its age anchor for ranking). */

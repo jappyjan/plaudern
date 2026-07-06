@@ -35,7 +35,7 @@ const ACTIVE_STATUSES: ExtractionStatus[] = ['queued', 'processing'];
  * appended row. Bump when the output meaningfully improves (better model or
  * prompt) so backfill runs can catch older items up.
  */
-export const COMMITMENTS_EXTRACTOR_VERSION = 2;
+export const COMMITMENTS_EXTRACTOR_VERSION = 3;
 
 /**
  * Owns the commitment-extraction pipeline step (JJ-36). WHEN it runs is decided

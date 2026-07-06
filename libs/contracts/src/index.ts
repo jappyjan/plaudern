@@ -21,6 +21,7 @@ export * from './reminders';
 export * from './ocr';
 export * from './docmeta';
 export * from './open-loops';
+export * from './nudges';
 export * from './events';
 export * from './geocode';
 export * from './calendar';

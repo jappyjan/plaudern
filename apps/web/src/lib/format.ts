@@ -35,6 +35,17 @@ export function itemDate(item: { documentDate?: string | null; occurredAt: strin
   return item.documentDate ?? item.occurredAt;
 }
 
+/**
+ * Deep link to a recording, optionally seeking to a moment (`?t=<sec>`). The
+ * item detail page reads `t` and the audio player jumps there once the duration
+ * is known — the same contract memory-chat citations use. Null timestamp → a
+ * plain link to the top of the recording.
+ */
+export function itemDeepLink(inboxItemId: string, sourceTimestamp: number | null): string {
+  if (sourceTimestamp === null) return `/items/${inboxItemId}`;
+  return `/items/${inboxItemId}?t=${Math.max(0, Math.floor(sourceTimestamp))}`;
+}
+
 export function formatDate(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;

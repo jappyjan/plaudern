@@ -3,8 +3,8 @@ import { Button, Card, CardBody, CardHeader, Chip, Spinner } from '@heroui/react
 import { Link } from 'react-router-dom';
 import type { CommitmentDto, CommitmentStatus, ItemCommitmentsResponse } from '@plaudern/contracts';
 import { getItemCommitments, retryItemCommitments, updateCommitmentStatus } from '../lib/api';
-import { formatDateTime } from '../lib/format';
-import { PeopleIcon } from './icons';
+import { formatDateTime, formatDuration, itemDeepLink } from '../lib/format';
+import { PeopleIcon, PlayIcon } from './icons';
 
 /** Extraction is async — poll for the outcome while it is in flight. */
 const POLL_INTERVAL_MS = 10_000;
@@ -228,6 +228,18 @@ function CommitmentRow({
         )}
       </div>
       {meta.length > 0 && <p className="text-xs text-default-500">{meta.join(' · ')}</p>}
+      {commitment.sourceTimestamp !== null && (
+        <Button
+          as={Link}
+          to={itemDeepLink(commitment.inboxItemId, commitment.sourceTimestamp)}
+          size="sm"
+          variant="light"
+          className="h-6 min-w-0 self-start px-2 text-xs text-default-500"
+          startContent={<PlayIcon className="h-3 w-3" />}
+        >
+          Jump to {formatDuration(commitment.sourceTimestamp)}
+        </Button>
+      )}
       <div className="flex gap-1">
         {commitment.status === 'open' ? (
           <>

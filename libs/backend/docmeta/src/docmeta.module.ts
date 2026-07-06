@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuditModule } from '@plaudern/audit';
 import { InboxModule } from '@plaudern/inbox';
 import { DocumentMetadataEntity, InboxItemEntity } from '@plaudern/persistence';
 import { BullJobQueue, InlineJobQueue, redisConnectionFromConfig } from '@plaudern/queue';
@@ -20,6 +21,7 @@ import { InboxDocMetaController } from './inbox-docmeta.controller';
 @Module({
   imports: [
     ConfigModule,
+    AuditModule,
     InboxModule,
     // Deadline reminders reuse the JJ-25 reminders persistence (dedup/upsert +
     // user-owned-status durability); business-card contacts reuse the entity

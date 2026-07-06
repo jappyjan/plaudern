@@ -160,6 +160,9 @@ import {
   type OpenLoopKind,
   type OpenLoopListResponse,
   type OpenLoopState,
+  nudgeListResponseSchema,
+  type NudgeListResponse,
+  type NudgeActionRequest,
   reminderSchema,
   reminderListResponseSchema,
   itemRemindersResponseSchema,
@@ -1220,6 +1223,19 @@ export async function updateOpenLoopState(
       body: JSON.stringify({ state }),
     }),
   );
+}
+
+/** The user's active commitment nudges (JJ-26), for the ledger surface. */
+export async function listNudges(): Promise<NudgeListResponse> {
+  return nudgeListResponseSchema.parse(await requestJson('/nudges'));
+}
+
+/** Dismiss or snooze a nudge; keyed by the underlying commitment id. */
+export async function actOnNudge(commitmentId: string, req: NudgeActionRequest): Promise<void> {
+  await requestVoid(`/nudges/${commitmentId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(req),
+  });
 }
 
 /**
