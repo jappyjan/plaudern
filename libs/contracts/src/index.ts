@@ -29,6 +29,7 @@ export * from './notifications';
 export * from './auth';
 export * from './ai-providers';
 export * from './ai-capabilities';
+export * from './ai-provider-presets';
 export * from './extraction';
 export * from './sensitivity';
 export * from './mcp';

@@ -456,3 +456,99 @@ export function capabilityCatalog(): AiCapabilityCatalogEntry[] {
     };
   });
 }
+
+/* ---- Capability groups (the simplified, kind-level settings) ------------- */
+
+/**
+ * Static metadata for one capability *group* — the shared, kind-level setting
+ * the primary UI exposes. Its defaults (base URL, model, timeout, params) come
+ * from the group's *primary* capability; its member list is every capability of
+ * that kind, in registry order.
+ */
+export interface CapabilityGroupMeta {
+  kind: AiCapabilityKind;
+  label: string;
+  description: string;
+  /** The capability whose registry defaults seed the group. */
+  primary: AiCapability;
+  compatibleProtocols: AiProviderProtocol[];
+  defaultBaseUrl: string | null;
+  defaultModel: string | null;
+  defaultTimeoutMs: number;
+  params: AiCapabilityParamDescriptor[];
+  memberCapabilities: AiCapability[];
+}
+
+/** Display order + human labels for the five capability kinds. */
+const GROUP_DEFS: Record<
+  AiCapabilityKind,
+  { label: string; description: string; primary: AiCapability }
+> = {
+  chat: {
+    label: 'Reasoning & Chat',
+    description:
+      'The text model behind summaries, extraction (tasks, entities, topics, …), journaling and memory chat.',
+    primary: 'summarization',
+  },
+  vision: {
+    label: 'Vision & OCR',
+    description: 'Reads text from photos and scans with a vision model.',
+    primary: 'ocr',
+  },
+  embeddings: {
+    label: 'Embeddings',
+    description: 'Vector embeddings that power semantic search and memory chat.',
+    primary: 'embeddings',
+  },
+  stt: {
+    label: 'Transcription',
+    description: 'Speech-to-text for audio recordings.',
+    primary: 'transcription',
+  },
+  diarization: {
+    label: 'Diarization',
+    description: 'Separates and identifies speakers via voiceprints.',
+    primary: 'speaker_id',
+  },
+};
+
+/** Group display order. */
+export const ALL_CAPABILITY_KINDS = Object.keys(GROUP_DEFS) as AiCapabilityKind[];
+
+/** The kind a capability belongs to. */
+export function kindOf(capability: AiCapability): AiCapabilityKind {
+  return REGISTRY[capability].kind;
+}
+
+/** Members of one kind, in registry display order. */
+export function capabilitiesOfKind(kind: AiCapabilityKind): AiCapability[] {
+  return ALL_CAPABILITIES.filter((c) => REGISTRY[c].kind === kind);
+}
+
+export function capabilityGroupMeta(kind: AiCapabilityKind): CapabilityGroupMeta {
+  const def = GROUP_DEFS[kind];
+  const members = capabilitiesOfKind(kind);
+  const primaryMeta = REGISTRY[def.primary];
+  // Protocols any member can speak (deduped, primary's order first).
+  const protocols = new Set<AiProviderProtocol>();
+  for (const c of members) for (const p of REGISTRY[c].compatibleProtocols) protocols.add(p);
+  // Only single-member kinds carry params today; union preserves member order.
+  const params = members.flatMap((c) => REGISTRY[c].params);
+  return {
+    kind,
+    label: def.label,
+    description: def.description,
+    primary: def.primary,
+    compatibleProtocols: [...protocols],
+    defaultBaseUrl: primaryMeta.defaultBaseUrl,
+    defaultModel: primaryMeta.defaultModel,
+    defaultTimeoutMs: primaryMeta.defaultTimeoutMs,
+    params,
+    memberCapabilities: members,
+  };
+}
+
+/** All five capability groups, in display order. */
+export function capabilityGroups(): CapabilityGroupMeta[] {
+  return ALL_CAPABILITY_KINDS.map(capabilityGroupMeta);
+}

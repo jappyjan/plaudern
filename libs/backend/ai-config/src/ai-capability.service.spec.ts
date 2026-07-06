@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource, Repository } from 'typeorm';
 import {
+  AiCapabilityGroupSettingEntity,
   AiCapabilitySettingEntity,
   AiProviderEntity,
   ALL_ENTITIES,
@@ -23,6 +24,7 @@ describe('AiCapabilityService', () => {
   let dataSource: DataSource;
   let providers: Repository<AiProviderEntity>;
   let capabilities: Repository<AiCapabilitySettingEntity>;
+  let groupRepo: Repository<AiCapabilityGroupSettingEntity>;
   let aiConfig: AiConfigService;
   let service: AiCapabilityService;
 
@@ -36,8 +38,9 @@ describe('AiCapabilityService', () => {
     await dataSource.initialize();
     providers = dataSource.getRepository(AiProviderEntity);
     capabilities = dataSource.getRepository(AiCapabilitySettingEntity);
-    aiConfig = new AiConfigService(providers, capabilities, fakeConfig);
-    service = new AiCapabilityService(capabilities, providers, aiConfig);
+    groupRepo = dataSource.getRepository(AiCapabilityGroupSettingEntity);
+    aiConfig = new AiConfigService(providers, capabilities, groupRepo, fakeConfig);
+    service = new AiCapabilityService(capabilities, groupRepo, providers, aiConfig);
   });
 
   afterEach(async () => {
@@ -74,7 +77,7 @@ describe('AiCapabilityService', () => {
       });
     });
 
-    it('marks a capability active only once it resolves to a usable provider', async () => {
+    it('marks only the overridden capability active (per-task override, no group)', async () => {
       const provider = await createProvider();
       await service.upsert(USER, 'summarization', { providerId: provider.id });
 
@@ -82,11 +85,11 @@ describe('AiCapabilityService', () => {
       const summary = res.settings.find((s) => s.capability === 'summarization');
       expect(summary?.active).toBe(true);
 
-      // chat inherits summarization's provider, so it is active too.
+      // A per-task override on summarization does NOT power its siblings — that
+      // is what the shared chat group is for.
       const chat = res.settings.find((s) => s.capability === 'chat');
-      expect(chat?.active).toBe(true);
+      expect(chat?.active).toBe(false);
 
-      // ocr does not inherit — still inactive.
       const ocr = res.settings.find((s) => s.capability === 'ocr');
       expect(ocr?.active).toBe(false);
     });
@@ -153,6 +156,63 @@ describe('AiCapabilityService', () => {
       const rows = await capabilities.find({ where: { userId: USER, capability: 'summarization' } });
       expect(rows).toHaveLength(1);
       expect(rows[0].model).toBe('b');
+    });
+  });
+
+  describe('capability groups', () => {
+    it('getGroups returns the five kind-level groups', async () => {
+      const res = await service.getGroups(USER);
+      expect(res.groups.map((g) => g.kind)).toEqual([
+        'chat',
+        'vision',
+        'embeddings',
+        'stt',
+        'diarization',
+      ]);
+      const chat = res.groups.find((g) => g.kind === 'chat');
+      expect(chat?.memberCapabilities).toContain('summarization');
+      expect(chat?.memberCapabilities).toContain('journal');
+      expect(chat?.active).toBe(false);
+    });
+
+    it('updateGroup powers every member of the kind', async () => {
+      const provider = await createProvider();
+      const dto = await service.updateGroup(USER, 'chat', { providerId: provider.id });
+      expect(dto.active).toBe(true);
+      expect(await aiConfig.isEnabled(USER, 'summarization')).toBe(true);
+      expect(await aiConfig.isEnabled(USER, 'journal')).toBe(true);
+      // vision is a different kind — untouched.
+      expect(await aiConfig.isEnabled(USER, 'ocr')).toBe(false);
+    });
+
+    it('updateGroup rejects an incompatible provider protocol', async () => {
+      const provider = await createProvider({
+        name: 'ElevenLabs',
+        protocol: 'elevenlabs',
+        baseUrl: 'https://api.elevenlabs.io/v1',
+      });
+      await expect(
+        service.updateGroup(USER, 'chat', { providerId: provider.id }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('reports and resets per-task overrides', async () => {
+      const shared = await createProvider({ name: 'Shared' });
+      const special = await createProvider({ name: 'Special' });
+      await service.updateGroup(USER, 'chat', { providerId: shared.id });
+      await service.upsert(USER, 'journal', { providerId: special.id, model: 'special-model' });
+
+      let groups = (await service.getGroups(USER)).groups;
+      expect(groups.find((g) => g.kind === 'chat')?.overriddenCapabilities).toContain('journal');
+
+      const reset = await service.resetGroupOverrides(USER, 'chat');
+      expect(reset.overriddenCapabilities).toEqual([]);
+      // journal now inherits the shared group again.
+      const resolved = await aiConfig.resolve(USER, 'journal');
+      expect(resolved?.providerId).toBe(shared.id);
+
+      groups = (await service.getGroups(USER)).groups;
+      expect(groups.find((g) => g.kind === 'chat')?.overriddenCapabilities).toEqual([]);
     });
   });
 });

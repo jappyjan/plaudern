@@ -27,6 +27,8 @@ export const aiProviderSchema = z.object({
   name: z.string(),
   protocol: aiProviderProtocolSchema,
   baseUrl: z.string(),
+  /** Vendor preset id this connection was created from (null for custom). */
+  preset: z.string().nullable(),
   /** True once an API key has been stored (keyless local endpoints have none). */
   hasApiKey: z.boolean(),
   /** Last few characters of the stored key, for recognition only (or null). */
@@ -45,6 +47,8 @@ export const createAiProviderRequestSchema = z.object({
   name: z.string().min(1).max(120),
   protocol: aiProviderProtocolSchema,
   baseUrl: z.string().min(1).max(2000),
+  /** Vendor preset id this connection was created from; null/omit for custom. */
+  preset: z.string().max(60).nullable().optional(),
   /** Omit or empty for keyless local endpoints (Ollama, llama.cpp, …). */
   apiKey: z.string().max(4000).optional(),
 });
@@ -54,6 +58,8 @@ export const updateAiProviderRequestSchema = z.object({
   name: z.string().min(1).max(120).optional(),
   protocol: aiProviderProtocolSchema.optional(),
   baseUrl: z.string().min(1).max(2000).optional(),
+  /** Vendor preset id; null clears it (custom). Omitted keeps the stored one. */
+  preset: z.string().max(60).nullable().optional(),
   /**
    * Omitted => keep the stored key. Empty string => clear the key (make it
    * keyless). A non-empty value replaces it.

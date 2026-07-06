@@ -11,20 +11,32 @@ Per-user AI configuration, stored in the database — **not** environment variab
 
 ## The model
 
-AI config is split into two concepts:
+AI config is split into three concepts:
 
 1. **Providers** (`ai_providers` table) — reusable *connections* / credentials a
-   user adds once: `{ name, protocol, baseUrl, apiKey }`. One DeepSeek key is one
-   connection, reused by many capabilities. The API key is encrypted at rest
-   (`APP_ENCRYPTION_SECRET`, via `secret-crypto.ts`) and never returned in
-   plaintext.
-2. **Capabilities** (`ai_capability_settings` table) — for each capability
-   (summarization, ocr, transcription, …) the user picks *which provider* powers
-   it, plus a model, timeout and capability-specific params. One row per
-   `(user, capability)`.
+   user adds once: `{ name, protocol, baseUrl, preset, apiKey }`. One DeepSeek key
+   is one connection, reused by many capabilities. `preset` records the vendor it
+   was created from (`deepseek`, `openai`, …) so the UI can prefill the base URL
+   and suggest models (see `ai-provider-presets.ts` in contracts). The API key is
+   encrypted at rest (`APP_ENCRYPTION_SECRET`, via `secret-crypto.ts`) and never
+   returned in plaintext.
+2. **Capability groups** (`ai_capability_group_settings` table) — the primary,
+   *simplified* surface. One **shared** setting per capability *kind* (chat,
+   vision, embeddings, stt, diarization): `{ providerId, model, timeoutMs, params,
+   enabled }`, one row per `(user, kind)`. Configuring "Reasoning & Chat" once
+   powers all ~18 chat capabilities.
+3. **Per-task overrides** (`ai_capability_settings` table) — sparse: a row exists
+   only when the user overrides one capability away from its group (the Advanced
+   view). Each field layers independently.
 
-A capability with no row, no assigned provider, or `enabled = false` is **off** —
-its pipeline step no-ops, exactly as an empty `*_API_KEY` used to.
+**Resolution** (`AiConfigService.resolve`) layers, per field:
+`per-task override ?? shared group ?? registry default`. A capability is **off**
+when its group is disabled, its override is disabled, or nothing resolves to a
+usable provider + model — its pipeline step no-ops, exactly as an empty
+`*_API_KEY` used to. Opt-in capabilities (`web_research`) stay off until the user
+enables them explicitly in Advanced. "Reset" (`DELETE
+settings/ai/capability-groups/:kind/overrides`) drops every override so members
+fall back to the shared group.
 
 ## Using it in a provider
 
@@ -48,16 +60,21 @@ Enablement is per-user and async: `Extractor.enabled(userId)` delegates to
 ## Adding a new capability
 
 1. Add its id to `aiCapabilitySchema` in `libs/contracts/src/ai-capabilities.ts`.
-2. Add a `CapabilityMeta` entry in `capability-registry.ts` (kind, defaults,
-   params, optional `inheritsFrom`, and — only if it needs upgrade import — a
-   `legacyEnvPrefix`).
+2. Add a `CapabilityMeta` entry in `capability-registry.ts` with the right
+   `kind` (it automatically joins that kind's group), defaults, params, and —
+   only if it needs upgrade import — a `legacyEnvPrefix`.
 3. Point the capability's provider class at
    `AiConfigService.resolve(userId, '<capability>')`.
+
+The five groups are derived from `kind` in `capability-registry.ts`
+(`capabilityGroups()` / `GROUP_DEFS`); a new capability needs no group wiring.
 
 ## Upgrade import
 
 `AiConfigImportService` runs once at boot: if the pre-auth owner
-(`DEFAULT_USER_ID`) has no providers yet, it reads the legacy AI env vars and
-seeds provider connections + capability rows so existing deployments keep
-working. The first registered user adopts these rows. Fresh installs (no AI env)
-seed nothing.
+(`DEFAULT_USER_ID`) has no providers yet, it reads the legacy AI env vars, seeds
+provider connections, then **collapses** them into the shared group settings
+(keeping only genuinely divergent tasks as overrides) so existing deployments
+keep working. The `1720000000048-SimplifyAiConfig` migration performs the same
+collapse for rows written under the old per-capability model. The first
+registered user adopts these rows. Fresh installs (no AI env) seed nothing.
