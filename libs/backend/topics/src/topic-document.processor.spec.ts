@@ -272,6 +272,48 @@ describe('TopicDocumentProcessor', () => {
     expect(reenqueued).toHaveLength(0);
   });
 
+  it('re-arms the deferred re-check when generation THROWS mid-run (JJ-77)', async () => {
+    const topicId = await createTopic();
+    await classifyItem(topicId, 'First item, present before the run.', '2026-06-01T10:00:00Z');
+    const documentId = await queuedDoc(topicId);
+
+    // Same mid-run classification race as the JJ-76 success-path test, but
+    // this time the "LLM call" itself throws after the new item lands. Before
+    // JJ-77 the re-check only ran on the success branch, so a throw here would
+    // silently drop the newly-classified item until unrelated future activity.
+    let injected = false;
+    const provider = fakeProvider(async () => {
+      if (!injected) {
+        injected = true;
+        await classifyItem(topicId, 'Second item, arrived mid-run.', '2026-06-02T10:00:00Z');
+      }
+      throw new Error('llm exploded mid-run');
+    });
+    await expect(build(provider).process({ documentId, topicId, userId: USER })).rejects.toThrow(
+      'llm exploded mid-run',
+    );
+
+    // The version is marked failed (existing failure-path behavior)…
+    const row = await dataSource.getRepository(TopicDocumentEntity).findOneByOrFail({ id: documentId });
+    expect(row.status).toBe('failed');
+    // …but the deferred re-check still re-armed: the mid-run item is not lost.
+    expect(reenqueued).toEqual([{ userId: USER, topicId }]);
+  });
+
+  it('does NOT re-arm the re-check when the failure happens before sources are snapshotted (JJ-77)', async () => {
+    const topicId = await createTopic();
+    // No classified items at all — the processor throws before `coveredItemIds`
+    // is ever set, so there is nothing meaningful to compare against.
+    const documentId = await queuedDoc(topicId);
+
+    const provider = fakeProvider(() => ({ markdown: 'unused' }));
+    await expect(build(provider).process({ documentId, topicId, userId: USER })).rejects.toThrow(
+      /topic has no classified items to document/,
+    );
+
+    expect(reenqueued).toHaveLength(0);
+  });
+
   it('fails cleanly when no classified item has usable content', async () => {
     const topicId = await createTopic();
     // An assignment with no transcription/summary content behind it.
