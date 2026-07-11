@@ -45,6 +45,9 @@ export class SentinelContextService {
         transcript: truncate(ocr.content ?? '', maxChars),
         language: ocr.language ?? undefined,
         occurredAt: iso(item.occurredAt),
+        // OCR-derived DOCUMENT text: the classifier must never send this to a
+        // non-local endpoint (JJ-86 footgun guard in OpenAiSentinelProvider).
+        documentDerived: true,
       };
     }
     return null;

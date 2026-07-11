@@ -227,10 +227,12 @@ describe('McpToolsService', () => {
           ] as never,
         }),
       );
+      fakes.sensitivity.effectiveTiers = tierMap({ 'item-1': 'normal' });
 
       const result = await service.getItem('user-1', { itemId: 'item-1' });
 
       expect(fakes.inbox.getItem).toHaveBeenCalledWith('user-1', 'item-1');
+      expect(result.redacted).toBe(false);
       expect(result.transcript).toBe('full transcript text');
       expect(result.summary).toEqual({
         title: 'Standup notes',
@@ -249,6 +251,7 @@ describe('McpToolsService', () => {
           extractions: [extraction({ kind: 'summary', content: summaryContent() })] as never,
         }),
       );
+      fakes.sensitivity.effectiveTiers = tierMap({ 'item-1': 'normal' });
 
       const result = await service.getItem('user-1', { itemId: 'item-1' });
       expect(result.title).toBe('Weekly sync');
@@ -263,6 +266,7 @@ describe('McpToolsService', () => {
           ] as never,
         }),
       );
+      fakes.sensitivity.effectiveTiers = tierMap({ 'item-1': 'normal' });
 
       const result = await service.getItem('user-1', { itemId: 'item-1' });
       expect(result.transcript).toBeNull();
@@ -277,6 +281,37 @@ describe('McpToolsService', () => {
         NotFoundException,
       );
     });
+
+    // JJ-86: get_item must not return sensitive/secret or not-yet-classified
+    // content by fetching a known id directly (the leak this closes).
+    it.each(['secret', null] as const)(
+      'WITHHOLDS content when the item tier is %s (fail closed)',
+      async (tier) => {
+        const { service, fakes } = build();
+        fakes.inbox.getItem.mockResolvedValue(
+          item({
+            id: 'item-1',
+            metadata: { location: 'Berlin' },
+            extractions: [
+              extraction({ kind: 'transcription', content: 'the password is hunter2' }),
+              extraction({ kind: 'summary', content: summaryContent() }),
+            ] as never,
+          }),
+        );
+        fakes.sensitivity.effectiveTiers = tier
+          ? tierMap({ 'item-1': tier })
+          : jest.fn().mockResolvedValue(new Map());
+
+        const result = await service.getItem('user-1', { itemId: 'item-1' });
+        expect(result.redacted).toBe(true);
+        expect(result.transcript).toBeNull();
+        expect(result.summary).toBeNull();
+        expect(result.metadata).toBeNull();
+        expect(result.title).toBeNull();
+        // Non-content envelope is still returned so the tool call is coherent.
+        expect(result.itemId).toBe('item-1');
+      },
+    );
   });
 
   describe('listRecentItems', () => {
@@ -295,6 +330,7 @@ describe('McpToolsService', () => {
         ],
         nextCursor: 'item-2',
       });
+      fakes.sensitivity.effectiveTiers = tierMap({ 'item-1': 'normal', 'item-2': 'public' });
 
       const result = await service.listRecentItems('user-1', { limit: 20, cursor: 'abc' });
 
@@ -313,6 +349,33 @@ describe('McpToolsService', () => {
         hasTranscript: false,
         hasSummary: false,
       });
+    });
+
+    // JJ-86: sensitive/secret and not-yet-classified items must NOT be
+    // enumerated — otherwise an external model walks their ids and then reads
+    // them (get_item), bypassing the search-retrieval tier filter.
+    it('does not enumerate sensitive/secret or unclassified items (fail closed)', async () => {
+      const { service, fakes } = build();
+      fakes.inbox.listItems.mockResolvedValue({
+        items: [
+          item({ id: 'ok', extractions: [] }),
+          item({ id: 'secret', extractions: [] }),
+          item({ id: 'sensitive', extractions: [] }),
+          item({ id: 'unclassified', extractions: [] }),
+        ],
+        nextCursor: '4',
+      });
+      fakes.sensitivity.effectiveTiers = tierMap({
+        ok: 'normal',
+        secret: 'secret',
+        sensitive: 'sensitive',
+        // 'unclassified' intentionally absent → null tier → excluded.
+      });
+
+      const result = await service.listRecentItems('user-1', { limit: 20 });
+      expect(result.items.map((i) => i.itemId)).toEqual(['ok']);
+      // Pagination still advances even though the page was mostly filtered.
+      expect(result.nextCursor).toBe('4');
     });
   });
 
@@ -628,7 +691,7 @@ describe('McpToolsService', () => {
       fakes.journal.getJournal = journalDocs({
         'week:2026-W26': {
           version: 1,
-          markdown: 'clean week narrative',
+          markdown: 'clean week narrative [1]',
           citations: [{ marker: 1, kind: 'journal', refId: '2026-06-29' }],
         },
         'day:2026-06-29': { version: 1, markdown: 'ok day', citations: [{ kind: 'item', refId: 'ok' }] },
@@ -637,7 +700,43 @@ describe('McpToolsService', () => {
 
       const result = await service.getJournal('user-1', { periodType: 'week', periodKey: '2026-W26' });
       expect(result.redacted).toBe(false);
-      expect(result.markdown).toBe('clean week narrative');
+      expect(result.markdown).toBe('clean week narrative [1]');
+    });
+
+    // JJ-86 under-citation fold-in: get_journal tier-gates via citation
+    // completeness, so a body it CAN'T trace must be withheld even when every
+    // (resolvable) citation is allowed.
+    it('withholds a body that has prose but ZERO item/journal citations', async () => {
+      const { service, fakes } = build();
+      fakes.journal.getJournal = journalDocs({
+        'day:2026-07-02': {
+          version: 1,
+          markdown: 'A vivid narrative of the day with no citation markers at all.',
+          citations: [], // nothing to tier-gate against → unverifiable
+        },
+      });
+      fakes.sensitivity.effectiveTiers = tierMap({});
+
+      const result = await service.getJournal('user-1', { periodType: 'day', periodKey: '2026-07-02' });
+      expect(result.redacted).toBe(true);
+      expect(result.markdown).toBeNull();
+    });
+
+    it('withholds a body whose citation-coverage confidence is low (uncited claims)', async () => {
+      const { service, fakes } = build();
+      fakes.journal.getJournal = journalDocs({
+        'day:2026-07-03': {
+          version: 1,
+          // Two substantive claims, only one cited → coverage 0.5 ≤ threshold → low.
+          markdown: 'We closed the Q3 deal for two million euros. The team celebrated late [1].',
+          citations: [{ marker: 1, kind: 'item', refId: 'ok' }],
+        },
+      });
+      fakes.sensitivity.effectiveTiers = tierMap({ ok: 'normal' });
+
+      const result = await service.getJournal('user-1', { periodType: 'day', periodKey: '2026-07-03' });
+      expect(result.redacted).toBe(true);
+      expect(result.markdown).toBeNull();
     });
 
     it('fails closed when a child journal has no current succeeded version', async () => {

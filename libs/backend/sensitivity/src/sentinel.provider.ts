@@ -5,6 +5,13 @@ export interface SentinelClassifyInput {
   transcript: string;
   language?: string;
   occurredAt?: string;
+  /**
+   * True when `transcript` is OCR-derived DOCUMENT text (a scanned image/PDF),
+   * not a spoken/typed transcription (JJ-85/#112). The sentinel sees this raw
+   * text BEFORE any tier is known, so a document-derived item must never be sent
+   * to a non-local classifier endpoint (JJ-86). Defaults to false (spoken/typed).
+   */
+  documentDerived?: boolean;
 }
 
 /** One nuanced finding from the LLM classifier: a category + the verbatim span. */

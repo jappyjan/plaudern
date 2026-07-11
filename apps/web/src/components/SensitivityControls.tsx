@@ -113,6 +113,41 @@ export function SensitivityBanner({
 }
 
 /**
+ * A compact toggle bar for PRECISE span masking (JJ-86): when a transcript has
+ * exact sensitive spans, they are masked inline (rest stays readable) instead of
+ * blurring the whole panel, and this bar reveals/hides just those spans. Plain
+ * div + Button (no Modal/Accordion) so it works inside the iOS PWA.
+ */
+export function TranscriptRevealToggle({
+  count,
+  revealed,
+  onToggle,
+}: {
+  count: number;
+  revealed: boolean;
+  onToggle: () => void;
+}): ReactNode {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-medium border border-default-200 bg-default-50 px-3 py-2">
+      <span className="text-xs text-default-500">
+        {revealed
+          ? `${count} sensitive ${count === 1 ? 'span' : 'spans'} shown`
+          : `🔒 ${count} sensitive ${count === 1 ? 'span is' : 'spans are'} masked`}
+      </span>
+      <Button
+        size="sm"
+        variant="flat"
+        color="warning"
+        className="ml-auto"
+        onPress={onToggle}
+      >
+        {revealed ? 'Hide' : 'Reveal'}
+      </Button>
+    </div>
+  );
+}
+
+/**
  * Reveal gate (JJ-21): masks its children behind a blur + a plain-div overlay
  * with a "Reveal" button when the tier is sensitive/secret and the user hasn't
  * revealed yet. Uses no HeroUI Modal/Accordion — just positioned divs — so it

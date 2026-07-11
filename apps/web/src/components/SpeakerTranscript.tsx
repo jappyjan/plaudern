@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Chip, Spinner } from '@heroui/react';
-import type {
-  ExtractedPayloadDto,
-  SpeakerTranscriptDto,
-  TranscriptSpeakerDto,
+import {
+  maskSpans,
+  type ExtractedPayloadDto,
+  type SensitivitySpan,
+  type SpeakerTranscriptDto,
+  type TranscriptSpeakerDto,
 } from '@plaudern/contracts';
 import { Link } from 'react-router-dom';
 import { getSpeakerTranscript, splitSpeaker, updateSpeaker } from '../lib/api';
@@ -14,17 +16,45 @@ import { CollapsibleContent } from './CollapsibleContent';
 
 const POLL_INTERVAL_MS = 3000;
 
+/** Fixed-width marker used to mask a sensitive span (matches `maskSpans`). */
+const MASK_MARKER = '••••••';
+
+/**
+ * Replace every occurrence of each sensitive substring with a fixed marker
+ * (JJ-86). Used for the speaker-attributed / flat read-model text, whose
+ * whitespace is re-joined from segments and so does NOT share `transcription
+ * .content`'s character offsets — substring replacement is offset-independent,
+ * mirroring how the backend LLM leg locates spans (indexOf).
+ */
+function maskSecrets(text: string, secrets: string[], marker = MASK_MARKER): string {
+  let out = text;
+  for (const secret of secrets) {
+    if (secret.length === 0) continue;
+    out = out.split(secret).join(marker);
+  }
+  return out;
+}
+
 /**
  * Speaker-attributed transcript. Fetches the merged read model and keeps
  * polling while diarization is still running, so speaker names appear as soon
  * as the sidecar finishes — the flat transcript shows immediately meanwhile.
+ *
+ * When `spans` (sensitive `[start,end)` offsets into `transcription.content`,
+ * JJ-21/JJ-86) are present and `revealed` is false, only those spans are masked
+ * — precise, inline masking that keeps the rest of the transcript readable
+ * instead of blurring the whole panel.
  */
 export function SpeakerTranscript({
   itemId,
   transcription,
+  spans = [],
+  revealed = true,
 }: {
   itemId: string;
   transcription: ExtractedPayloadDto;
+  spans?: SensitivitySpan[];
+  revealed?: boolean;
 }) {
   const [view, setView] = useState<SpeakerTranscriptDto | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -83,11 +113,22 @@ export function SpeakerTranscript({
     [itemId],
   );
 
-  // Until (or unless) the speaker view loads, show the plain transcript text.
+  const content = transcription.content ?? '';
+  // Precise sensitive-span masking (JJ-86): only mask when there are spans and
+  // the user hasn't revealed. `secrets` are the raw sensitive substrings, used
+  // to mask the re-joined speaker/flat read-model text (whose offsets differ).
+  const masking = spans.length > 0 && !revealed;
+  const secrets = useMemo(
+    () => (masking ? spans.map((s) => content.slice(s.start, s.end)).filter(Boolean) : []),
+    [masking, spans, content],
+  );
+
+  // Until (or unless) the speaker view loads, show the plain transcript text —
+  // masked precisely via the char-offset spans (they index into `content`).
   if (!view || view.mode === 'none') {
     return (
       <CollapsibleText
-        text={transcription.content ?? ''}
+        text={masking ? maskSpans(content, spans) : content}
         className="whitespace-pre-wrap text-sm"
       />
     );
@@ -248,13 +289,15 @@ export function SpeakerTranscript({
                 )}
                 <span className="text-xs text-default-400">{formatDuration(segment.start)}</span>
               </div>
-              <p className="whitespace-pre-wrap text-sm">{segment.text}</p>
+              <p className="whitespace-pre-wrap text-sm">
+                {masking ? maskSecrets(segment.text, secrets) : segment.text}
+              </p>
             </div>
           ))}
         </CollapsibleContent>
       ) : (
         <CollapsibleText
-          text={view.text ?? transcription.content ?? ''}
+          text={masking ? maskSecrets(view.text ?? content, secrets) : (view.text ?? content)}
           className="whitespace-pre-wrap text-sm"
         />
       )}

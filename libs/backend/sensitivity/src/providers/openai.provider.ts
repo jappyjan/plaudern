@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AiAuditRecorder } from '@plaudern/audit';
 import { sensitivityCategorySchema, sensitivityTierSchema } from '@plaudern/contracts';
+import { isLocalEndpoint } from '../sensitivity-routing.service';
 import type {
   SentinelClassifyInput,
   SentinelFinding,
@@ -23,6 +24,22 @@ interface ChatResponse {
  * unless SENTINEL_LLM_API_KEY is set (cloud) or SENTINEL_LLM_ENABLED=true
  * (keyless local endpoints such as Ollama). Point SENTINEL_LLM_BASE_URL at a
  * local server to keep raw transcripts off the network.
+ *
+ * FOOTGUN (JJ-86): this classifier is the FIRST thing to see an item's RAW text
+ * — before any tier is known — so enabling it against a non-local endpoint is
+ * itself a leak: the very content the sentinel exists to protect is shipped to
+ * the cloud to be classified. The default `SENTINEL_LLM_BASE_URL`
+ * (`api.deepseek.com`) is EXTERNAL, so a naive `SENTINEL_LLM_ENABLED=true`
+ * (or any SENTINEL_LLM_API_KEY) without also pointing the base URL at a local
+ * model would send raw transcripts/OCR text off-box. It ships DISABLED, and is
+ * hardened here: ALL raw text — spoken/typed transcripts AND OCR-derived document
+ * text (fed in since JJ-85/#112) — is REFUSED whenever the endpoint is not a
+ * validated-local address (`isLocalEndpoint`), so a misconfigured cloud endpoint
+ * can never exfiltrate content under the guise of "classifying" it. (The
+ * classifier fundamentally cannot decide something is sensitive and only then
+ * withhold it — by the time it could, the raw text has already been sent.) The
+ * refusal surfaces as a thrown error the classifier catches, degrading to
+ * deterministic-only detection rather than leaking.
  */
 @Injectable()
 export class OpenAiSentinelProvider implements SentinelLlmProvider {
@@ -33,6 +50,8 @@ export class OpenAiSentinelProvider implements SentinelLlmProvider {
   private readonly model: string;
   private readonly timeoutMs: number;
   private readonly explicitlyEnabled: boolean;
+  /** Whether the configured base URL is a validated-LOCAL (on-box/LAN) endpoint. */
+  private readonly endpointIsLocal: boolean;
 
   constructor(
     config: ConfigService,
@@ -45,6 +64,7 @@ export class OpenAiSentinelProvider implements SentinelLlmProvider {
     this.model = config.get<string>('SENTINEL_LLM_MODEL', 'deepseek-chat');
     this.timeoutMs = Number(config.get<string>('SENTINEL_LLM_TIMEOUT_MS', String(60_000)));
     this.explicitlyEnabled = config.get<string>('SENTINEL_LLM_ENABLED', 'false') === 'true';
+    this.endpointIsLocal = isLocalEndpoint(this.baseUrl);
     this.id = `openai:${this.model}`;
   }
 
@@ -57,6 +77,21 @@ export class OpenAiSentinelProvider implements SentinelLlmProvider {
       throw new Error(
         'sentinel LLM classifier is disabled — set SENTINEL_LLM_API_KEY (cloud) or ' +
           'SENTINEL_LLM_ENABLED=true (keyless local endpoints such as Ollama) to enable it',
+      );
+    }
+    // JJ-86 footgun guard: never ship RAW text — transcript OR OCR-derived
+    // document text — to a non-local classifier endpoint. The sentinel sees this
+    // content BEFORE its tier is known, so a cloud endpoint here would leak the
+    // exact material the gate exists to protect (the classifier can't first
+    // decide something is sensitive and only then withhold it — by then it has
+    // already been sent). Refuse whenever the endpoint is not validated-local;
+    // the classifier catches this and degrades to deterministic-only detection.
+    if (!this.endpointIsLocal) {
+      throw new Error(
+        `sentinel LLM classifier refused: raw ${input.documentDerived ? 'document (OCR)' : 'transcript'} ` +
+          `text must not be sent to a non-local endpoint (${this.baseUrl}). The classifier sees ` +
+          `content before its tier is known, so point SENTINEL_LLM_BASE_URL at a local model ` +
+          `(loopback/LAN) or leave the sentinel LLM disabled.`,
       );
     }
     const controller = new AbortController();

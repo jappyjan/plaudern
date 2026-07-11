@@ -14,6 +14,8 @@ import {
 import {
   hasAudioPayload,
   hasDocumentPayload,
+  isMaskedTier,
+  maskSpans,
   type CalendarEventDto,
   type InboxItemDto,
   type ItemSensitivityDto,
@@ -46,7 +48,11 @@ import { AudioPlayer } from '../components/AudioPlayer';
 import { latestTranscription, TranscriptionChip } from '../components/TranscriptionChip';
 import { LinkEventModal } from '../components/calendar/LinkEventModal';
 import { SpeakerTranscript } from '../components/SpeakerTranscript';
-import { SensitivityBanner, SensitivityGate } from '../components/SensitivityControls';
+import {
+  SensitivityBanner,
+  SensitivityGate,
+  TranscriptRevealToggle,
+} from '../components/SensitivityControls';
 import { SummaryView } from '../components/SummaryView';
 import { ItemTopicsCard } from '../components/ItemTopicsCard';
 import { ItemCommitmentsCard } from '../components/ItemCommitmentsCard';
@@ -522,19 +528,50 @@ export function ItemDetailPage() {
                     <Spinner size="sm" /> {audio ? 'Transcribing…' : 'Processing…'}
                   </div>
                 )}
-                {transcription?.status === 'succeeded' && (
-                  <SensitivityGate
-                    tier={sensitivity?.effectiveTier ?? 'normal'}
-                    revealed={revealed}
-                    onReveal={() => setRevealed(true)}
-                  >
-                    {audio ? (
-                      <SpeakerTranscript itemId={item.id} transcription={transcription} />
-                    ) : (
-                      <p className="whitespace-pre-wrap text-sm">{transcription.content}</p>
-                    )}
-                  </SensitivityGate>
-                )}
+                {transcription?.status === 'succeeded' &&
+                  (() => {
+                    const tier = sensitivity?.effectiveTier ?? 'normal';
+                    const spans = sensitivity?.spans ?? [];
+                    // Precise span masking (JJ-86) when we have exact spans; fall
+                    // back to the whole-panel blur gate only when the tier is
+                    // masked but NO spans are known (e.g. a manual override, or an
+                    // LLM finding that couldn't be located) so nothing leaks.
+                    const preciseMask = isMaskedTier(tier) && spans.length > 0;
+                    if (!preciseMask) {
+                      return (
+                        <SensitivityGate tier={tier} revealed={revealed} onReveal={() => setRevealed(true)}>
+                          {audio ? (
+                            <SpeakerTranscript itemId={item.id} transcription={transcription} />
+                          ) : (
+                            <p className="whitespace-pre-wrap text-sm">{transcription.content}</p>
+                          )}
+                        </SensitivityGate>
+                      );
+                    }
+                    return (
+                      <div className="flex flex-col gap-2">
+                        <TranscriptRevealToggle
+                          count={spans.length}
+                          revealed={revealed}
+                          onToggle={() => setRevealed((v) => !v)}
+                        />
+                        {audio ? (
+                          <SpeakerTranscript
+                            itemId={item.id}
+                            transcription={transcription}
+                            spans={spans}
+                            revealed={revealed}
+                          />
+                        ) : (
+                          <p className="whitespace-pre-wrap text-sm">
+                            {revealed
+                              ? transcription.content
+                              : maskSpans(transcription.content ?? '', spans)}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
                 {transcription?.status === 'failed' && (
                   <div className="flex flex-col gap-2">
                     <p className="text-sm text-danger">
