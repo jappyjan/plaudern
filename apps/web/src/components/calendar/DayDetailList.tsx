@@ -1,6 +1,6 @@
 import { Chip } from '@heroui/react';
 import type { CalendarEventDto, RecordingSummaryDto } from '@plaudern/contracts';
-import { formatTime, formatTimeRange } from '../../lib/format';
+import { formatDate, formatTime, formatTimeRange, itemDate } from '../../lib/format';
 import { MicIcon, SourceIcon } from '../icons';
 import { DocumentRow } from '../DocumentRow';
 
@@ -34,7 +34,9 @@ export function DayDetailList({ dayLabel, events, recordings, onEventClick }: Da
     ...recordings.map(
       (recording): TimelineEntry => ({
         kind: 'recording',
-        startAt: recording.occurredAt,
+        // Sort by the same date the row is bucketed under (detected doc date
+        // when present, else capture time).
+        startAt: itemDate(recording),
         allDay: false,
         recording,
       }),
@@ -97,10 +99,16 @@ export function DayDetailList({ dayLabel, events, recordings, onEventClick }: Da
                 className="h-5 w-5 shrink-0 text-success"
               />
             }
-            title={entry.recording.originalFilename ?? `${entry.recording.sourceType} capture`}
+            title={
+              entry.recording.title ??
+              entry.recording.originalFilename ??
+              `${entry.recording.sourceType} capture`
+            }
             subtitle={
               <>
-                Recording · {formatTime(entry.recording.occurredAt)}
+                {entry.recording.documentDate
+                  ? `Dated ${formatDate(entry.recording.documentDate)}`
+                  : `Recording · ${formatTime(entry.recording.occurredAt)}`}
                 {entry.recording.durationMs !== null
                   ? ` · ${Math.round(entry.recording.durationMs / 60000)} min`
                   : ''}

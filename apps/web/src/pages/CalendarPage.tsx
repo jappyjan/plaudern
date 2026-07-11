@@ -69,7 +69,13 @@ function buildBuckets(
   }
 
   for (const recording of recordings) {
-    bucket(localDayKey(recording.occurredAt)).recordings.push(recording);
+    // A scanned document's own date is a UTC calendar date (midnight-anchored),
+    // so it buckets by its UTC day like an all-day event; a plain recording is a
+    // real instant that buckets by the browser-local day it happened.
+    const key = recording.documentDate
+      ? utcDayKey(recording.documentDate)
+      : localDayKey(recording.occurredAt);
+    bucket(key).recordings.push(recording);
   }
 
   // Reminders land on the browser-local day their resolved due instant falls on.

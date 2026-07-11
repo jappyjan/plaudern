@@ -17,10 +17,15 @@ import {
   getCalendarEvent,
   listCalendarRecordings,
 } from '../../lib/api';
-import { formatDate, formatDateTime, formatTime } from '../../lib/format';
+import { formatDate, formatDateTime, formatTime, itemDate } from '../../lib/format';
 import { AudioIcon, LinkIcon, UnlinkIcon } from '../icons';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Human label for a recording row — the good title, else the filename fallback. */
+function recordingLabel(recording: RecordingSummaryDto): string {
+  return recording.title ?? recording.originalFilename ?? `${recording.sourceType} capture`;
+}
 
 interface EventDetailModalProps {
   eventId: string | null;
@@ -158,11 +163,9 @@ export function EventDetailModal({ eventId, onClose, onLinksChanged }: EventDeta
                     to={`/items/${recording.id}`}
                     className="min-w-0 flex-1 text-sm text-primary"
                   >
-                    <span className="block truncate">
-                      {recording.originalFilename ?? `${recording.sourceType} capture`}
-                    </span>
+                    <span className="block truncate">{recordingLabel(recording)}</span>
                     <span className="block text-xs text-default-500">
-                      {formatDateTime(recording.occurredAt)}
+                      {formatDateTime(itemDate(recording))}
                     </span>
                   </Link>
                   <Button
@@ -200,8 +203,7 @@ export function EventDetailModal({ eventId, onClose, onLinksChanged }: EventDeta
                       onPress={() => void link(candidate.id)}
                       isDisabled={busy}
                     >
-                      {candidate.originalFilename ?? `${candidate.sourceType} capture`} ·{' '}
-                      {formatDateTime(candidate.occurredAt)}
+                      {recordingLabel(candidate)} · {formatDateTime(itemDate(candidate))}
                     </Button>
                   ))}
                 </div>
