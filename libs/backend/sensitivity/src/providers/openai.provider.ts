@@ -32,12 +32,14 @@ interface ChatResponse {
  * (`api.deepseek.com`) is EXTERNAL, so a naive `SENTINEL_LLM_ENABLED=true`
  * (or any SENTINEL_LLM_API_KEY) without also pointing the base URL at a local
  * model would send raw transcripts/OCR text off-box. It ships DISABLED, and is
- * hardened here: DOCUMENT-derived text (OCR of scanned images/PDFs, fed in since
- * JJ-85/#112) is REFUSED whenever the endpoint is not a validated-local address
- * (`isLocalEndpoint`), so a misconfigured cloud endpoint can never exfiltrate a
- * scanned document under the guise of "classifying" it. The refusal surfaces as
- * a thrown error the classifier catches, degrading to deterministic-only
- * detection rather than leaking.
+ * hardened here: ALL raw text — spoken/typed transcripts AND OCR-derived document
+ * text (fed in since JJ-85/#112) — is REFUSED whenever the endpoint is not a
+ * validated-local address (`isLocalEndpoint`), so a misconfigured cloud endpoint
+ * can never exfiltrate content under the guise of "classifying" it. (The
+ * classifier fundamentally cannot decide something is sensitive and only then
+ * withhold it — by the time it could, the raw text has already been sent.) The
+ * refusal surfaces as a thrown error the classifier catches, degrading to
+ * deterministic-only detection rather than leaking.
  */
 @Injectable()
 export class OpenAiSentinelProvider implements SentinelLlmProvider {
@@ -77,15 +79,19 @@ export class OpenAiSentinelProvider implements SentinelLlmProvider {
           'SENTINEL_LLM_ENABLED=true (keyless local endpoints such as Ollama) to enable it',
       );
     }
-    // JJ-86 footgun guard: never ship OCR-derived DOCUMENT text to a non-local
-    // classifier endpoint. The sentinel sees this raw text before its tier is
-    // known, so a cloud endpoint here would leak the exact document the gate is
-    // meant to protect. Refuse — the classifier degrades to deterministic-only.
-    if (input.documentDerived && !this.endpointIsLocal) {
+    // JJ-86 footgun guard: never ship RAW text — transcript OR OCR-derived
+    // document text — to a non-local classifier endpoint. The sentinel sees this
+    // content BEFORE its tier is known, so a cloud endpoint here would leak the
+    // exact material the gate exists to protect (the classifier can't first
+    // decide something is sensitive and only then withhold it — by then it has
+    // already been sent). Refuse whenever the endpoint is not validated-local;
+    // the classifier catches this and degrades to deterministic-only detection.
+    if (!this.endpointIsLocal) {
       throw new Error(
-        `sentinel LLM classifier refused: document-derived (OCR) text must not be sent to a ` +
-          `non-local endpoint (${this.baseUrl}). Point SENTINEL_LLM_BASE_URL at a local model ` +
-          `(loopback/LAN) to classify scanned documents, or leave the sentinel LLM disabled.`,
+        `sentinel LLM classifier refused: raw ${input.documentDerived ? 'document (OCR)' : 'transcript'} ` +
+          `text must not be sent to a non-local endpoint (${this.baseUrl}). The classifier sees ` +
+          `content before its tier is known, so point SENTINEL_LLM_BASE_URL at a local model ` +
+          `(loopback/LAN) or leave the sentinel LLM disabled.`,
       );
     }
     const controller = new AbortController();

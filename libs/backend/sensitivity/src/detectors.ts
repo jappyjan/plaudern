@@ -179,6 +179,40 @@ const CASUAL_CREDENTIAL_STOP_WORDS = new Set([
 ]);
 
 /**
+ * Bounded blocklist of the classic weak/common passwords (top-list word forms),
+ * lower-cased. These are exactly dictionary words people use AS passwords, so
+ * they must KEEP holding even though they'd otherwise pass the casual word-shape
+ * check below — "my password is dragon" is a real secret, not chatter (JJ-86
+ * regression fix). Only pure-alphabetic forms are needed here: values with a
+ * digit/symbol are already held by the shape gate. Erring safe: if a value is a
+ * known common password we never treat it as casual.
+ */
+const COMMON_PASSWORDS = new Set([
+  'password', 'passwords', 'passw', 'pass', 'secret', 'letmein', 'welcome', 'admin',
+  'administrator', 'root', 'login', 'guest', 'user', 'test', 'changeme', 'default',
+  'dragon', 'monkey', 'qwerty', 'qwertyuiop', 'asdf', 'asdfgh', 'asdfghjkl', 'zxcvbn',
+  'zxcvbnm', 'sunshine', 'football', 'baseball', 'basketball', 'soccer', 'hockey',
+  'princess', 'iloveyou', 'lovely', 'love', 'loveme', 'trustno', 'master', 'shadow',
+  'superman', 'batman', 'spiderman', 'ironman', 'pokemon', 'starwars', 'computer',
+  'internet', 'freedom', 'whatever', 'nothing', 'access', 'flower', 'hottie', 'loveyou',
+  'michael', 'jennifer', 'jordan', 'harley', 'ranger', 'hunter', 'buster', 'thomas',
+  'george', 'daniel', 'joshua', 'charlie', 'andrew', 'matthew', 'robert', 'william',
+  'david', 'joseph', 'richard', 'patrick', 'ashley', 'nicole', 'jessica', 'samantha',
+  'amanda', 'jasmine', 'hannah', 'maggie', 'ginger', 'pepper', 'cookie', 'chocolate',
+  'banana', 'orange', 'apple', 'cheese', 'chicken', 'monster', 'purple', 'yellow',
+  'silver', 'golden', 'diamond', 'crystal', 'phoenix', 'thunder', 'lightning', 'winter',
+  'summer', 'autumn', 'spring', 'rabbit', 'tigger', 'tiger', 'panther', 'falcon',
+  'eagle', 'cowboy', 'cowboys', 'yankees', 'lakers', 'raiders', 'steelers', 'ninja',
+  'samurai', 'gandalf', 'legolas', 'matrix', 'maverick', 'maggie', 'chelsea', 'arsenal',
+  'liverpool', 'barcelona', 'madison', 'taylor', 'hello', 'heaven', 'angel', 'angels',
+  'devil', 'killer', 'gamer', 'player', 'soccer', 'peanut', 'porsche', 'ferrari',
+  'mercedes', 'corvette', 'mustang', 'camaro', 'harvey', 'austin', 'dallas', 'boston',
+  'chicago', 'london', 'canada', 'america', 'money', 'business', 'service', 'please',
+  'letmein', 'iloveu', 'forever', 'always', 'blessed', 'family', 'friends', 'butterfly',
+  'unicorn', 'rainbow', 'password', 'welcome', 'qwerty', 'baseball', 'dragon', 'football',
+]);
+
+/**
  * Whether a credential-keyword VALUE looks like casual natural-language chatter
  * rather than an actual secret (JJ-86 precision guard). Returns true ONLY for a
  * value we are confident is a bare word; every real-secret shape and every
@@ -189,6 +223,12 @@ const CASUAL_CREDENTIAL_STOP_WORDS = new Set([
  * casual only when it is a single short word of ONE letter case with a natural,
  * pronounceable shape — a low-entropy word-shape check: it has a vowel and no
  * long consonant run (random tokens like "qwvbk" fail this and stay masked).
+ *
+ * CRITICAL (JJ-86 regression fix): the most common REAL passwords ARE dictionary
+ * words (`dragon`, `monkey`, `letmein`, `qwerty`, …), which would otherwise pass
+ * the word-shape check and get dropped — silently lowering the item's tier and
+ * leaking the transcript. So any value on the {@link COMMON_PASSWORDS} blocklist
+ * KEEPS holding; only genuinely casual words that are NOT known passwords drop.
  */
 export function isCasualCredentialValue(value: string): boolean {
   // Strip surrounding quotes and trailing sentence punctuation ("fridge." ").
@@ -199,6 +239,8 @@ export function isCasualCredentialValue(value: string): boolean {
   const upper = /^[A-Z]{3,11}$/.test(v);
   if (!lower && !upper) return false;
   const word = v.toLowerCase();
+  // A known common/weak password is a REAL secret, never chatter — keep masking.
+  if (COMMON_PASSWORDS.has(word)) return false;
   if (CASUAL_CREDENTIAL_STOP_WORDS.has(word)) return true;
   // Word-shape / low-entropy check: real words have a vowel and no long
   // consonant cluster; opaque tokens (e.g. "hunter" has none, but "xk7"/"qwvbk"

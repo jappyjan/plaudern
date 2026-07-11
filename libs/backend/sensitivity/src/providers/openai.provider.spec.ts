@@ -48,9 +48,28 @@ describe('OpenAiSentinelProvider (JJ-86 footgun guard)', () => {
     expect(provider.enabled).toBe(true);
 
     await expect(provider.classify(input({ documentDerived: true }))).rejects.toThrow(
-      /document-derived .* non-local endpoint/,
+      /non-local endpoint/,
     );
     // The raw document text never left the box: no audit record, no fetch.
+    expect(audit.record).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('REFUSES ordinary (non-document) transcripts against an external endpoint too — no raw text off-box', async () => {
+    const audit = makeAudit();
+    const fetchSpy = jest.fn();
+    global.fetch = fetchSpy as never;
+    // Enabled via API key, base URL left at the external default.
+    const provider = new OpenAiSentinelProvider(
+      makeConfig({ SENTINEL_LLM_API_KEY: 'sk-test' }),
+      audit,
+    );
+    expect(provider.enabled).toBe(true);
+
+    await expect(provider.classify(input({ documentDerived: false }))).rejects.toThrow(
+      /non-local endpoint/,
+    );
+    // A plain transcript is raw pre-tier content too — it must not leave the box.
     expect(audit.record).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -72,17 +91,18 @@ describe('OpenAiSentinelProvider (JJ-86 footgun guard)', () => {
     expect(String(fetchSpy.mock.calls[0][0])).toBe('http://localhost:11434/v1/chat/completions');
   });
 
-  it('does NOT refuse ordinary (non-document) transcripts on an external endpoint (existing opt-in)', async () => {
+  it('ALLOWS ordinary transcripts against a validated-local endpoint', async () => {
     const audit = makeAudit();
     const fetchSpy = jest.fn().mockResolvedValue(OK_RESPONSE);
     global.fetch = fetchSpy as never;
     const provider = new OpenAiSentinelProvider(
-      makeConfig({ SENTINEL_LLM_API_KEY: 'sk-test' }),
+      makeConfig({ SENTINEL_LLM_ENABLED: 'true', SENTINEL_LLM_BASE_URL: 'http://ollama:11434/v1' }),
       audit,
     );
 
     const result = await provider.classify(input({ documentDerived: false }));
     expect(result.tier).toBe('normal');
+    expect(audit.record).toHaveBeenCalledTimes(1);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });

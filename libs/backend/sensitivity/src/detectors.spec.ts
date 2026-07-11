@@ -108,6 +108,30 @@ describe('deterministic sensitivity detectors', () => {
       expect(text.slice(spans[0].start, spans[0].end)).toBe(secret);
       expect(detectDeterministic(text).tier).toBe('secret');
     });
+
+    // JJ-86 regression: the most common REAL passwords are bare dictionary words.
+    // They pass the casual word-shape check, so the blocklist must keep holding
+    // them — otherwise "my password is dragon" would classify the item as normal
+    // and leak the transcript over MCP + to external LLMs.
+    it.each(['dragon', 'monkey', 'letmein', 'qwerty', 'sunshine', 'football', 'princess', 'shadow'])(
+      'still holds a common weak-password dictionary word: %s',
+      (secret) => {
+        const text = `so my password is ${secret} and that is that`;
+        const spans = detectCredentials(text);
+        expect(spans).toHaveLength(1);
+        expect(text.slice(spans[0].start, spans[0].end)).toBe(secret);
+        expect(detectDeterministic(text).tier).toBe('secret');
+      },
+    );
+
+    it.each(['fridge', 'kitchen', 'weather', 'meeting', 'tomorrow'])(
+      'still drops a genuinely casual non-password dictionary word: %s',
+      (word) => {
+        const text = `honestly the password is ${word} we joked`;
+        expect(detectCredentials(text)).toHaveLength(0);
+        expect(detectDeterministic(text).tier).toBe('normal');
+      },
+    );
   });
 
   describe('national ids', () => {
