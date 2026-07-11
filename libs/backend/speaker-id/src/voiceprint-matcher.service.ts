@@ -120,14 +120,55 @@ export class VoiceprintMatcherService {
     }
 
     for (const clip of clips) {
-      try {
-        // Upload the clip straight to pyannoteAI — no temp object in our storage.
-        const mediaUrl = await client.upload(clip.wav, 'audio/wav', randomUUID());
-        enrolled.set(clip.label, await client.voiceprint(mediaUrl));
-      } catch (err) {
-        this.logger.warn(`voiceprint enrollment failed for ${clip.label}: ${(err as Error).message}`);
-      }
+      const token = await this.voiceprintFromClip(clip, client);
+      if (token) enrolled.set(clip.label, token);
     }
     return enrolled;
+  }
+
+  /** Upload one clip to pyannoteAI and voiceprint it. Best-effort: null on failure. */
+  private async voiceprintFromClip(
+    clip: VoiceprintClip,
+    client: PyannoteAiClient,
+  ): Promise<string | null> {
+    try {
+      // Upload the clip straight to pyannoteAI — no temp object in our storage.
+      const mediaUrl = await client.upload(clip.wav, 'audio/wav', randomUUID());
+      return await client.voiceprint(mediaUrl);
+    } catch (err) {
+      this.logger.warn(`voiceprint enrollment failed for ${clip.label}: ${(err as Error).message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Enroll a fresh voiceprint for a single diarized label out of a recording,
+   * used when the user manually splits a mis-matched speaker into a new profile.
+   * Slices that label's cleanest speech, uploads it, and voiceprints it. Returns
+   * the token, or null when there is too little audio or any step fails — the
+   * caller keeps the new profile either way (just not auto-matchable without one).
+   */
+  async enrollVoiceprintForLabel(
+    storageKey: string,
+    label: string,
+    segments: { start: number; end: number }[],
+    client: PyannoteAiClient,
+    cfg: ResolvedAiConfig,
+  ): Promise<string | null> {
+    const minEnrollSeconds = numberParam(cfg, 'minEnrollSeconds', 6);
+    const voiceprintMaxSeconds = numberParam(cfg, 'voiceprintMaxSeconds', 30);
+    const speakingSeconds = segments.reduce((sum, s) => sum + Math.max(0, s.end - s.start), 0);
+    if (speakingSeconds < minEnrollSeconds) return null;
+
+    let clips: VoiceprintClip[];
+    try {
+      clips = await this.clips.extract(storageKey, [{ label, segments }], voiceprintMaxSeconds);
+    } catch (err) {
+      this.logger.warn(`voiceprint clip extraction failed for ${label}: ${(err as Error).message}`);
+      return null;
+    }
+    const clip = clips.find((c) => c.label === label);
+    if (!clip) return null;
+    return this.voiceprintFromClip(clip, client);
   }
 }

@@ -6,7 +6,7 @@ import type {
   TranscriptSpeakerDto,
 } from '@plaudern/contracts';
 import { Link } from 'react-router-dom';
-import { getSpeakerTranscript, updateSpeaker } from '../lib/api';
+import { getSpeakerTranscript, splitSpeaker, updateSpeaker } from '../lib/api';
 import { formatDuration } from '../lib/format';
 import { speakerColor, speakerDisplayName } from '../lib/speakerColors';
 import { CollapsibleText } from './CollapsibleText';
@@ -29,6 +29,7 @@ export function SpeakerTranscript({
   const [view, setView] = useState<SpeakerTranscriptDto | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [busyProfileId, setBusyProfileId] = useState<string | null>(null);
+  const [busyLabel, setBusyLabel] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,6 +67,20 @@ export function SpeakerTranscript({
       }
     },
     [],
+  );
+
+  // "Not X?": detach a wrongly-matched speaker into a fresh voice profile. The
+  // endpoint re-enrolls their voiceprint and returns the refreshed transcript.
+  const split = useCallback(
+    async (label: string) => {
+      setBusyLabel(label);
+      try {
+        setView(await splitSpeaker(itemId, label));
+      } finally {
+        setBusyLabel(null);
+      }
+    },
+    [itemId],
   );
 
   // Until (or unless) the speaker view loads, show the plain transcript text.
@@ -173,17 +188,31 @@ export function SpeakerTranscript({
       {view.speakers.length > 0 && (
         <div className="flex flex-wrap items-center gap-1">
           {view.speakers.map((speaker) => (
-            <Chip
-              key={speaker.profileId}
-              as={Link}
-              to={`/contacts/${speaker.profileId}`}
-              size="sm"
-              variant="flat"
-              className={speakerColor(speaker.profileId)}
-            >
-              {speakerDisplayName(speaker, speakerIndex.get(speaker.profileId))}
-              {speaker.status === 'unconfirmed' && ' ?'}
-            </Chip>
+            <div key={speaker.profileId} className="flex items-center gap-0.5">
+              <Chip
+                as={Link}
+                to={`/contacts/${speaker.profileId}`}
+                size="sm"
+                variant="flat"
+                className={speakerColor(speaker.profileId)}
+              >
+                {speakerDisplayName(speaker, speakerIndex.get(speaker.profileId))}
+                {speaker.status === 'unconfirmed' && ' ?'}
+              </Chip>
+              {/* Only auto-matched voices (similarity set) can be a wrong match. */}
+              {speaker.similarity !== null && (
+                <Button
+                  size="sm"
+                  variant="light"
+                  className="h-6 min-w-0 px-1.5 text-xs text-default-500"
+                  isDisabled={busyLabel !== null}
+                  isLoading={busyLabel === speaker.label}
+                  onPress={() => void split(speaker.label)}
+                >
+                  Not {speakerDisplayName(speaker, speakerIndex.get(speaker.profileId))}?
+                </Button>
+              )}
+            </div>
           ))}
           {view.diarizationStatus &&
             ['queued', 'processing'].includes(view.diarizationStatus) && (

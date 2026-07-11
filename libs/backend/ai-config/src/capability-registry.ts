@@ -394,7 +394,7 @@ const REGISTRY: Record<AiCapability, CapabilityMeta> = {
     defaultTimeoutMs: 1_800_000,
     optIn: false,
     defaultParams: {
-      matchThreshold: 50,
+      matchThreshold: 60,
       minEnrollSeconds: 6,
       voiceprintMaxSeconds: 30,
       pollIntervalMs: 3_000,
@@ -404,8 +404,9 @@ const REGISTRY: Record<AiCapability, CapabilityMeta> = {
         key: 'matchThreshold',
         label: 'Match threshold (0-100)',
         type: 'number',
-        description: 'Minimum confidence to accept a voiceprint match.',
-        placeholder: '50',
+        description:
+          'Minimum confidence to accept a voiceprint match. Higher is stricter — fewer new voices get wrongly matched to an existing person.',
+        placeholder: '60',
       },
       {
         key: 'minEnrollSeconds',

@@ -57,7 +57,7 @@ export class PyannoteAiSpeakerIdentifier implements SpeakerIdentifier {
     // is pyannoteAI's recommended strict-matching floor so a voice only matches
     // when it's actually present; raise toward 70 for stricter, lower for more
     // lenient.
-    const threshold = numberParam(cfg, 'matchThreshold', 50);
+    const threshold = numberParam(cfg, 'matchThreshold', 60);
 
     // Push the bytes to pyannoteAI (private storage stays private) and work off
     // the returned media:// handle.

@@ -454,6 +454,19 @@ export async function getSpeakerTranscript(itemId: string): Promise<SpeakerTrans
   return speakerTranscriptSchema.parse(await requestJson(`/inbox/${itemId}/speaker-transcript`));
 }
 
+/**
+ * Detach a wrongly-matched speaker in this recording into a fresh voice profile
+ * ("Not X?"), re-enrolling their voiceprint so future recordings stop matching
+ * the wrong person. Returns the refreshed transcript.
+ */
+export async function splitSpeaker(itemId: string, label: string): Promise<SpeakerTranscriptDto> {
+  return speakerTranscriptSchema.parse(
+    await requestJson(`/inbox/${itemId}/speakers/${encodeURIComponent(label)}/split`, {
+      method: 'POST',
+    }),
+  );
+}
+
 /** AI-generated title + Markdown summary (and speaker roster for mentions). */
 export async function getSummary(itemId: string): Promise<SummaryDto> {
   return summarySchema.parse(await requestJson(`/inbox/${itemId}/summary`));
