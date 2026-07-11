@@ -14,6 +14,7 @@ import { ConsentSettingsService } from './consent-settings.service';
 import { DiarizationProcessor } from './diarization.processor';
 import { SpeakerIdService } from './speaker-id.service';
 import { DiarizationExtractor } from './diarization.extractor';
+import { SpeakerReassignmentService } from './speaker-reassignment.service';
 import { SpeakerTranscriptService } from './speaker-transcript.service';
 import { VoiceProfilesService } from './voice-profiles.service';
 import {
@@ -51,6 +52,7 @@ import {
     DiarizationExtractor,
     VoiceProfilesService,
     SpeakerTranscriptService,
+    SpeakerReassignmentService,
     ConsentSettingsService,
   ],
   exports: [SpeakerIdService, DiarizationExtractor],

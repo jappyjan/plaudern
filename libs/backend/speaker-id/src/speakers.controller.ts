@@ -13,6 +13,7 @@ import { CurrentUser, type AuthenticatedUser } from '@plaudern/auth';
 import { InboxService, toInboxItemDto } from '@plaudern/inbox';
 import { ConsentSettingsService } from './consent-settings.service';
 import { SpeakerIdService } from './speaker-id.service';
+import { SpeakerReassignmentService } from './speaker-reassignment.service';
 import { SpeakerTranscriptService } from './speaker-transcript.service';
 import { VoiceProfilesService } from './voice-profiles.service';
 
@@ -66,6 +67,7 @@ export class SpeakerTranscriptController {
     private readonly transcripts: SpeakerTranscriptService,
     private readonly speakerId: SpeakerIdService,
     private readonly inbox: InboxService,
+    private readonly reassignment: SpeakerReassignmentService,
   ) {}
 
   @Get(':id/speaker-transcript')
@@ -74,6 +76,20 @@ export class SpeakerTranscriptController {
     @Param('id') id: string,
   ): Promise<SpeakerTranscriptDto> {
     return this.transcripts.getSpeakerTranscript(user.id, id);
+  }
+
+  /**
+   * Detach a mis-matched speaker (diarization `label`) in this recording into a
+   * fresh voice profile and re-enroll their voiceprint — the "Not X?" correction
+   * for when a new voice was wrongly folded onto an existing person.
+   */
+  @Post(':id/speakers/:label/split')
+  async split(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('label') label: string,
+  ): Promise<SpeakerTranscriptDto> {
+    return this.reassignment.reassign(user.id, id, label);
   }
 
   /** Re-run speaker diarization only; the transcript merge and summary follow. */
