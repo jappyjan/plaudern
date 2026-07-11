@@ -171,4 +171,45 @@ describe('DeadMansSwitchReleaseService', () => {
     expect(after.status).toBe('revoked');
     expect(after.tokenHash).toBeNull();
   });
+
+  it('does not resurrect a cancelled release into a grant (F2/F3 lost-update race)', async () => {
+    await seedSwitch({}); // lapsed.
+    const service = makeService('10'); // 10-day grace: first sweep only ARMs.
+    await service.sweepUser(USER, NOW);
+
+    const origGetRepo = dataSource.getRepository.bind(dataSource);
+    const releaseRepo = origGetRepo(DeadMansSwitchReleaseEntity);
+    // Snapshot the release WHILE it is still pending (models the sweep's read).
+    const stalePending = { ...(await releaseRepo.findOne({ where: { userId: USER } }))! };
+    expect(stalePending.status).toBe('pending');
+
+    // The owner's check-in lands FIRST and cancels the row in the DB.
+    await releaseRepo.update(
+      { id: stalePending.id },
+      { status: 'cancelled', closedAt: NOW.toISOString() },
+    );
+
+    // Now the sweep's write executes against the DB — but it still holds the
+    // stale pending snapshot. Feed that snapshot in and let every real write hit
+    // the cancelled row. The conditional flip must find no pending row.
+    jest.spyOn(releaseRepo, 'findOne').mockResolvedValueOnce(stalePending as never);
+    jest
+      .spyOn(dataSource, 'getRepository')
+      .mockImplementation(((target: unknown) =>
+        target === DeadMansSwitchReleaseEntity
+          ? releaseRepo
+          : origGetRepo(target as never)) as typeof dataSource.getRepository);
+
+    const later = new Date(NOW.getTime() + 20 * DAY_MS); // grace elapsed.
+    const granted = await service.sweepUser(USER, later);
+
+    // The lost update is prevented: no grant, no token, no contact email, and the
+    // release stays cancelled — the "re-check-in cancels" invariant holds.
+    expect(granted).toBe(0);
+    expect(notifications.notifyEmailAddress).not.toHaveBeenCalled();
+    jest.restoreAllMocks();
+    const row = (await dataSource.getRepository(DeadMansSwitchReleaseEntity).find())[0];
+    expect(row.status).toBe('cancelled');
+    expect(row.tokenHash).toBeNull();
+  });
 });

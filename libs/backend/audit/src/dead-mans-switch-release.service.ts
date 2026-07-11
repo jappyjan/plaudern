@@ -83,10 +83,17 @@ export class DeadMansSwitchReleaseService {
     const sw = await this.dataSource
       .getRepository(DeadMansSwitchEntity)
       .findOne({ where: { userId } });
+    // F7 (intended): disabling the switch only stops NEW firings here — it does
+    // NOT auto-revoke a grant that already went `active`. Revoking an existing
+    // grant is an explicit owner action (`revokeRelease`), never a side effect.
     if (!sw || !sw.enabled || !sw.contactEmail || !sw.lastCheckInAt) return 0;
 
     const triggersAt = Date.parse(sw.lastCheckInAt) + sw.checkInIntervalDays * DAY_MS;
     const releases = this.dataSource.getRepository(DeadMansSwitchReleaseEntity);
+    // Only a non-terminal (pending/active) release blocks re-firing. F1
+    // (intended): after a `revoked`/`cancelled` release, a switch that is still
+    // lapsed will ARM a fresh release on the next sweep — a revoke closes one
+    // grant, it does not permanently disarm the switch.
     let release = await releases.findOne({
       where: { userId, status: Not(In(TERMINAL)) },
     });
@@ -127,10 +134,25 @@ export class DeadMansSwitchReleaseService {
     // GRANT: grace elapsed and still pending → hand the contact scoped access.
     if (release.status === 'pending' && now.getTime() >= Date.parse(release.graceUntil)) {
       const token = randomBytes(32).toString('hex');
-      release.tokenHash = hashToken(token);
+      // CONDITIONAL flip: the advisory lock serializes sweeps but NOT the owner's
+      // check-in write, so between our read and this write a `cancelPendingReleases`
+      // may have flipped the row to `cancelled`. Guard the transition on
+      // `status = 'pending'` so a lost update can't resurrect a cancelled release
+      // into an active grant — the "re-check-in cancels" invariant must hold no
+      // matter who raced. Only mint/email when we actually won the row.
+      const result = await releases
+        .createQueryBuilder()
+        .update()
+        .set({ status: 'active', tokenHash: hashToken(token), grantedAt: now.toISOString() })
+        .where('id = :id AND status = :status', { id: release.id, status: 'pending' })
+        .execute();
+      if (result.affected !== 1) {
+        this.logger.log(`dms: release ${release.id} no longer pending — grant skipped (raced)`);
+        return 0;
+      }
       release.status = 'active';
+      release.tokenHash = hashToken(token);
       release.grantedAt = now.toISOString();
-      await releases.save(release);
       await this.notifyContactGranted(release, token);
       await this.notifyOwnerReleased(userId, release);
       this.logger.warn(`dms: granted release ${release.id} to ${release.contactEmail}`);
