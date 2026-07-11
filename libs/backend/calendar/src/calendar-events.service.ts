@@ -1,19 +1,51 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, In, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
+import { In, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import type {
   CalendarEventDetailDto,
   CalendarEventDto,
   RecordingSummaryDto,
 } from '@plaudern/contracts';
+import { summaryPayloadSchema } from '@plaudern/contracts';
 import {
   CalendarEventEntity,
   CalendarFeedEntity,
+  ExtractedPayloadEntity,
   InboxItemEntity,
   RecordingEventLinkEntity,
   RecordingMergeEntity,
 } from '@plaudern/persistence';
 import { recordingDurationMs } from './recording-duration';
+
+/** The AI summary's title from the newest succeeded `summary` extraction, if any. */
+function summaryTitle(extractions: ExtractedPayloadEntity[]): string | null {
+  const row = extractions
+    .filter((e) => e.kind === 'summary' && e.status === 'succeeded' && e.content)
+    .slice()
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+  if (!row?.content) return null;
+  try {
+    const parsed = summaryPayloadSchema.safeParse(JSON.parse(row.content));
+    return parsed.success && parsed.data.title ? parsed.data.title : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Best human title for a calendar row, mirroring the inbox precedence: AI summary
+ * title → file tag title → scanned-document title. Null when only a filename
+ * remains, so the client applies its own filename/"…capture" fallback.
+ */
+function recordingTitle(item: InboxItemEntity): string | null {
+  const aiTitle = summaryTitle(item.extractions ?? []);
+  if (aiTitle) return aiTitle;
+  const tags = item.metadata?.tags as Record<string, unknown> | undefined;
+  if (typeof tags?.title === 'string' && tags.title) return tags.title;
+  const docTitle = item.documentMetadata?.title;
+  if (typeof docTitle === 'string' && docTitle) return docTitle;
+  return null;
+}
 
 /** Read side of the calendar: range queries and link-aware detail views. */
 @Injectable()
@@ -57,16 +89,26 @@ export class CalendarEventsService {
   }
 
   /**
-   * Recordings (inbox items) whose occurredAt falls in [from, to]. Sources
-   * hidden inside a merged recording are excluded, matching the inbox list —
-   * the merged item covers their time range.
+   * Recordings (inbox items) whose *effective date* falls in [from, to]. The
+   * effective date is the scanned-document date when one was extracted, else the
+   * capture time — matching how the client buckets rows, so a document dated in a
+   * different month than it was uploaded lands in the month it's shown on rather
+   * than vanishing. Sources hidden inside a merged recording are excluded,
+   * matching the inbox list — the merged item covers their time range.
    */
   async recordingsInRange(userId: string, from: string, to: string): Promise<RecordingSummaryDto[]> {
-    const items = await this.items.find({
-      where: { userId, occurredAt: Between(from, to) },
-      relations: { source: true },
-      order: { occurredAt: 'ASC' },
-    });
+    // Both occurredAt and documentDate are stored as ISO-8601 UTC strings, so a
+    // COALESCE + lexicographic BETWEEN orders and filters them correctly.
+    const effectiveDate = 'COALESCE(doc.documentDate, item.occurredAt)';
+    const items = await this.items
+      .createQueryBuilder('item')
+      .leftJoinAndSelect('item.source', 'source')
+      .leftJoinAndSelect('item.documentMetadata', 'doc')
+      .leftJoinAndSelect('item.extractions', 'extraction')
+      .where('item.userId = :userId', { userId })
+      .andWhere(`${effectiveDate} BETWEEN :from AND :to`, { from, to })
+      .orderBy(effectiveDate, 'ASC')
+      .getMany();
     const { sourceToMerged } = await this.mergeMaps(userId);
     return this.toRecordingSummaries(
       userId,
@@ -102,7 +144,7 @@ export class CalendarEventsService {
     if (itemIds.length === 0) return [];
     const items = await this.items.find({
       where: { id: In(itemIds) },
-      relations: { source: true },
+      relations: { source: true, documentMetadata: true, extractions: true },
       order: { occurredAt: 'ASC' },
     });
     return this.toRecordingSummaries(userId, items);
@@ -198,6 +240,8 @@ export class CalendarEventsService {
       id: item.id,
       sourceType: item.sourceType,
       occurredAt: item.occurredAt,
+      documentDate: item.documentMetadata?.documentDate ?? null,
+      title: recordingTitle(item),
       durationMs: recordingDurationMs(item.metadata),
       originalFilename: item.source?.originalFilename ?? null,
       linkedEventIds: linkedEventIdsFor(item.id),

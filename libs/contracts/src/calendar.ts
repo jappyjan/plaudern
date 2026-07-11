@@ -125,6 +125,18 @@ export const recordingSummarySchema = z.object({
   id: z.string().uuid(),
   sourceType: sourceTypeSchema,
   occurredAt: z.string().datetime(),
+  /**
+   * The date printed on a scanned document (resolved by the `docmeta` extractor),
+   * or null. When present, clients prefer it over `occurredAt` as the item's
+   * displayed/bucketed date — mirrors `inboxItemSchema.documentDate`.
+   */
+  documentDate: z.string().datetime().nullable(),
+  /**
+   * Best human display title (AI summary title → file tag title → scanned-document
+   * title), or null when only a filename is available. Lets calendar rows read the
+   * same as the inbox instead of falling back to the raw upload filename.
+   */
+  title: z.string().nullable(),
   durationMs: z.number().int().nullable(),
   originalFilename: z.string().nullable(),
   linkedEventIds: z.array(z.string().uuid()),
