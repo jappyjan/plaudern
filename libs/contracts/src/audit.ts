@@ -126,6 +126,42 @@ export const updateDeadMansSwitchRequestSchema = z.object({
 export type UpdateDeadMansSwitchRequest = z.infer<typeof updateDeadMansSwitchRequestSchema>;
 
 /**
+ * A dead-man's-switch RELEASE (JJ-80): an actual firing of the switch and the
+ * scoped emergency grant it produced. Surfaced to the OWNER so they can see (and
+ * revoke) any access their switch has handed out. The token itself is never
+ * exposed here — only the lifecycle status.
+ */
+export const deadMansSwitchReleaseStatusSchema = z.enum([
+  'pending',
+  'active',
+  'cancelled',
+  'revoked',
+]);
+export type DeadMansSwitchReleaseStatus = z.infer<typeof deadMansSwitchReleaseStatusSchema>;
+
+export const deadMansSwitchReleaseSchema = z.object({
+  id: z.string().uuid(),
+  contactEmail: z.string().email(),
+  status: deadMansSwitchReleaseStatusSchema,
+  /** When the check-in lapsed and the grace/confirmation window opened. */
+  firedAt: z.string().datetime(),
+  /** Access is only granted once this instant passes. */
+  graceUntil: z.string().datetime(),
+  /** When the contact was actually granted access; null while pending. */
+  grantedAt: z.string().datetime().nullable(),
+  /** When the release was revoked or cancelled; null while live. */
+  closedAt: z.string().datetime().nullable(),
+});
+export type DeadMansSwitchReleaseDto = z.infer<typeof deadMansSwitchReleaseSchema>;
+
+export const deadMansSwitchReleasesResponseSchema = z.object({
+  releases: z.array(deadMansSwitchReleaseSchema),
+});
+export type DeadMansSwitchReleasesResponse = z.infer<
+  typeof deadMansSwitchReleasesResponseSchema
+>;
+
+/**
  * Shape of the export-everything bundle (JJ-42): a single self-describing JSON
  * document with the user's items, their extractions, and presigned asset URLs,
  * plus a combined Markdown rendering. Delivered as a downloadable attachment;

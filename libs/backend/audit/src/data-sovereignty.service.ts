@@ -18,6 +18,7 @@ import {
   ChatMessageEntity,
   ConsentSettingsEntity,
   DeadMansSwitchEntity,
+  DeadMansSwitchReleaseEntity,
   DocumentMetadataEntity,
   EmailSettingsEntity,
   EntityAliasEntity,
@@ -168,6 +169,10 @@ export class DataSovereigntyService {
       await em.getRepository(EmailSettingsEntity).delete({ userId });
       await em.getRepository(SummarizationSettingsEntity).delete({ userId });
       await em.getRepository(ConsentSettingsEntity).delete({ userId });
+      // Dead-man's-switch intent (JJ-42) AND every release/grant it fired (JJ-80):
+      // release rows hold the trusted contact's email + a live access grant, so a
+      // panic-delete must wipe them too or a wiped archive could still be reached.
+      await em.getRepository(DeadMansSwitchReleaseEntity).delete({ userId });
       await em.getRepository(DeadMansSwitchEntity).delete({ userId });
       const audit = await em.getRepository(AiProviderCallEntity).delete({ userId });
       deletedAuditEntries = audit.affected ?? 0;
