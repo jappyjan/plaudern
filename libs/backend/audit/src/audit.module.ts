@@ -2,13 +2,20 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { InboxModule } from '@plaudern/inbox';
+import { NotificationsModule } from '@plaudern/notifications';
 import { StorageModule } from '@plaudern/storage';
-import { AiProviderCallEntity, DeadMansSwitchEntity } from '@plaudern/persistence';
+import {
+  AiProviderCallEntity,
+  DeadMansSwitchEntity,
+  DeadMansSwitchReleaseEntity,
+} from '@plaudern/persistence';
 import { AiAuditRecorder } from './ai-audit.recorder';
 import { AuditPersistenceService } from './audit-persistence.service';
 import { AuditController } from './audit.controller';
 import { DataSovereigntyService } from './data-sovereignty.service';
 import { DataSovereigntyController } from './data-sovereignty.controller';
+import { DeadMansSwitchReleaseService } from './dead-mans-switch-release.service';
+import { DeadMansSwitchScheduler } from './dead-mans-switch.scheduler';
 
 /**
  * AI-provider audit log & data-sovereignty controls (JJ-42).
@@ -23,11 +30,22 @@ import { DataSovereigntyController } from './data-sovereignty.controller';
   imports: [
     ConfigModule,
     InboxModule,
+    NotificationsModule,
     StorageModule,
-    TypeOrmModule.forFeature([AiProviderCallEntity, DeadMansSwitchEntity]),
+    TypeOrmModule.forFeature([
+      AiProviderCallEntity,
+      DeadMansSwitchEntity,
+      DeadMansSwitchReleaseEntity,
+    ]),
   ],
-  providers: [AiAuditRecorder, AuditPersistenceService, DataSovereigntyService],
+  providers: [
+    AiAuditRecorder,
+    AuditPersistenceService,
+    DataSovereigntyService,
+    DeadMansSwitchReleaseService,
+    DeadMansSwitchScheduler,
+  ],
   controllers: [AuditController, DataSovereigntyController],
-  exports: [AiAuditRecorder],
+  exports: [AiAuditRecorder, DeadMansSwitchReleaseService],
 })
 export class AuditModule {}

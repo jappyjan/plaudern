@@ -4,4 +4,6 @@ export * from './audit-persistence.service';
 export * from './audit.controller';
 export * from './data-sovereignty.service';
 export * from './data-sovereignty.controller';
+export * from './dead-mans-switch-release.service';
+export * from './dead-mans-switch.scheduler';
 export * from './audit.module';

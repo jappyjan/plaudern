@@ -134,6 +134,13 @@ services:
       - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-}
       - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-}
       - GOOGLE_APP_BASE_URL=${GOOGLE_APP_BASE_URL:-}
+      # Dead-man's-switch release mechanism (JJ-80). On by default in prod; the
+      # sweep arms a tripped switch, waits out DEAD_MANS_SWITCH_GRACE_DAYS, then
+      # emails the trusted contact a scoped read-only grant. Set ENABLED=false to
+      # turn the scheduler off entirely. Emergency-access links use PUBLIC_APP_URL.
+      - DEAD_MANS_SWITCH_SCHEDULER_ENABLED=${DEAD_MANS_SWITCH_SCHEDULER_ENABLED:-true}
+      - DEAD_MANS_SWITCH_GRACE_DAYS=${DEAD_MANS_SWITCH_GRACE_DAYS:-7}
+      - PUBLIC_APP_URL=${PUBLIC_APP_URL:-}
     depends_on:
       postgres:
         condition: service_healthy

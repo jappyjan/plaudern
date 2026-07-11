@@ -14,6 +14,7 @@ import {
   CommitmentEntity,
   ConsentSettingsEntity,
   DeadMansSwitchEntity,
+  DeadMansSwitchReleaseEntity,
   DecisionEntity,
   DocumentMetadataEntity,
   EmailSettingsEntity,
@@ -106,6 +107,7 @@ import { CreateAiConfig1720000000045 } from './migrations/1720000000045-CreateAi
 import { AddDocumentDate1720000000046 } from './migrations/1720000000046-AddDocumentDate';
 import { CreateNudgeState1720000000047 } from './migrations/1720000000047-CreateNudgeState';
 import { SimplifyAiConfig1720000000048 } from './migrations/1720000000048-SimplifyAiConfig';
+import { CreateDeadMansSwitchRelease1720000000049 } from './migrations/1720000000049-CreateDeadMansSwitchRelease';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -161,6 +163,7 @@ export const ALL_ENTITIES = [
   AiCapabilityGroupSettingEntity,
   AiProviderCallEntity,
   DeadMansSwitchEntity,
+  DeadMansSwitchReleaseEntity,
   NudgeStateEntity,
 ];
 
@@ -216,6 +219,7 @@ export const ALL_MIGRATIONS = [
   AddDocumentDate1720000000046,
   CreateNudgeState1720000000047,
   SimplifyAiConfig1720000000048,
+  CreateDeadMansSwitchRelease1720000000049,
 ];
 
 /**
