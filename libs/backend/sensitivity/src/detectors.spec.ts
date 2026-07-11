@@ -77,6 +77,37 @@ describe('deterministic sensitivity detectors', () => {
     it('does not fire on ordinary prose', () => {
       expect(detectCredentials('we discussed the secret garden book')).toHaveLength(0);
     });
+
+    // JJ-86 precision guard: casual speech after a credential keyword must NOT
+    // hold the whole item, while a real secret still does.
+    it('does not hold a casual bare-word value ("the password is fridge")', () => {
+      const text = 'so anyway the password is fridge and we laughed about it';
+      expect(detectCredentials(text)).toHaveLength(0);
+      expect(detectDeterministic(text).tier).toBe('normal');
+    });
+
+    it.each([
+      'the password is safe',
+      'my secret is safe with you',
+      'the passphrase is simple',
+      'honestly the password is fridge',
+    ])('treats casual chatter as normal: %s', (text) => {
+      expect(detectCredentials(text)).toHaveLength(0);
+      expect(detectDeterministic(text).tier).toBe('normal');
+    });
+
+    it.each([
+      ['password is hunter2', 'hunter2'], // has a digit
+      ['password is Tr0ub4dour', 'Tr0ub4dour'], // mixed case + digits
+      ['password is s3cr3t!', 's3cr3t!'], // symbol + digits
+      ['password is correcthorsebattery', 'correcthorsebattery'], // long (≥12)
+      ['password is qwrtplkz', 'qwrtplkz'], // no vowel → opaque token
+    ])('still holds a real secret: %s', (text, secret) => {
+      const spans = detectCredentials(text);
+      expect(spans).toHaveLength(1);
+      expect(text.slice(spans[0].start, spans[0].end)).toBe(secret);
+      expect(detectDeterministic(text).tier).toBe('secret');
+    });
   });
 
   describe('national ids', () => {

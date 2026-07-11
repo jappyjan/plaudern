@@ -31,6 +31,7 @@ import {
   type TopicItemDto,
 } from '@plaudern/contracts';
 import type { ExtractedPayloadEntity, InboxItemEntity } from '@plaudern/persistence';
+import { analyzeCitationCoverage } from '@plaudern/citations';
 import { InboxService } from '@plaudern/inbox';
 import { SearchService } from '@plaudern/search';
 import { IngestionService } from '@plaudern/ingestion';
@@ -74,6 +75,12 @@ export interface GetItemResult {
   summary: { title: string; layout: string; markdown: string } | null;
   /** User-supplied capture metadata (location, tags, source url, …). */
   metadata: Record<string, unknown> | null;
+  /**
+   * True when the item's effective sensitivity tier is local-only (sensitive/
+   * secret) or not yet classified: its content is WITHHELD from this external
+   * surface (JJ-86), so `transcript`/`summary`/`metadata`/`title` are null.
+   */
+  redacted: boolean;
 }
 
 /** A compact list entry for recent-items listing. */
@@ -153,9 +160,31 @@ export class McpToolsService {
       }));
   }
 
-  /** get_item: full transcript, summary and metadata for one item. */
+  /**
+   * get_item: full transcript, summary and metadata for one item — GATED by the
+   * JJ-21/JJ-86 sensitivity guard exactly like search_memory. A sensitive/secret
+   * or not-yet-classified item has all its content (transcript, summary, capture
+   * metadata AND its title) WITHHELD and `redacted: true`; only the item's id,
+   * source type and timestamps remain, so an external model can never read
+   * sensitive content by fetching a known id directly (the previous behavior
+   * returned full content unconditionally).
+   */
   async getItem(userId: string, args: { itemId: string }): Promise<GetItemResult> {
     const item = await this.inbox.getItem(userId, args.itemId);
+    const allowed = await this.allowedItemIds([item.id]);
+    if (!allowed.has(item.id)) {
+      return {
+        itemId: item.id,
+        sourceType: item.sourceType,
+        occurredAt: toIso(item.occurredAt),
+        ingestedAt: toIso(item.ingestedAt),
+        title: null,
+        transcript: null,
+        summary: null,
+        metadata: null,
+        redacted: true,
+      };
+    }
     const transcription = latestSucceeded(item, 'transcription');
     const summary = parseSummary(latestSucceeded(item, 'summary'));
     return {
@@ -169,28 +198,39 @@ export class McpToolsService {
         ? { title: summary.title, layout: summary.layout, markdown: summary.markdown }
         : null,
       metadata: item.metadata ?? null,
+      redacted: false,
     };
   }
 
-  /** list_recent_items: newest-first page of the user's memory. */
+  /**
+   * list_recent_items: newest-first page of the user's memory — GATED so
+   * sensitive/secret and not-yet-classified items are NOT enumerated at all
+   * (JJ-86). The previous behavior listed every id unconditionally, letting an
+   * external model walk held items and then fetch each with get_item, bypassing
+   * the search-retrieval tier filter. `nextCursor` is preserved so pagination
+   * still advances even when a page is fully filtered.
+   */
   async listRecentItems(
     userId: string,
     args: { limit: number; cursor?: string },
   ): Promise<{ items: RecentItemResult[]; nextCursor: string | null }> {
     const { items, nextCursor } = await this.inbox.listItems(userId, args.limit, args.cursor);
+    const allowed = await this.allowedItemIds(items.map((i) => i.id));
     return {
-      items: items.map((item) => {
-        const summary = parseSummary(latestSucceeded(item, 'summary'));
-        return {
-          itemId: item.id,
-          sourceType: item.sourceType,
-          occurredAt: toIso(item.occurredAt),
-          ingestedAt: toIso(item.ingestedAt),
-          title: titleOf(item, summary),
-          hasTranscript: Boolean(latestSucceeded(item, 'transcription')?.content),
-          hasSummary: Boolean(summary),
-        };
-      }),
+      items: items
+        .filter((item) => allowed.has(item.id))
+        .map((item) => {
+          const summary = parseSummary(latestSucceeded(item, 'summary'));
+          return {
+            itemId: item.id,
+            sourceType: item.sourceType,
+            occurredAt: toIso(item.occurredAt),
+            ingestedAt: toIso(item.ingestedAt),
+            title: titleOf(item, summary),
+            hasTranscript: Boolean(latestSucceeded(item, 'transcription')?.content),
+            hasSummary: Boolean(summary),
+          };
+        }),
       nextCursor,
     };
   }
@@ -532,7 +572,8 @@ export class McpToolsService {
       doc,
     );
     const allowed = await this.allowedItemIds(itemRefs);
-    if (resolvable && itemRefs.every((r) => allowed.has(r))) {
+    const citationsAllowed = resolvable && itemRefs.every((r) => allowed.has(r));
+    if (citationsAllowed && !journalBodyUnderCited(doc)) {
       return { ...doc, redacted: false };
     }
     return {
@@ -798,6 +839,27 @@ function toFactListEntry(f: PersonalFactDto, citationCount: number): FactListEnt
     citationCount,
     lastSeenAt: f.lastSeenAt,
   };
+}
+
+/**
+ * Whether a journal body must be WITHHELD over MCP for lack of trustworthy
+ * citations (JJ-86 under-citation leak fold-in), independent of the per-item
+ * tier gate. A rollup composed from child journals carries no item ids of its
+ * own, and get_journal trusts citation completeness to tier-gate — so a body
+ * with prose but ZERO traceable (item/journal) citations, or one whose
+ * structural citation-coverage confidence is `low` (enough claims lack a `[n]`
+ * marker that it can't be verified against sources), is treated as unverifiable
+ * and its body is not shown. An empty body has nothing to leak.
+ */
+function journalBodyUnderCited(doc: {
+  markdown: string | null;
+  citations: JournalCitation[];
+}): boolean {
+  const markdown = doc.markdown ?? '';
+  if (markdown.trim().length === 0) return false;
+  const traceable = doc.citations.filter((c) => c.kind === 'item' || c.kind === 'journal');
+  if (traceable.length === 0) return true;
+  return analyzeCitationCoverage(markdown).confidence === 'low';
 }
 
 /** The `toEdges` grouping key for one aggregated relation edge (JJ-78 gating). */

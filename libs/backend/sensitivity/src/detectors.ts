@@ -104,6 +104,13 @@ export function detectCredentials(text: string): SensitivitySpan[] {
     /\b(?:passwords?|passwd|pwd|api[_\s-]?keys?|secret|token|passphrase|credentials?)\b\s*(?:is|are|:|=)\s*(\S{3,})/gi;
   for (const match of text.matchAll(kv)) {
     const value = match[1];
+    // Precision guard (JJ-86): the kv-regex fires on casual speech too
+    // ("the password is fridge" → the whole item was held as `secret`). A bare
+    // natural-language word after a credential keyword is far more likely chatter
+    // than an actual secret, so drop it — while a real secret (mixed classes,
+    // symbols, long, or high-entropy) still holds. Erring safe: only the
+    // clearly-casual shape is dropped; anything ambiguous keeps masking.
+    if (isCasualCredentialValue(value)) continue;
     const valueStart = (match.index ?? 0) + match[0].lastIndexOf(value);
     spans.push({ start: valueStart, end: valueStart + value.length, category: 'credential' });
   }
@@ -130,6 +137,77 @@ export function detectCredentials(text: string): SensitivitySpan[] {
   }
 
   return spans;
+}
+
+/**
+ * A small, bounded set of very common casual words that frequently appear right
+ * after a credential keyword in ordinary speech ("the secret is safe", "my
+ * password is fine"). Membership is a fast, unambiguous "this is chatter" signal;
+ * the word-shape heuristic below catches the long tail (e.g. "fridge").
+ */
+const CASUAL_CREDENTIAL_STOP_WORDS = new Set([
+  'safe',
+  'fine',
+  'okay',
+  'good',
+  'ready',
+  'done',
+  'gone',
+  'mine',
+  'yours',
+  'ours',
+  'theirs',
+  'here',
+  'there',
+  'simple',
+  'secret',
+  'strong',
+  'weak',
+  'important',
+  'wrong',
+  'right',
+  'correct',
+  'changed',
+  'updated',
+  'saved',
+  'the',
+  'that',
+  'this',
+  'out',
+  'set',
+  'still',
+]);
+
+/**
+ * Whether a credential-keyword VALUE looks like casual natural-language chatter
+ * rather than an actual secret (JJ-86 precision guard). Returns true ONLY for a
+ * value we are confident is a bare word; every real-secret shape and every
+ * ambiguous case returns false (keep masking — err safe).
+ *
+ * A genuine secret almost always mixes character classes (letters + digits),
+ * carries a symbol, mixes case, or is long/high-entropy. So we treat a value as
+ * casual only when it is a single short word of ONE letter case with a natural,
+ * pronounceable shape — a low-entropy word-shape check: it has a vowel and no
+ * long consonant run (random tokens like "qwvbk" fail this and stay masked).
+ */
+export function isCasualCredentialValue(value: string): boolean {
+  // Strip surrounding quotes and trailing sentence punctuation ("fridge." ").
+  const v = value.replace(/^["'`]+/, '').replace(/["'`.,;:!?)]+$/, '');
+  // Must be a bare, single-case alphabetic word of modest length. Anything with
+  // a digit, symbol, mixed case, or length ≥ 12 is secret-shaped → keep masking.
+  const lower = /^[a-z]{3,11}$/.test(v);
+  const upper = /^[A-Z]{3,11}$/.test(v);
+  if (!lower && !upper) return false;
+  const word = v.toLowerCase();
+  if (CASUAL_CREDENTIAL_STOP_WORDS.has(word)) return true;
+  // Word-shape / low-entropy check: real words have a vowel and no long
+  // consonant cluster; opaque tokens (e.g. "hunter" has none, but "xk7"/"qwvbk"
+  // do) stay masked. Uppercase-only tokens read as acronyms/keys, not chatter,
+  // so we only relax the pure-lowercase natural-word case here.
+  if (!lower) return false;
+  if (!/[aeiou]/.test(word)) return false; // no vowel → token-like, keep masking
+  if (/[^aeiou]{4,}/.test(word)) return false; // 4+ consonant run → token-like
+  return true;
 }
 
 /** National IDs: US SSN (nnn-nn-nnnn). Kept narrow to avoid false positives. */
