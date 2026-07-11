@@ -204,7 +204,7 @@ export class TopicsService {
     }
     const item = await this.inbox.getItem(userId, inboxItemId);
     if (!buildTopicContent(item)) {
-      throw new BadRequestException('item has no summary or transcription to classify');
+      throw new BadRequestException('item has no summary, transcription or OCR text to classify');
     }
     const topics = latestOfKind(item.extractions ?? [], 'topics');
     if (topics && ACTIVE_STATUSES.includes(topics.status)) {

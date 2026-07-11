@@ -106,6 +106,7 @@ import { CreateAiConfig1720000000045 } from './migrations/1720000000045-CreateAi
 import { AddDocumentDate1720000000046 } from './migrations/1720000000046-AddDocumentDate';
 import { CreateNudgeState1720000000047 } from './migrations/1720000000047-CreateNudgeState';
 import { SimplifyAiConfig1720000000048 } from './migrations/1720000000048-SimplifyAiConfig';
+import { IndexOcrFullText1720000000050 } from './migrations/1720000000050-IndexOcrFullText';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -216,6 +217,9 @@ export const ALL_MIGRATIONS = [
   AddDocumentDate1720000000046,
   CreateNudgeState1720000000047,
   SimplifyAiConfig1720000000048,
+  // 049 is reserved by the in-flight dead-man's-switch PR (#116); OCR full-text
+  // indexing (JJ-83) takes 050.
+  IndexOcrFullText1720000000050,
 ];
 
 /**

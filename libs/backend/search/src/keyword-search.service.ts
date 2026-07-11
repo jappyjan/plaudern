@@ -15,11 +15,20 @@ export interface KeywordHit {
   score: number;
 }
 
-/** Payload kinds whose text is searchable and their snippet source label. */
+/**
+ * Payload kinds whose text is searchable and their snippet source label. OCR
+ * text (scanned documents, JJ-83) is indexed alongside transcripts and reported
+ * under the same `'transcript'` source — it is the item's primary recognized
+ * text, just read from a page instead of speech.
+ */
 const SEARCHABLE_KINDS: Record<string, EmbeddingChunkSource> = {
   transcription: 'transcript',
+  ocr: 'transcript',
   summary: 'summary',
 };
+
+/** The kinds the keyword leg indexes, derived from the label map above. */
+const SEARCHABLE_KIND_LIST = Object.keys(SEARCHABLE_KINDS);
 
 /**
  * The keyword (full-text-search) leg of hybrid search. On Postgres it uses the
@@ -103,7 +112,7 @@ export class KeywordSearchService {
          JOIN inbox_items i ON i.id = p."inboxItemId"
          WHERE i."userId" = $2
            AND p.status = 'succeeded'
-           AND p.kind IN ('transcription', 'summary')
+           AND p.kind IN ('transcription', 'ocr', 'summary')
            AND p.search_vector @@ websearch_to_tsquery('simple', $1)
            ${allowedClause}
          ORDER BY p."inboxItemId", score DESC
@@ -141,7 +150,7 @@ export class KeywordSearchService {
       .innerJoin(InboxItemEntity, 'i', 'i.id = p.inboxItemId')
       .where('i.userId = :userId', { userId })
       .andWhere('p.status = :status', { status: 'succeeded' })
-      .andWhere('p.kind IN (:...kinds)', { kinds: ['transcription', 'summary'] })
+      .andWhere('p.kind IN (:...kinds)', { kinds: SEARCHABLE_KIND_LIST })
       .getMany();
 
     const bestPerItem = new Map<string, KeywordHit & { _score: number }>();

@@ -1,4 +1,5 @@
 import { summaryPayloadSchema, type EmbeddingChunkSource } from '@plaudern/contracts';
+import { resolveSourceText } from '@plaudern/inbox';
 import type { ExtractedPayloadEntity, InboxItemEntity } from '@plaudern/persistence';
 import { chunkPlainText, chunkTranscript, DEFAULT_MAX_CHARS } from './embedding.chunker';
 
@@ -19,10 +20,13 @@ export interface EmbeddingContext {
 
 /**
  * Assemble the embeddable chunks for an item from its append-only extractions:
- * the latest succeeded transcription (chunked with segment timestamps) followed
- * by the latest succeeded summary (title + markdown + off-topic, chunked as
- * timeless prose). `chunkIndex` runs across the whole set so ordering is stable.
- * Returns no chunks when there is nothing to embed yet.
+ * the resolved source text — the latest succeeded transcription chunked with
+ * segment timestamps, or a scanned document's OCR text chunked as timeless
+ * prose (JJ-83) — followed by the latest succeeded summary (title + markdown +
+ * off-topic, chunked as timeless prose). Both the transcript and the OCR leg use
+ * the `'transcript'` chunk source (OCR text is embedded "the same way"; a scan
+ * carries no timestamps). `chunkIndex` runs across the whole set so ordering is
+ * stable. Returns no chunks when there is nothing to embed yet.
  */
 export function buildEmbeddableChunks(
   item: InboxItemEntity,
@@ -32,11 +36,13 @@ export function buildEmbeddableChunks(
   const chunks: EmbeddableChunk[] = [];
   let index = 0;
 
-  const transcription = latestOfKind(extractions, 'transcription');
-  if (transcription?.status === 'succeeded' && transcription.content) {
+  const source = resolveSourceText(item);
+  if (source) {
+    // `segments` only exist on real transcriptions; OCR (and passthrough) text
+    // has none, so those chunks fall back to timeless windows automatically.
     for (const chunk of chunkTranscript(
-      transcription.content,
-      transcription.segments ?? null,
+      source.text,
+      source.extraction.segments ?? null,
       maxChars,
     )) {
       chunks.push({

@@ -40,7 +40,7 @@ export class EntitiesProcessor {
 
       const input = buildEntityExtractionInput(item);
       if (!input) {
-        throw new Error('no succeeded transcription to extract entities from');
+        throw new Error('no source text (transcription or OCR) to extract entities from');
       }
 
       // Attribute the external AI-provider call to this user/item so the

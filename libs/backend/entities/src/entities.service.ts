@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
 import { AiConfigService } from '@plaudern/ai-config';
-import { InboxService } from '@plaudern/inbox';
+import { InboxService, hasSucceededSourceExtraction } from '@plaudern/inbox';
 import type { ExtractionStatus } from '@plaudern/contracts';
 import type { ExtractedPayloadEntity } from '@plaudern/persistence';
 import {
@@ -53,9 +53,10 @@ export class EntitiesService {
     }
     const item = await this.inbox.getItem(userId, inboxItemId);
     const extractions = item.extractions ?? [];
-    const transcription = latestOfKind(extractions, 'transcription');
-    if (transcription?.status !== 'succeeded') {
-      throw new BadRequestException('item has no completed transcription to extract entities from');
+    if (!hasSucceededSourceExtraction(item)) {
+      throw new BadRequestException(
+        'item has no completed transcription or OCR text to extract entities from',
+      );
     }
     const entities = latestOfKind(extractions, 'entities');
     if (entities && ACTIVE_STATUSES.includes(entities.status)) {

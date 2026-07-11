@@ -237,3 +237,91 @@ describe('isGenerationCovered (event-pipeline dedupe)', () => {
     ).toBe(false);
   });
 });
+
+describe('evaluateReadiness with a source-text OR-group (JJ-83)', () => {
+  // Mirrors the real entities/embeddings/topics shape: an item is extractable
+  // from EITHER a transcription OR OCR text. `audioLike`/`docLike` toggle which
+  // upstream root applies (audio has no OCR; a scanned document has no
+  // transcription of its own).
+  function sourceGraph(opts: { transcriptionApplies: boolean; ocrApplies: boolean }): ExtractorGraph {
+    return new ExtractorGraph([
+      extractor('transcription', [], { appliesTo: () => opts.transcriptionApplies }),
+      extractor('ocr', [], { appliesTo: () => opts.ocrApplies }),
+      extractor('summary', [{ kind: 'transcription', requires: 'succeeded' }], {
+        appliesTo: () => opts.transcriptionApplies,
+      }),
+      extractor('entities', [
+        { kind: 'transcription', requires: 'succeeded', group: 'sourceText' },
+        { kind: 'ocr', requires: 'succeeded', group: 'sourceText' },
+      ]),
+    ]);
+  }
+
+  const audioLike = sourceGraph({ transcriptionApplies: true, ocrApplies: false });
+  const docLike = sourceGraph({ transcriptionApplies: false, ocrApplies: true });
+
+  it('runs an OCR-only document once OCR succeeds (no transcription)', async () => {
+    const readiness = await evaluateReadiness(
+      docLike.get('entities')!,
+      item([row('ocr', 'succeeded', '2026-07-01T10:00:00Z')]),
+      docLike,
+    );
+    expect(readiness).toEqual({
+      ready: true,
+      generationTs: new Date('2026-07-01T10:00:00Z').getTime(),
+    });
+  });
+
+  it('audio is unchanged: ready when the transcription succeeds', async () => {
+    const readiness = await evaluateReadiness(
+      audioLike.get('entities')!,
+      item([row('transcription', 'succeeded', '2026-07-01T10:00:00Z')]),
+      audioLike,
+    );
+    expect(readiness).toEqual({
+      ready: true,
+      generationTs: new Date('2026-07-01T10:00:00Z').getTime(),
+    });
+  });
+
+  it('audio is unchanged: never runs when the transcription failed (no OCR to fall back to)', async () => {
+    const readiness = await evaluateReadiness(
+      audioLike.get('entities')!,
+      item([row('transcription', 'failed', '2026-07-01T10:00:00Z')]),
+      audioLike,
+    );
+    expect(readiness.ready).toBe(false);
+  });
+
+  it('waits while the OCR row is still in flight', async () => {
+    const readiness = await evaluateReadiness(
+      docLike.get('entities')!,
+      item([row('ocr', 'processing', '2026-07-01T10:00:00Z')]),
+      docLike,
+    );
+    expect(readiness.ready).toBe(false);
+  });
+
+  it('waits for an applicable source whose row has not been appended yet', async () => {
+    const readiness = await evaluateReadiness(docLike.get('entities')!, item([]), docLike);
+    expect(readiness.ready).toBe(false);
+  });
+
+  it('prefers the transcription generation when both sources succeed', async () => {
+    const bothGraph = sourceGraph({ transcriptionApplies: true, ocrApplies: true });
+    const readiness = await evaluateReadiness(
+      bothGraph.get('entities')!,
+      item([
+        row('transcription', 'succeeded', '2026-07-01T10:00:00Z'),
+        row('ocr', 'succeeded', '2026-07-01T10:05:00Z'),
+      ]),
+      bothGraph,
+    );
+    // The newest satisfying member drives the generation (dedup key); either
+    // source succeeding is enough to run.
+    expect(readiness).toEqual({
+      ready: true,
+      generationTs: new Date('2026-07-01T10:05:00Z').getTime(),
+    });
+  });
+});
