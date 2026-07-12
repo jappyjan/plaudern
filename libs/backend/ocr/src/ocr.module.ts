@@ -11,6 +11,7 @@ import { OpenAiVisionOcrProvider } from './providers/openai-vision.provider';
 import { OcrProcessor } from './ocr.processor';
 import { OcrService } from './ocr.service';
 import { OcrExtractor } from './ocr.extractor';
+import { PdfRasterizer } from './pdf-rasterizer';
 import { InboxOcrController } from './inbox-ocr.controller';
 
 @Module({
@@ -22,6 +23,7 @@ import { InboxOcrController } from './inbox-ocr.controller';
       inject: [OpenAiVisionOcrProvider],
       useFactory: (openai: OpenAiVisionOcrProvider) => openai,
     },
+    PdfRasterizer,
     OcrProcessor,
     {
       provide: OCR_QUEUE,

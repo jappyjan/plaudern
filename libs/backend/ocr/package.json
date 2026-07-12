@@ -6,6 +6,7 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "dependencies": {
+    "@hyzyla/pdfium": "2.1.13",
     "@plaudern/ai-config": "workspace:*",
     "@plaudern/auth": "workspace:*",
     "@plaudern/contracts": "workspace:*",
