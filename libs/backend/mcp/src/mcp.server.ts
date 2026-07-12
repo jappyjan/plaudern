@@ -18,7 +18,7 @@ import {
   reminderStatusSchema,
   taskStatusSchema,
 } from '@plaudern/contracts';
-import type { McpToolsService } from './mcp.tools';
+import type { McpActor, McpToolsService } from './mcp.tools';
 
 /** Server identity advertised to MCP clients on initialize. */
 const SERVER_INFO = { name: 'plaudern-memory', version: '0.1.0' } as const;
@@ -29,10 +29,10 @@ function jsonResult(payload: unknown) {
 }
 
 /**
- * Build a fresh MCP server bound to one authenticated user, exposing the memory
- * tools plus the JJ-78 knowledge-graph read tools. A new instance is created per
- * request (stateless transport), so the closed-over `userId` scopes every tool
- * call to the token owner.
+ * Build a fresh MCP server bound to one authenticated actor, exposing the memory
+ * tools plus the JJ-78 knowledge-graph read tools and the mutation tools. A new
+ * instance is created per request (stateless transport), so the closed-over
+ * `actor` scopes every tool call to the token owner.
  *
  * The knowledge-graph tools (list_entities/get_entity/list_relations/list_facts/
  * list_tasks/list_commitments/list_questions/list_decisions/list_reminders/
@@ -41,8 +41,16 @@ function jsonResult(payload: unknown) {
  * returns item-derived content routes it through the JJ-21 sensitivity gate:
  * sensitive/secret and not-yet-classified items are excluded (fail closed), so
  * this external surface can never leak what memory-chat would also withhold.
+ *
+ * The mutation tools (create_task/update_task_status/update_commitment_status/
+ * answer_question, plus ingest_text_note) reuse the same domain write paths the
+ * web app uses; each is gated by the SAME fail-closed sensitivity rule (a write
+ * touching a gated/not-yet-classified item is refused) and recorded in the audit
+ * trail. Statuses written here are the user's own fields, which re-extraction
+ * never overwrites, and use race-safe conditional updates.
  */
-export function buildMcpServer(userId: string, tools: McpToolsService): McpServer {
+export function buildMcpServer(actor: McpActor, tools: McpToolsService): McpServer {
+  const userId = actor.userId;
   const server = new McpServer(SERVER_INFO, {
     instructions:
       'Plaudern is the user\'s personal memory: their recordings, notes and clips, ' +
@@ -57,9 +65,12 @@ export function buildMcpServer(userId: string, tools: McpToolsService): McpServe
       'read the extracted open loops; list_topics and get_topic read the topic taxonomy ' +
       'and item assignments; list_journal_periods and get_journal read the daily/weekly/' +
       'monthly/yearly rollups; list_calendar_events reads calendar events and their ' +
-      'linked recordings. All tools are read-only and scoped to this user; sensitive ' +
-      'content is filtered out. Compact list_* entries carry ids — pass them to the ' +
-      'matching get_* for full detail, and page with the returned nextCursor.',
+      'linked recordings. Acting on the memory: create_task adds a task, ' +
+      'update_task_status and update_commitment_status resolve open loops, and ' +
+      'answer_question marks a question answered. Every tool is scoped to this user; ' +
+      'sensitive content is filtered out and writes to sensitive items are refused. ' +
+      'Compact list_* entries carry ids — pass them to the matching get_*/update_* for ' +
+      'full detail, and page with the returned nextCursor.',
   });
 
   server.registerTool(
@@ -139,6 +150,12 @@ export function buildMcpServer(userId: string, tools: McpToolsService): McpServe
       inputSchema: {
         // Generous but bounded — a note, not a document dump (web-clip text caps at 1M).
         text: z.string().min(1).max(100_000).describe('The note text to capture.'),
+        title: z
+          .string()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe('Optional title shown for the note.'),
         occurredAt: z
           .string()
           .datetime()
@@ -151,7 +168,7 @@ export function buildMcpServer(userId: string, tools: McpToolsService): McpServe
           .describe('Optional dedupe key; repeat calls with the same key are a no-op.'),
       },
     },
-    async (args) => jsonResult(await tools.ingestTextNote(userId, args)),
+    async (args) => jsonResult(await tools.ingestTextNote(actor, args)),
   );
 
   // ---- JJ-78 knowledge-graph read tools ----
@@ -441,6 +458,78 @@ export function buildMcpServer(userId: string, tools: McpToolsService): McpServe
       },
     },
     async (args) => jsonResult(await tools.listCalendarEvents(userId, args)),
+  );
+
+  // ---- JJ-78 follow-up: mutation tools ----
+  // Each reuses the domain write path, is gated by the same fail-closed
+  // sensitivity rule as the read tools, and is recorded in the audit trail.
+
+  server.registerTool(
+    'create_task',
+    {
+      title: 'Create task',
+      description:
+        'Create a new task in the user\'s to-do list (a task the user authored ' +
+        'directly, not extracted from a recording). Returns the created task. Note: ' +
+        'free-form notes are not stored — pass the intent in the title.',
+      inputSchema: {
+        title: z.string().min(1).max(500).describe('The task title, e.g. "Book the dentist".'),
+        dueDate: z
+          .string()
+          .datetime()
+          .optional()
+          .describe('Optional due date/time (ISO 8601).'),
+      },
+    },
+    async (args) => jsonResult(await tools.createTask(actor, args)),
+  );
+
+  server.registerTool(
+    'update_task_status',
+    {
+      title: 'Update task status',
+      description:
+        'Change a task\'s status: open, completed or dismissed (use open to reopen). ' +
+        'Use an id from list_tasks. Returns the updated task.',
+      inputSchema: {
+        taskId: z.string().uuid().describe('The id of the task to update.'),
+        status: taskStatusSchema.describe('The new status: open, completed or dismissed.'),
+      },
+    },
+    async (args) => jsonResult(await tools.updateTaskStatus(actor, args)),
+  );
+
+  server.registerTool(
+    'update_commitment_status',
+    {
+      title: 'Update commitment status',
+      description:
+        'Change a commitment\'s status: open, fulfilled or dismissed. Works for ' +
+        'commitments in either direction (owed_by_me / owed_to_me). Use an id from ' +
+        'list_commitments. Returns the updated commitment.',
+      inputSchema: {
+        commitmentId: z.string().uuid().describe('The id of the commitment to update.'),
+        status: commitmentStatusSchema.describe(
+          'The new status: open, fulfilled or dismissed.',
+        ),
+      },
+    },
+    async (args) => jsonResult(await tools.updateCommitmentStatus(actor, args)),
+  );
+
+  server.registerTool(
+    'answer_question',
+    {
+      title: 'Answer question',
+      description:
+        'Mark an open question as answered, recording the answer text. Use an id from ' +
+        'list_questions. Returns the updated question.',
+      inputSchema: {
+        questionId: z.string().uuid().describe('The id of the question to answer.'),
+        answer: z.string().min(1).max(10_000).describe('The answer text.'),
+      },
+    },
+    async (args) => jsonResult(await tools.answerQuestion(actor, args)),
   );
 
   return server;

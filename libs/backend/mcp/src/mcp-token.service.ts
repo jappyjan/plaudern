@@ -72,6 +72,18 @@ export class McpTokenService {
    * can show recency without a write on every MCP call.
    */
   async resolveUserId(token: string): Promise<string | null> {
+    const actor = await this.resolveActor(token);
+    return actor?.userId ?? null;
+  }
+
+  /**
+   * Resolve a presented Bearer token to its owning user id AND the token's
+   * non-secret display prefix, or null for an unknown/revoked token. The prefix
+   * identifies WHICH token acted (for the mutation audit trail) without being
+   * able to reconstruct the secret. Bumps `lastUsedAt` at most hourly, like
+   * `resolveUserId`.
+   */
+  async resolveActor(token: string): Promise<{ userId: string; tokenPrefix: string } | null> {
     if (!token) return null;
     const entity = await this.repo.findOne({ where: { tokenHash: hashToken(token) } });
     if (!entity) return null;
@@ -80,7 +92,7 @@ export class McpTokenService {
     if (!entity.lastUsedAt || now - Date.parse(entity.lastUsedAt) > LAST_USED_THROTTLE_MS) {
       await this.repo.update({ id: entity.id }, { lastUsedAt: new Date(now).toISOString() });
     }
-    return entity.userId;
+    return { userId: entity.userId, tokenPrefix: entity.tokenPrefix };
   }
 }
 

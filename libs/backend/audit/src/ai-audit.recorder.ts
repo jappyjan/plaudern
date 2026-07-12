@@ -26,6 +26,19 @@ export interface RecordAiCallParams {
   context?: AiAuditContext;
 }
 
+/** One audited MCP mutation — an external agent WRITING to the user's memory. */
+export interface RecordMcpMutationParams {
+  userId: string;
+  /** Display prefix of the acting MCP token (e.g. `mcp_ab12`); never the secret. */
+  tokenPrefix: string;
+  /** The mutation tool invoked, e.g. `create_task`. */
+  tool: string;
+  /** The inbox item the mutation touched, when item-scoped; null otherwise. */
+  itemId?: string | null;
+  /** A small JSON-serializable description of WHAT changed (ids, from/to status, …). */
+  change: Record<string, unknown>;
+}
+
 /**
  * Records one audited external AI-provider call (JJ-42).
  *
@@ -51,6 +64,47 @@ export class AiAuditRecorder {
     config: ConfigService,
   ) {
     this.storePayload = config.get<string>('AI_AUDIT_STORE_PAYLOAD', 'false') === 'true';
+  }
+
+  /**
+   * Record one audited MCP MUTATION (JJ-78 follow-up) into the SAME
+   * `ai_provider_calls` trail the AI-egress log uses, so the user has one place
+   * to see everything that acted on their memory. An MCP mutation is not an AI
+   * call, so the fields are reinterpreted: `provider` is the literal `mcp`,
+   * `endpoint` carries the acting token's non-secret display prefix (WHICH token
+   * acted), `kind` is `mcp:<tool>`, `direction` is `inbound` (an external agent
+   * writing IN, vs. our bytes going `outbound` to a provider), and the hashed
+   * `change` payload records WHAT changed (ids + from/to status). Like `record`,
+   * failures are swallowed (logged) — auditing must never break the mutation it
+   * observes — and the raw change is stored only under the `AI_AUDIT_STORE_PAYLOAD`
+   * operator opt-in. Called AFTER the mutation commits, so the trail only ever
+   * reflects changes that actually landed.
+   */
+  async recordMcpMutation(params: RecordMcpMutationParams): Promise<void> {
+    try {
+      const payload = JSON.stringify(params.change);
+      const buffer = Buffer.from(payload, 'utf8');
+      const contentHash = createHash('sha256').update(buffer).digest('hex');
+      await this.calls.save(
+        this.calls.create({
+          userId: params.userId,
+          inboxItemId: params.itemId ?? null,
+          kind: `mcp:${params.tool}`,
+          provider: 'mcp',
+          endpoint: params.tokenPrefix,
+          direction: 'inbound',
+          bytesSent: buffer.byteLength,
+          contentHash,
+          payloadRedacted: this.storePayload
+            ? truncateForStorage(payload, buffer.byteLength)
+            : null,
+        }),
+      );
+    } catch (err) {
+      this.logger.error(
+        `failed to record MCP mutation audit for ${params.tool}: ${(err as Error).message}`,
+      );
+    }
   }
 
   async record(params: RecordAiCallParams): Promise<void> {

@@ -193,6 +193,58 @@ export class CommitmentsService {
     );
   }
 
+  // ---- MCP mutation surface (JJ-78 follow-up) ----
+
+  /**
+   * The current status + source item for one commitment, so an MCP mutation can
+   * check existence and gate on the source item's sensitivity BEFORE flipping it.
+   * Null when the id isn't the user's. Commitments exist in both directions
+   * (owed_by_me / owed_to_me); status is the user's to advance either way.
+   */
+  async findForStatusUpdate(
+    userId: string,
+    id: string,
+  ): Promise<{ status: CommitmentStatus; inboxItemId: string } | null> {
+    const row = await this.commitments.findOne({ where: { id, userId } });
+    if (!row) return null;
+    return { status: row.status, inboxItemId: row.inboxItemId };
+  }
+
+  /**
+   * RACE-SAFE status flip: a conditional `UPDATE … WHERE id AND userId AND
+   * status=:expected` that changes exactly one row, or throws Conflict — so a
+   * concurrent writer that already advanced the status is never silently
+   * clobbered the way save()-by-PK (`updateStatus`) would. Status is a user-owned
+   * field the extraction upsert deliberately never overwrites, so this write is
+   * safe against re-extraction too. `UpdateResult.affected` is honored on both
+   * the Postgres and better-sqlite3 drivers.
+   */
+  async setStatusIfUnchanged(
+    userId: string,
+    id: string,
+    expected: CommitmentStatus,
+    next: CommitmentStatus,
+  ): Promise<CommitmentDto> {
+    const result = await this.commitments
+      .createQueryBuilder()
+      .update(CommitmentEntity)
+      .set({ status: next })
+      .where('id = :id', { id })
+      .andWhere('"userId" = :userId', { userId })
+      .andWhere('status = :expected', { expected })
+      .execute();
+    if (result.affected !== 1) {
+      throw new ConflictException('commitment status changed concurrently; re-read and retry');
+    }
+    const row = await this.commitments.findOne({ where: { id, userId } });
+    if (!row) throw new NotFoundException('commitment not found');
+    const occurredById = await this.occurredByItem([row.inboxItemId]);
+    return toCommitmentDto(
+      row,
+      occurredById.get(row.inboxItemId) ?? row.createdAt.toISOString(),
+    );
+  }
+
   /** occurredAt (ISO) per inbox item id, for building DTOs in list/update. */
   private async occurredByItem(itemIds: string[]): Promise<Map<string, string>> {
     const map = new Map<string, string>();

@@ -12,14 +12,22 @@ type Fakes = {
   entityGraph: { edgesFor: jest.Mock; edgeEvidenceItemIds: jest.Mock };
   dossier: { build: jest.Mock };
   facts: { listWithCitations: jest.Mock };
-  tasks: { list: jest.Mock; citationItemIds: jest.Mock };
-  commitments: { list: jest.Mock };
-  questions: { list: jest.Mock };
+  tasks: {
+    list: jest.Mock;
+    citationItemIds: jest.Mock;
+    listForMcp: jest.Mock;
+    createUserTask: jest.Mock;
+    findForMcpMutation: jest.Mock;
+    setStatusIfUnchanged: jest.Mock;
+  };
+  commitments: { list: jest.Mock; findForStatusUpdate: jest.Mock; setStatusIfUnchanged: jest.Mock };
+  questions: { list: jest.Mock; findForStatusUpdate: jest.Mock; setStatusIfUnchanged: jest.Mock };
   decisions: { list: jest.Mock };
   reminders: { list: jest.Mock };
   topics: { listTopics: jest.Mock; listItemsByTopic: jest.Mock };
   journal: { listPeriods: jest.Mock; getJournal: jest.Mock };
   calendar: { eventsInRange: jest.Mock };
+  audit: { recordMcpMutation: jest.Mock };
 };
 
 function build(): { service: McpToolsService; fakes: Fakes } {
@@ -36,14 +44,30 @@ function build(): { service: McpToolsService; fakes: Fakes } {
     },
     dossier: { build: jest.fn() },
     facts: { listWithCitations: jest.fn() },
-    tasks: { list: jest.fn(), citationItemIds: jest.fn() },
-    commitments: { list: jest.fn() },
-    questions: { list: jest.fn() },
+    tasks: {
+      list: jest.fn(),
+      citationItemIds: jest.fn(),
+      listForMcp: jest.fn(),
+      createUserTask: jest.fn(),
+      findForMcpMutation: jest.fn(),
+      setStatusIfUnchanged: jest.fn(),
+    },
+    commitments: {
+      list: jest.fn(),
+      findForStatusUpdate: jest.fn(),
+      setStatusIfUnchanged: jest.fn(),
+    },
+    questions: {
+      list: jest.fn(),
+      findForStatusUpdate: jest.fn(),
+      setStatusIfUnchanged: jest.fn(),
+    },
     decisions: { list: jest.fn() },
     reminders: { list: jest.fn() },
     topics: { listTopics: jest.fn(), listItemsByTopic: jest.fn() },
     journal: { listPeriods: jest.fn(), getJournal: jest.fn() },
     calendar: { eventsInRange: jest.fn() },
+    audit: { recordMcpMutation: jest.fn().mockResolvedValue(undefined) },
   };
   const service = new McpToolsService(
     fakes.inbox as never,
@@ -62,6 +86,7 @@ function build(): { service: McpToolsService; fakes: Fakes } {
     fakes.topics as never,
     fakes.journal as never,
     fakes.calendar as never,
+    fakes.audit as never,
   );
   return { service, fakes };
 }
@@ -380,11 +405,13 @@ describe('McpToolsService', () => {
   });
 
   describe('ingestTextNote', () => {
-    it('captures a note via the ingestion text path and returns its id', async () => {
+    const actor = { userId: 'user-1', tokenPrefix: 'mcp_ab12' };
+
+    it('captures a note via the ingestion text path, returns its id, and audits it', async () => {
       const { service, fakes } = build();
       fakes.ingestion.ingestText.mockResolvedValue({ id: 'note-1' });
 
-      const result = await service.ingestTextNote('user-1', { text: 'remember the milk' });
+      const result = await service.ingestTextNote(actor, { text: 'remember the milk' });
 
       expect(result).toEqual({ itemId: 'note-1' });
       const [userId, req] = fakes.ingestion.ingestText.mock.calls[0];
@@ -392,21 +419,28 @@ describe('McpToolsService', () => {
       expect(req.text).toBe('remember the milk');
       expect(typeof req.occurredAt).toBe('string');
       expect(req.idempotencyKey).toMatch(/^mcp-note-/);
+      expect(req.metadata).toBeUndefined();
+      expect(fakes.audit.recordMcpMutation).toHaveBeenCalledWith(
+        expect.objectContaining({ tool: 'ingest_text_note', itemId: 'note-1' }),
+      );
     });
 
-    it('honors a caller-supplied occurredAt and idempotencyKey', async () => {
+    it('honors a caller-supplied occurredAt, idempotencyKey and title', async () => {
       const { service, fakes } = build();
       fakes.ingestion.ingestText.mockResolvedValue({ id: 'note-2' });
 
-      await service.ingestTextNote('user-1', {
+      await service.ingestTextNote(actor, {
         text: 'pinned',
         occurredAt: '2026-01-02T03:04:05.000Z',
         idempotencyKey: 'fixed-key',
+        title: 'Groceries',
       });
 
       const [, req] = fakes.ingestion.ingestText.mock.calls[0];
       expect(req.occurredAt).toBe('2026-01-02T03:04:05.000Z');
       expect(req.idempotencyKey).toBe('fixed-key');
+      // Title reuses the metadata.tags.title slot the read tools surface.
+      expect(req.metadata).toEqual({ tags: { title: 'Groceries' } });
     });
   });
 
@@ -557,23 +591,153 @@ describe('McpToolsService', () => {
       expect(result.commitments.map((c) => c.id)).toEqual(['c-ok']);
     });
 
-    it('list_tasks gates by citation item and pages the gated list', async () => {
+    it('list_tasks gates cited tasks by source item, surfaces citation-less user tasks, hides ghosts', async () => {
       const { service, fakes } = build();
-      fakes.tasks.list.mockResolvedValue([
-        { id: 't-ok', title: 'A' },
-        { id: 't-secret', title: 'B' },
+      fakes.tasks.listForMcp.mockResolvedValue([
+        // Cited by an allowed item — shown.
+        { task: { id: 't-ok', title: 'A' }, citationItemIds: ['ok'], hasCitations: true },
+        // Cited only by a sensitive item — hidden (fail closed).
+        { task: { id: 't-secret', title: 'B' }, citationItemIds: ['secret'], hasCitations: true },
+        // Citation-less user-created task — shown (no item-derived content to gate).
+        { task: { id: 't-user', title: 'C' }, citationItemIds: [], hasCitations: false },
+        // Ghost: had citations but none current/allowed — hidden.
+        { task: { id: 't-ghost', title: 'D' }, citationItemIds: [], hasCitations: true },
       ]);
-      fakes.tasks.citationItemIds.mockResolvedValue(
-        new Map([
-          ['t-ok', ['ok']],
-          ['t-secret', ['secret']],
-        ]),
-      );
       fakes.sensitivity.effectiveTiers = tierMap({ ok: 'normal', secret: 'secret' });
 
       const result = await service.listTasks('user-1', { limit: 20 });
-      expect(fakes.tasks.list).toHaveBeenCalledWith('user-1', undefined);
-      expect(result.tasks.map((t) => t.id)).toEqual(['t-ok']);
+      expect(fakes.tasks.listForMcp).toHaveBeenCalledWith('user-1', undefined);
+      expect(result.tasks.map((t) => t.id)).toEqual(['t-ok', 't-user']);
+    });
+  });
+
+  describe('mutation tools', () => {
+    const actor = { userId: 'user-1', tokenPrefix: 'mcp_ab12' };
+
+    it('create_task delegates to the registry and audits the write', async () => {
+      const { service, fakes } = build();
+      fakes.tasks.createUserTask.mockResolvedValue({ id: 'task-9', title: 'Ship it', dueDate: null });
+
+      const result = await service.createTask(actor, { title: 'Ship it' });
+      expect(fakes.tasks.createUserTask).toHaveBeenCalledWith('user-1', {
+        title: 'Ship it',
+        dueDate: null,
+      });
+      expect(result.id).toBe('task-9');
+      expect(fakes.audit.recordMcpMutation).toHaveBeenCalledWith(
+        expect.objectContaining({ tool: 'create_task', tokenPrefix: 'mcp_ab12', userId: 'user-1' }),
+      );
+    });
+
+    it('update_task_status flips a citation-less task race-safely and audits it', async () => {
+      const { service, fakes } = build();
+      fakes.tasks.findForMcpMutation.mockResolvedValue({
+        status: 'open',
+        citationItemIds: [],
+        hasCitations: false,
+      });
+      fakes.tasks.setStatusIfUnchanged.mockResolvedValue({ id: 'task-9', status: 'completed' });
+
+      const result = await service.updateTaskStatus(actor, { taskId: 'task-9', status: 'completed' });
+      // Conditional flip is invoked with the CURRENT status as the expected guard.
+      expect(fakes.tasks.setStatusIfUnchanged).toHaveBeenCalledWith(
+        'user-1',
+        'task-9',
+        'open',
+        'completed',
+      );
+      expect(result.status).toBe('completed');
+      expect(fakes.audit.recordMcpMutation).toHaveBeenCalledWith(
+        expect.objectContaining({ tool: 'update_task_status', change: expect.objectContaining({ from: 'open', to: 'completed' }) }),
+      );
+    });
+
+    it('update_task_status refuses a task whose only source items are gated (fail closed)', async () => {
+      const { service, fakes } = build();
+      fakes.tasks.findForMcpMutation.mockResolvedValue({
+        status: 'open',
+        citationItemIds: ['secret'],
+        hasCitations: true,
+      });
+      fakes.sensitivity.effectiveTiers = tierMap({ secret: 'secret' });
+
+      await expect(
+        service.updateTaskStatus(actor, { taskId: 'task-9', status: 'completed' }),
+      ).rejects.toThrow('task not found');
+      expect(fakes.tasks.setStatusIfUnchanged).not.toHaveBeenCalled();
+    });
+
+    it('update_commitment_status refuses when the source item is not yet classified (fail closed)', async () => {
+      const { service, fakes } = build();
+      fakes.commitments.findForStatusUpdate.mockResolvedValue({
+        status: 'open',
+        inboxItemId: 'unclassified',
+      });
+      // No tier for the item ⇒ excluded ⇒ mutation refused.
+      fakes.sensitivity.effectiveTiers = tierMap({});
+
+      await expect(
+        service.updateCommitmentStatus(actor, { commitmentId: 'c-1', status: 'fulfilled' }),
+      ).rejects.toThrow('commitment not found');
+      expect(fakes.commitments.setStatusIfUnchanged).not.toHaveBeenCalled();
+    });
+
+    it('update_commitment_status flips race-safely for an allowed item and audits it', async () => {
+      const { service, fakes } = build();
+      fakes.commitments.findForStatusUpdate.mockResolvedValue({
+        status: 'open',
+        inboxItemId: 'ok',
+      });
+      fakes.sensitivity.effectiveTiers = tierMap({ ok: 'normal' });
+      fakes.commitments.setStatusIfUnchanged.mockResolvedValue({ id: 'c-1', status: 'fulfilled' });
+
+      const result = await service.updateCommitmentStatus(actor, {
+        commitmentId: 'c-1',
+        status: 'fulfilled',
+      });
+      expect(fakes.commitments.setStatusIfUnchanged).toHaveBeenCalledWith(
+        'user-1',
+        'c-1',
+        'open',
+        'fulfilled',
+      );
+      expect(result.status).toBe('fulfilled');
+      expect(fakes.audit.recordMcpMutation).toHaveBeenCalledWith(
+        expect.objectContaining({ tool: 'update_commitment_status', itemId: 'ok' }),
+      );
+    });
+
+    it('answer_question marks answered for an allowed item and records the answer in the audit', async () => {
+      const { service, fakes } = build();
+      fakes.questions.findForStatusUpdate.mockResolvedValue({
+        status: 'open',
+        inboxItemId: 'ok',
+      });
+      fakes.sensitivity.effectiveTiers = tierMap({ ok: 'normal' });
+      fakes.questions.setStatusIfUnchanged.mockResolvedValue({ id: 'q-1', status: 'answered' });
+
+      const result = await service.answerQuestion(actor, { questionId: 'q-1', answer: 'yes, at 3pm' });
+      expect(fakes.questions.setStatusIfUnchanged).toHaveBeenCalledWith(
+        'user-1',
+        'q-1',
+        'open',
+        'answered',
+      );
+      expect(result.status).toBe('answered');
+      expect(fakes.audit.recordMcpMutation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tool: 'answer_question',
+          change: expect.objectContaining({ answer: 'yes, at 3pm', to: 'answered' }),
+        }),
+      );
+    });
+
+    it('answer_question refuses an unknown id', async () => {
+      const { service, fakes } = build();
+      fakes.questions.findForStatusUpdate.mockResolvedValue(null);
+      await expect(
+        service.answerQuestion(actor, { questionId: 'nope', answer: 'x' }),
+      ).rejects.toThrow('question not found');
     });
   });
 
