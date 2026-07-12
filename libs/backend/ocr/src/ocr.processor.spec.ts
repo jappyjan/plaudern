@@ -23,10 +23,9 @@ const PDF_JOB: OcrJob = {
 };
 
 /** Storage stand-in that streams a fixed buffer for the document blob. */
-function fakeStorage(): StorageService {
+function fakeStorage(bytes: Buffer = Buffer.from('fake image bytes')): StorageService {
   return {
     async getObjectStream() {
-      const bytes = Buffer.from('fake image bytes');
       return (async function* () {
         yield bytes;
       })();
@@ -183,5 +182,63 @@ describe('OcrProcessor', () => {
       '[page 1]\npage body\n\n[page 2]\npage body\n\n' +
         '[truncated: OCR processed the first 2 of 5 pages]',
     );
+  });
+
+  it('keeps a skip marker (and correct numbering) for a page the rasterizer refused', async () => {
+    const { service: inbox, completed } = fakeInbox();
+    const transcription = {
+      recordExtractedText: jest.fn(async () => 't'),
+    } as unknown as TranscriptionService;
+    const recognize = jest.fn(async () => ({ text: 'page body', language: 'en' }));
+
+    const processor = new OcrProcessor(
+      inbox,
+      fakeStorage(),
+      transcription,
+      { id: 'test:ocr', recognize },
+      // Page 2 was refused pre-render (oversized MediaBox) → null entry.
+      pdfRasterizer({
+        pages: [Buffer.from('png-1'), null, Buffer.from('png-3')],
+        totalPages: 3,
+        truncated: false,
+      }),
+    );
+
+    await processor.process(PDF_JOB);
+
+    // No vision call for the skipped page.
+    expect(recognize).toHaveBeenCalledTimes(2);
+    expect(completed[0].result).toMatchObject({
+      status: 'succeeded',
+      content:
+        '[page 1]\npage body\n\n' +
+        '[page 2]\n[page image too large to OCR]\n\n' +
+        '[page 3]\npage body',
+    });
+  });
+
+  it('fails gracefully (no rasterize, no vision call) for an over-sized PDF blob', async () => {
+    const { service: inbox, completed } = fakeInbox();
+    const transcription = {
+      recordExtractedText: jest.fn(async () => 't'),
+    } as unknown as TranscriptionService;
+    const recognize = jest.fn(async () => ({ text: 'unreachable' }));
+    const rasterize = jest.fn();
+    const rasterizer = { isPdf: () => true, rasterize } as unknown as PdfRasterizer;
+
+    const processor = new OcrProcessor(
+      inbox,
+      fakeStorage(Buffer.alloc(13 * 1024 * 1024)), // > 12MB PDF cap
+      transcription,
+      { id: 'test:ocr', recognize },
+      rasterizer,
+    );
+
+    await expect(processor.process(PDF_JOB)).rejects.toThrow(/PDF is too large to OCR/);
+
+    expect(rasterize).not.toHaveBeenCalled();
+    expect(recognize).not.toHaveBeenCalled();
+    expect(completed[0].result.status).toBe('failed');
+    expect((completed[0].result as { error?: string }).error).toMatch(/PDF is too large/);
   });
 });

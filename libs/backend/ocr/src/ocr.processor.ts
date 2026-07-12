@@ -10,6 +10,8 @@ import { PdfRasterizer } from './pdf-rasterizer';
 
 /** Cap on the bytes we base64-inline for a single vision request, to bound size. */
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
+/** Cap on the source PDF's byte size — beyond this the extraction fails gracefully. */
+const MAX_PDF_BYTES = 12 * 1024 * 1024;
 
 /** Result of recognizing one document (image scan or full multi-page PDF). */
 interface RecognizedDocument {
@@ -36,7 +38,7 @@ interface RecognizedDocument {
  * page is its own vision call (each wrapped in `runWithAiAudit`), and the
  * per-page text is concatenated behind `[page N]` markers so downstream keeps
  * page references. The page count is capped defensively; an over-cap document is
- * truncated (noted inline + on the payload), never failed.
+ * truncated with an inline note in the text (the durable signal), never failed.
  */
 @Injectable()
 export class OcrProcessor {
@@ -64,8 +66,6 @@ export class OcrProcessor {
       const payload: OcrExtractionPayload = {
         model: recognized.model ?? this.provider.id,
         charCount: recognized.text.length,
-        ...(recognized.pageCount !== undefined ? { pageCount: recognized.pageCount } : {}),
-        ...(recognized.truncated ? { truncated: true } : {}),
       };
       await this.inbox.completeExtraction(job.extractionId, {
         status: 'succeeded',
@@ -74,8 +74,8 @@ export class OcrProcessor {
       });
       this.logger.log(
         `OCR read ${payload.charCount} chars from inbox item ${job.inboxItemId} ` +
-          `(${payload.model}${payload.pageCount ? `, ${payload.pageCount} pages` : ''}` +
-          `${payload.truncated ? ', truncated' : ''})`,
+          `(${payload.model}${recognized.pageCount ? `, ${recognized.pageCount} pages` : ''}` +
+          `${recognized.truncated ? ', truncated' : ''})`,
       );
 
       // Bridge the recognized text into the extraction DAG as a passthrough
@@ -118,7 +118,10 @@ export class OcrProcessor {
   /**
    * OCR a PDF page-by-page: rasterize (capped), run one vision call per page, and
    * concatenate behind `[page N]` markers so page references survive downstream.
-   * Over-cap documents are truncated with an inline note — never failed.
+   * Over-cap documents are truncated with an inline note — never failed. A page
+   * the rasterizer refused (oversized MediaBox → `null`) or whose PNG outgrows
+   * the request cap keeps its marker with a skip note, so page numbering of the
+   * remaining pages stays correct.
    */
   private async recognizePdf(
     userId: string,
@@ -126,6 +129,11 @@ export class OcrProcessor {
     job: OcrJob,
     bytes: Buffer,
   ): Promise<RecognizedDocument> {
+    if (bytes.byteLength > MAX_PDF_BYTES) {
+      throw new Error(
+        `PDF is too large to OCR (${bytes.byteLength} bytes > ${MAX_PDF_BYTES})`,
+      );
+    }
     const { pages, totalPages, truncated } = await this.rasterizer.rasterize(bytes);
     if (pages.length === 0) {
       return { text: '', pageCount: 0, truncated };
@@ -137,10 +145,12 @@ export class OcrProcessor {
     for (let i = 0; i < pages.length; i++) {
       const pageNumber = i + 1;
       const png = pages[i];
-      if (png.byteLength > MAX_IMAGE_BYTES) {
+      if (png === null || png.byteLength > MAX_IMAGE_BYTES) {
         this.logger.warn(
-          `page ${pageNumber} of ${job.inboxItemId} rendered too large ` +
-            `(${png.byteLength} bytes) — skipping OCR for it`,
+          png === null
+            ? `page ${pageNumber} of ${job.inboxItemId} was skipped by the rasterizer (oversized page)`
+            : `page ${pageNumber} of ${job.inboxItemId} rendered too large ` +
+                `(${png.byteLength} bytes) — skipping OCR for it`,
         );
         sections.push(`[page ${pageNumber}]\n[page image too large to OCR]`);
         continue;
