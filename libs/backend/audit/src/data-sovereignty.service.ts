@@ -206,12 +206,19 @@ export class DataSovereigntyService {
     return toDeadMansSwitchDto(await repo.save(row));
   }
 
-  /** Record that the owner is present, resetting the switch's countdown. */
+  /**
+   * Record that the owner is present, resetting the switch's countdown. F1
+   * (JJ-80 review): this is also the ONLY thing that lifts a revoke's
+   * arm-suppression (`armingSuspendedForCheckInAt`) — a genuine check-in
+   * moves `lastCheckInAt` forward and clears the marker, so a later lapse
+   * arms normally again.
+   */
   async checkInDeadMansSwitch(userId: string): Promise<DeadMansSwitchDto> {
     const repo = this.dataSource.getRepository(DeadMansSwitchEntity);
     let row = await repo.findOne({ where: { userId } });
     if (!row) row = repo.create({ userId });
     row.lastCheckInAt = new Date().toISOString();
+    row.armingSuspendedForCheckInAt = null;
     return toDeadMansSwitchDto(await repo.save(row));
   }
 
