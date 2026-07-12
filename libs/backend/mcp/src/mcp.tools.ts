@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   isLocalOnlyTier,
   summaryPayloadSchema,
@@ -46,6 +46,18 @@ import { RemindersService } from '@plaudern/reminders';
 import { TopicsService } from '@plaudern/topics';
 import { JournalService, childTypeOf } from '@plaudern/journal';
 import { CalendarEventsService } from '@plaudern/calendar';
+import { AiAuditRecorder } from '@plaudern/audit';
+
+/**
+ * The authenticated actor behind an MCP call: the token OWNER (every tool scopes
+ * to `userId`) plus the acting token's non-secret display prefix, which the
+ * mutation tools record in the audit trail so a user can see WHICH token changed
+ * what. Read tools only need `userId`.
+ */
+export interface McpActor {
+  userId: string;
+  tokenPrefix: string;
+}
 
 /** A single hybrid-search hit as returned to an MCP client. */
 export interface SearchMemoryResult {
@@ -126,6 +138,8 @@ export class McpToolsService {
     private readonly topics: TopicsService,
     private readonly journal: JournalService,
     private readonly calendar: CalendarEventsService,
+    // JJ-78 follow-up: records every MCP MUTATION into the shared audit trail.
+    private readonly audit: AiAuditRecorder,
   ) {}
 
   /**
@@ -238,16 +252,28 @@ export class McpToolsService {
   /**
    * ingest_text_note: capture a plain-text note into the inbox (same path the
    * web app uses). `occurredAt` defaults to now and `idempotencyKey` to a fresh
-   * UUID, so repeat calls create distinct notes unless the caller pins a key.
+   * UUID, so repeat calls create distinct notes unless the caller pins a key. An
+   * optional `title` is stored under the same `metadata.tags.title` slot the read
+   * tools surface as an item's title (cheap metadata reuse — no new field). This
+   * is a WRITE, so it is recorded in the audit trail like the other mutations.
    */
   async ingestTextNote(
-    userId: string,
-    args: { text: string; occurredAt?: string; idempotencyKey?: string },
+    actor: McpActor,
+    args: { text: string; occurredAt?: string; idempotencyKey?: string; title?: string },
   ): Promise<{ itemId: string }> {
-    const item = await this.ingestion.ingestText(userId, {
+    const title = args.title?.trim();
+    const item = await this.ingestion.ingestText(actor.userId, {
       text: args.text,
       occurredAt: args.occurredAt ?? new Date().toISOString(),
       idempotencyKey: args.idempotencyKey ?? `mcp-note-${randomUUID()}`,
+      metadata: title ? { tags: { title } } : undefined,
+    });
+    await this.audit.recordMcpMutation({
+      userId: actor.userId,
+      tokenPrefix: actor.tokenPrefix,
+      tool: 'ingest_text_note',
+      itemId: item.id,
+      change: { itemId: item.id, title: title ?? null },
     });
     return { itemId: item.id };
   }
@@ -397,15 +423,168 @@ export class McpToolsService {
     userId: string,
     args: { status?: TaskStatus; limit: number; cursor?: string },
   ): Promise<{ tasks: TaskDto[]; nextCursor: string | null }> {
-    const all = await this.tasks.list(userId, args.status);
-    const citations = await this.tasks.citationItemIds(
-      userId,
-      all.map((t) => t.id),
-    );
-    const allowed = await this.allowedItemIds([...citations.values()].flat());
-    const gated = all.filter((t) => (citations.get(t.id) ?? []).some((i) => allowed.has(i)));
+    const rows = await this.tasks.listForMcp(userId, args.status);
+    const allowed = await this.allowedItemIds(rows.flatMap((r) => r.citationItemIds));
+    // A citation-less user-created task (hasCitations=false) has no item-derived
+    // content to gate, so it surfaces directly; a cited task survives only when
+    // ≥1 of its source items may cross this external surface (FAIL CLOSED — this
+    // keeps reaped ghosts and sensitive-only tasks hidden, as before).
+    const gated = rows
+      .filter((r) => !r.hasCitations || r.citationItemIds.some((i) => allowed.has(i)))
+      .map((r) => r.task);
     const { page, nextCursor } = paginate(gated, args.limit, args.cursor);
     return { tasks: page, nextCursor };
+  }
+
+  // ---- JJ-78 follow-up: MUTATION tools ----
+  //
+  // External agents don't just read the memory, they act on it: create a task,
+  // resolve a task/commitment, answer a question. Each mutation (a) REUSES the
+  // domain service's write path (no business logic re-implemented here), (b) is
+  // GATED exactly like the read tools — a mutation on an item whose source
+  // recording may not cross this external surface (sensitive/secret OR not-yet-
+  // classified: FAIL CLOSED) is refused as if the item did not exist, and (c) is
+  // recorded in the audit trail (which token, what changed, when) AFTER it lands.
+  // Status writes are the user's own fields, which re-extraction never clobbers,
+  // and go through race-safe conditional updates.
+
+  /**
+   * create_task: create a user-owned task the pipeline never produced (no source
+   * recording, so no citations). Returns the created task. NB: `notes` is not
+   * accepted — the `tasks` table has no notes column and this lane ships no
+   * migration; a note would have nowhere durable to live.
+   */
+  async createTask(
+    actor: McpActor,
+    args: { title: string; dueDate?: string },
+  ): Promise<TaskDto> {
+    const task = await this.tasks.createUserTask(actor.userId, {
+      title: args.title,
+      dueDate: args.dueDate ?? null,
+    });
+    await this.audit.recordMcpMutation({
+      userId: actor.userId,
+      tokenPrefix: actor.tokenPrefix,
+      tool: 'create_task',
+      itemId: null,
+      change: { taskId: task.id, title: task.title, dueDate: task.dueDate },
+    });
+    return task;
+  }
+
+  /**
+   * update_task_status: advance a task's user-owned status (open → completed /
+   * dismissed, or reopen). Refused for a task whose source items are all gated
+   * (fail closed); a citation-less user-created task is always mutable. The flip
+   * is race-safe (conditional UPDATE … WHERE status=:expected).
+   */
+  async updateTaskStatus(
+    actor: McpActor,
+    args: { taskId: string; status: TaskStatus },
+  ): Promise<TaskDto> {
+    const found = await this.tasks.findForMcpMutation(actor.userId, args.taskId);
+    if (!found) throw new NotFoundException('task not found');
+    if (found.hasCitations) {
+      const allowed = await this.allowedItemIds(found.citationItemIds);
+      if (!found.citationItemIds.some((i) => allowed.has(i))) {
+        throw new NotFoundException('task not found'); // gated — refuse, don't confirm
+      }
+    }
+    const updated = await this.tasks.setStatusIfUnchanged(
+      actor.userId,
+      args.taskId,
+      found.status,
+      args.status,
+    );
+    await this.audit.recordMcpMutation({
+      userId: actor.userId,
+      tokenPrefix: actor.tokenPrefix,
+      tool: 'update_task_status',
+      itemId: null,
+      change: { taskId: args.taskId, from: found.status, to: args.status },
+    });
+    return updated;
+  }
+
+  /**
+   * update_commitment_status: advance a commitment's user-owned status (open →
+   * fulfilled / dismissed) — commitments exist in both directions. Refused when
+   * the commitment's source item may not cross this surface (fail closed). The
+   * flip is race-safe.
+   */
+  async updateCommitmentStatus(
+    actor: McpActor,
+    args: { commitmentId: string; status: CommitmentStatus },
+  ): Promise<CommitmentDto> {
+    const found = await this.commitments.findForStatusUpdate(actor.userId, args.commitmentId);
+    if (!found) throw new NotFoundException('commitment not found');
+    await this.assertItemUngated(found.inboxItemId, 'commitment not found');
+    const updated = await this.commitments.setStatusIfUnchanged(
+      actor.userId,
+      args.commitmentId,
+      found.status,
+      args.status,
+    );
+    await this.audit.recordMcpMutation({
+      userId: actor.userId,
+      tokenPrefix: actor.tokenPrefix,
+      tool: 'update_commitment_status',
+      itemId: found.inboxItemId,
+      change: { commitmentId: args.commitmentId, from: found.status, to: args.status },
+    });
+    return updated;
+  }
+
+  /**
+   * answer_question: mark an OPEN question answered, durably recording the
+   * answer text on the question row (user-owned `answer` column — re-extraction
+   * never touches it) with a race-safe flip. Refused when the question's source
+   * item may not cross this surface (fail closed), and refused with Conflict
+   * when the question is not open — an external agent must never override the
+   * owner's settled resolution (a user's `dropped` means "I won't answer this",
+   * and an existing `answered` must not be silently rewritten).
+   */
+  async answerQuestion(
+    actor: McpActor,
+    args: { questionId: string; answer: string },
+  ): Promise<QuestionDto> {
+    const found = await this.questions.findForStatusUpdate(actor.userId, args.questionId);
+    if (!found) throw new NotFoundException('question not found');
+    await this.assertItemUngated(found.inboxItemId, 'question not found');
+    if (found.status !== 'open') {
+      throw new ConflictException(`question is ${found.status}, not open — only open questions can be answered`);
+    }
+    const updated = await this.questions.setStatusIfUnchanged(
+      actor.userId,
+      args.questionId,
+      'open',
+      'answered',
+      args.answer,
+    );
+    await this.audit.recordMcpMutation({
+      userId: actor.userId,
+      tokenPrefix: actor.tokenPrefix,
+      tool: 'answer_question',
+      itemId: found.inboxItemId,
+      change: {
+        questionId: args.questionId,
+        from: found.status,
+        to: 'answered',
+        answer: args.answer,
+      },
+    });
+    return updated;
+  }
+
+  /**
+   * Refuse a mutation whose single source item may not cross this external
+   * surface — the item's effective tier is local-only OR not yet classified
+   * (FAIL CLOSED), mirroring the read tools. Throws NotFound so the surface never
+   * even confirms the gated item exists.
+   */
+  private async assertItemUngated(inboxItemId: string, message: string): Promise<void> {
+    const allowed = await this.allowedItemIds([inboxItemId]);
+    if (!allowed.has(inboxItemId)) throw new NotFoundException(message);
   }
 
   /** list_commitments: promises owed by/to the user, gated by source item. */

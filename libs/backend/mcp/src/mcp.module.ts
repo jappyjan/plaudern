@@ -15,6 +15,7 @@ import { TopicsModule } from '@plaudern/topics';
 import { JournalModule } from '@plaudern/journal';
 import { CalendarModule } from '@plaudern/calendar';
 import { SentinelModule } from '@plaudern/sensitivity';
+import { AuditModule } from '@plaudern/audit';
 import { McpTokenService } from './mcp-token.service';
 import { McpTokenController } from './mcp-token.controller';
 import { McpToolsService } from './mcp.tools';
@@ -50,6 +51,7 @@ import { McpController } from './mcp.controller';
     JournalModule,
     CalendarModule,
     SentinelModule,
+    AuditModule,
   ],
   providers: [McpTokenService, McpToolsService],
   controllers: [McpTokenController, McpController],

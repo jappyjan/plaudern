@@ -153,6 +153,59 @@ export class QuestionsService {
     );
   }
 
+  // ---- MCP mutation surface (JJ-78 follow-up) ----
+
+  /**
+   * The current status + source item for one question, so an MCP `answer_question`
+   * mutation can check existence and gate on the source item's sensitivity BEFORE
+   * marking it answered. Null when the id isn't the user's.
+   */
+  async findForStatusUpdate(
+    userId: string,
+    id: string,
+  ): Promise<{ status: QuestionStatus; inboxItemId: string } | null> {
+    const row = await this.questions.findOne({ where: { id, userId } });
+    if (!row) return null;
+    return { status: row.status, inboxItemId: row.inboxItemId };
+  }
+
+  /**
+   * RACE-SAFE status flip: a conditional `UPDATE … WHERE id AND userId AND
+   * status=:expected` that changes exactly one row, or throws Conflict — so a
+   * concurrent writer can't be silently clobbered the way save()-by-PK
+   * (`updateStatus`) would. `answered` — and the recorded `answer` text, when
+   * provided — is durable and user-owned: the extraction upsert only ever
+   * promotes open→answered and never demotes/reaps it or writes the answer
+   * column, so this write survives re-extraction. `UpdateResult.affected` is
+   * honored on both the Postgres and better-sqlite3 drivers.
+   */
+  async setStatusIfUnchanged(
+    userId: string,
+    id: string,
+    expected: QuestionStatus,
+    next: QuestionStatus,
+    answer?: string,
+  ): Promise<QuestionDto> {
+    const result = await this.questions
+      .createQueryBuilder()
+      .update(QuestionEntity)
+      .set(answer === undefined ? { status: next } : { status: next, answer })
+      .where('id = :id', { id })
+      .andWhere('"userId" = :userId', { userId })
+      .andWhere('status = :expected', { expected })
+      .execute();
+    if (result.affected !== 1) {
+      throw new ConflictException('question status changed concurrently; re-read and retry');
+    }
+    const row = await this.questions.findOne({ where: { id, userId } });
+    if (!row) throw new NotFoundException('question not found');
+    const occurredById = await this.occurredByItem([row.inboxItemId]);
+    return toQuestionDto(
+      row,
+      occurredById.get(row.inboxItemId) ?? row.createdAt.toISOString(),
+    );
+  }
+
   /** occurredAt (ISO) per inbox item id, for building DTOs in list/update. */
   private async occurredByItem(itemIds: string[]): Promise<Map<string, string>> {
     const map = new Map<string, string>();
@@ -176,6 +229,7 @@ function toQuestionDto(row: QuestionEntity, occurredAt: string): QuestionDto {
     counterpartyEntityId: row.counterpartyEntityId,
     question: row.question,
     status: row.status,
+    answer: row.answer,
     sourceTimestamp: row.sourceTimestamp,
     occurredAt,
     createdAt: iso(row.createdAt)!,

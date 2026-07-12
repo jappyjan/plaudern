@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -306,6 +307,149 @@ export class TasksRegistryService {
     }
     const current = (await this.currentCitations([id])).get(id) ?? [];
     return this.toDto(saved, current);
+  }
+
+  // ---- MCP mutation surface (JJ-78 follow-up) ----
+  //
+  // External agents create + resolve tasks over MCP. These methods keep the same
+  // user-owned status semantics as the web path (a re-extraction never clobbers
+  // them — resolveTask only ever cites OPEN tasks, never flips status) but add
+  // (a) a citation-less "created directly by the user" task the extraction
+  // pipeline never produces, and (b) RACE-SAFE status flips (conditional UPDATE …
+  // WHERE status=:expected, asserting exactly one row changed) so two concurrent
+  // writers can't lose an update the way save()-by-PK would.
+
+  /**
+   * Create a task the user (their MCP agent) authored directly — no recording
+   * behind it, so it carries NO citations. Reuses the same normalized-title
+   * one-open-task-per-title guard as the extractor's dedupe: a collision with an
+   * existing OPEN task of the same title is a conflict, not a duplicate.
+   */
+  async createUserTask(
+    userId: string,
+    input: { title: string; dueDate?: string | null },
+  ): Promise<TaskDto> {
+    const title = input.title.trim();
+    if (title.length === 0) throw new BadRequestException('task title must not be empty');
+    try {
+      const created = await this.tasks.save(
+        this.tasks.create({
+          userId,
+          title,
+          normalizedTitle: normalizeTitle(title),
+          status: 'open',
+          dueDate: input.dueDate ?? null,
+          embedding: null,
+          embeddingModel: null,
+          embeddingDimensions: null,
+        }),
+      );
+      return this.toDto(created, []);
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
+      throw new ConflictException('an open task with the same title already exists');
+    }
+  }
+
+  /**
+   * All of the user's tasks with their current citation source-items AND whether
+   * a task has ANY citation row at all — the read model the external MCP surface
+   * gates on. Unlike the web `list`, this does NOT apply the ghost-hide/owner
+   * gate: a citation-less user-created task (hasCitations=false) legitimately has
+   * no source recording, so the caller surfaces it directly; a task WITH
+   * citations is still gated by whether those source items may cross the external
+   * surface (fail-closed), which correctly keeps ghosts (citations exist but none
+   * current/allowed) hidden.
+   */
+  async listForMcp(
+    userId: string,
+    status?: TaskStatus,
+  ): Promise<Array<{ task: TaskDto; citationItemIds: string[]; hasCitations: boolean }>> {
+    const rows = await this.tasks.find({
+      where: status ? { userId, status } : { userId },
+    });
+    if (rows.length === 0) return [];
+    const ids = rows.map((r) => r.id);
+    const current = await this.currentCitations(ids);
+    const anyRows = await this.citations.find({
+      where: { taskId: In(ids) },
+      select: { taskId: true },
+    });
+    const hasAny = new Set(anyRows.map((r) => r.taskId));
+    return rows
+      .map((row) => {
+        const cits = current.get(row.id) ?? [];
+        return {
+          task: this.toDto(row, cits),
+          citationItemIds: [...new Set(cits.map((c) => c.inboxItemId))],
+          hasCitations: hasAny.has(row.id),
+        };
+      })
+      .sort((a, b) => b.task.lastSeenAt.localeCompare(a.task.lastSeenAt));
+  }
+
+  /**
+   * The current status + citation gating inputs for one task, for an MCP mutation
+   * to check existence and sensitivity before flipping it. Returns null when the
+   * id isn't the user's.
+   */
+  async findForMcpMutation(
+    userId: string,
+    id: string,
+  ): Promise<{ status: TaskStatus; citationItemIds: string[]; hasCitations: boolean } | null> {
+    const row = await this.tasks.findOne({ where: { id, userId } });
+    if (!row) return null;
+    const current = (await this.currentCitations([id])).get(id) ?? [];
+    const anyRow = await this.citations.find({
+      where: { taskId: id },
+      select: { taskId: true },
+      take: 1,
+    });
+    return {
+      status: row.status,
+      citationItemIds: [...new Set(current.map((c) => c.inboxItemId))],
+      hasCitations: anyRow.length > 0,
+    };
+  }
+
+  /**
+   * RACE-SAFE status flip: a conditional `UPDATE … WHERE id=:id AND userId AND
+   * status=:expected` that changes exactly one row, or throws Conflict. Unlike
+   * the save()-by-PK `updateStatus`, a concurrent writer that already advanced
+   * the status can't be silently clobbered — the guarded UPDATE matches zero rows
+   * and we surface the conflict. `UpdateResult.affected` is honored by both the
+   * Postgres and better-sqlite3 drivers.
+   */
+  async setStatusIfUnchanged(
+    userId: string,
+    id: string,
+    expected: TaskStatus,
+    next: TaskStatus,
+  ): Promise<TaskDto> {
+    let result;
+    try {
+      result = await this.tasks
+        .createQueryBuilder()
+        .update(TaskEntity)
+        .set({ status: next })
+        .where('id = :id', { id })
+        .andWhere('"userId" = :userId', { userId })
+        .andWhere('status = :expected', { expected })
+        .execute();
+    } catch (err) {
+      // Reopening (→ open) can collide with the one-open-task-per-title guard.
+      if (isUniqueViolation(err)) {
+        throw new ConflictException('an open task with the same title already exists');
+      }
+      throw err;
+    }
+    if (result.affected !== 1) {
+      throw new ConflictException('task status changed concurrently; re-read and retry');
+    }
+    const row = await this.tasks.findOne({ where: { id, userId } });
+    if (!row) throw new NotFoundException('task not found');
+    const current = (await this.currentCitations([id])).get(id) ?? [];
+    return this.toDto(row, current);
   }
 
   /**

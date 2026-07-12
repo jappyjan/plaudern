@@ -111,6 +111,7 @@ import { CreateDeadMansSwitchRelease1720000000049 } from './migrations/172000000
 import { IndexOcrFullText1720000000050 } from './migrations/1720000000050-IndexOcrFullText';
 // NOTE: 051 is reserved by another lane — do not take it here.
 import { DeadMansSwitchArmingSuspension1720000000052 } from './migrations/1720000000052-DeadMansSwitchArmingSuspension';
+import { AddQuestionAnswer1720000000053 } from './migrations/1720000000053-AddQuestionAnswer';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -225,6 +226,7 @@ export const ALL_MIGRATIONS = [
   CreateDeadMansSwitchRelease1720000000049,
   IndexOcrFullText1720000000050,
   DeadMansSwitchArmingSuspension1720000000052,
+  AddQuestionAnswer1720000000053,
 ];
 
 /**

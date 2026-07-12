@@ -324,6 +324,42 @@ describe('QuestionsProcessor + persistence', () => {
     expect(rows[0].extractionId).toBe(second);
   });
 
+  it('preserves the user-recorded answer text across re-extraction (answer is user-owned)', async () => {
+    const job = await seedJob('one question');
+    await buildProcessor(
+      fakeProvider(() => ({
+        questions: [
+          { direction: 'asked_of_me', counterparty: '', question: 'q one', answered: false, sourceQuote: null, sourceTimestamp: null },
+        ],
+        model: 'm',
+      })),
+    ).process({ extractionId: job.extractionId, inboxItemId: job.inboxItemId });
+
+    // The user answers it with recorded text (the MCP answer_question path).
+    const row = await questionsRepo().findOneByOrFail({ inboxItemId: job.inboxItemId });
+    row.status = 'answered';
+    row.answer = 'yes — confirmed for Tuesday';
+    await questionsRepo().save(row);
+
+    // Re-run re-produces the SAME question, even claiming answered=true. The
+    // upsert's update fields must not include `answer`, so the user's recorded
+    // text survives verbatim (and status stays answered).
+    const second = await createExtraction(job.inboxItemId, 'questions', 'queued', new Date('2026-07-01T11:00:00Z'));
+    await buildProcessor(
+      fakeProvider(() => ({
+        questions: [
+          { direction: 'asked_of_me', counterparty: '', question: 'q one', answered: true, sourceQuote: null, sourceTimestamp: null },
+        ],
+        model: 'm',
+      })),
+    ).process({ extractionId: second, inboxItemId: job.inboxItemId });
+
+    const rows = await questionsRepo().find();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('answered');
+    expect(rows[0].answer).toBe('yes — confirmed for Tuesday');
+  });
+
   it('never reaps a user-answered question when a re-run paraphrases it', async () => {
     const job = await seedJob('one question');
     await buildProcessor(

@@ -56,8 +56,8 @@ export class McpController {
   }
 
   private async handle(req: Request, res: Response, body: unknown): Promise<void> {
-    const userId = await this.authenticate(req);
-    if (!userId) {
+    const actor = await this.authenticate(req);
+    if (!actor) {
       res
         .status(401)
         .set('WWW-Authenticate', 'Bearer realm="plaudern-mcp"')
@@ -69,12 +69,12 @@ export class McpController {
       return;
     }
 
-    // Stateless: one transport + server per request, bound to this user.
+    // Stateless: one transport + server per request, bound to this actor.
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
     });
-    const server = buildMcpServer(userId, this.tools);
+    const server = buildMcpServer(actor, this.tools);
     res.on('close', () => {
       void transport.close();
       void server.close();
@@ -83,12 +83,14 @@ export class McpController {
     await transport.handleRequest(req, res, body);
   }
 
-  /** Resolve the `Authorization: Bearer <token>` header to a user id, or null. */
-  private async authenticate(req: Request): Promise<string | null> {
+  /** Resolve the `Authorization: Bearer <token>` header to the acting actor, or null. */
+  private async authenticate(
+    req: Request,
+  ): Promise<{ userId: string; tokenPrefix: string } | null> {
     const header = req.headers.authorization;
     if (!header) return null;
     const match = /^Bearer\s+(.+)$/i.exec(header.trim());
     if (!match) return null;
-    return this.tokens.resolveUserId(match[1].trim());
+    return this.tokens.resolveActor(match[1].trim());
   }
 }

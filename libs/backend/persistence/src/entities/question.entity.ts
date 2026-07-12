@@ -82,6 +82,16 @@ export class QuestionEntity {
   @Column({ type: 'varchar', default: 'open' })
   status!: QuestionStatus;
 
+  /**
+   * The answer the user (or their agent, via MCP `answer_question`) recorded
+   * when resolving the question. USER-owned like a settled status: the
+   * extraction upsert's update fields never include this column, so a re-run
+   * can never clobber it. Null for questions answered without recorded text
+   * (the web PATCH, or a model-observed answer within the recording).
+   */
+  @Column({ type: 'text', nullable: true })
+  answer!: string | null;
+
   /** Segment start (seconds into the recording) the question was heard at. */
   @Column({ type: 'float', nullable: true })
   sourceTimestamp!: number | null;

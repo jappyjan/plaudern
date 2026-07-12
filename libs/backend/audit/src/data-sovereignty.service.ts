@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import type {
   AccountExport,
   AccountExportItem,
+  AccountExportQuestion,
   DeadMansSwitchDto,
   PanicDeleteResponse,
   UpdateDeadMansSwitchRequest,
@@ -35,6 +36,7 @@ import {
   NudgeStateEntity,
   PlaudSettingsEntity,
   PushSubscriptionEntity,
+  QuestionEntity,
   ReminderEntity,
   SummarizationSettingsEntity,
   TopicDocumentEntity,
@@ -110,8 +112,33 @@ export class DataSovereigntyService {
       userId,
       itemCount: exportItems.length,
       items: exportItems,
+      questions: await this.loadQuestions(userId),
       markdown: renderMarkdown(userId, exportItems),
     };
+  }
+
+  /**
+   * The user's questions, exported alongside the items because they carry
+   * USER-AUTHORED state nothing else can regenerate: the settled status and the
+   * recorded `answer` text (MCP answer_question). Other derived registries
+   * (entities, tasks, facts, …) are re-derivable from the exported extractions.
+   */
+  private async loadQuestions(userId: string): Promise<AccountExportQuestion[]> {
+    const rows = await this.dataSource.getRepository(QuestionEntity).find({
+      where: { userId },
+      order: { createdAt: 'ASC' },
+    });
+    return rows.map((q) => ({
+      id: q.id,
+      inboxItemId: q.inboxItemId,
+      direction: q.direction,
+      counterpartyName: q.counterpartyName,
+      question: q.question,
+      status: q.status,
+      answer: q.answer,
+      createdAt: new Date(q.createdAt).toISOString(),
+      updatedAt: new Date(q.updatedAt).toISOString(),
+    }));
   }
 
   /**
