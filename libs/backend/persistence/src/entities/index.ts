@@ -32,6 +32,7 @@ export * from './extraction-run.entity';
 export * from './topic.entity';
 export * from './item-topic.entity';
 export * from './topic-proposal.entity';
+export * from './topic-proposal-run.entity';
 export * from './topic-document.entity';
 export * from './journal-document.entity';
 export * from './commitment.entity';
