@@ -134,9 +134,14 @@ export function jaccard(a: string[], b: string[]): number {
  * cluster whose centroid points the same direction as one the user already
  * dismissed/accepted, catching regrown clusters that member-id Jaccard misses.
  * Normalizes internally, so callers can pass either raw or normalized vectors;
- * returns 0 when either vector has zero magnitude (nothing to compare).
+ * returns 0 when either vector has zero magnitude (nothing to compare) or the
+ * dimensions differ — an embedding provider/model switch mid-history, where a
+ * truncated-prefix dot product would be a meaningless similarity (the same
+ * reason `clusterItems` skips mismatched-dimension vectors). Callers keep the
+ * member-id Jaccard check as the fallback for those rows.
  */
 export function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length) return 0;
   const ua = normalize(a);
   const ub = normalize(b);
   if (!ua || !ub) return 0;

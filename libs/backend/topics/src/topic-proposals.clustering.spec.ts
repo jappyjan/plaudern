@@ -1,4 +1,9 @@
-import { clusterFingerprint, clusterItems, jaccard } from './topic-proposals.clustering';
+import {
+  clusterFingerprint,
+  clusterItems,
+  cosineSimilarity,
+  jaccard,
+} from './topic-proposals.clustering';
 
 describe('topic-proposals clustering', () => {
   describe('clusterItems', () => {
@@ -85,6 +90,26 @@ describe('topic-proposals clustering', () => {
       expect(jaccard(['a', 'b', 'c', 'd'], ['a', 'b', 'c'])).toBeCloseTo(3 / 4);
       expect(jaccard(['a'], ['b'])).toBe(0);
       expect(jaccard([], [])).toBe(1);
+    });
+  });
+
+  describe('cosineSimilarity (JJ-69)', () => {
+    it('measures direction similarity regardless of magnitude', () => {
+      expect(cosineSimilarity([1, 0], [5, 0])).toBeCloseTo(1);
+      expect(cosineSimilarity([1, 0], [0, 1])).toBeCloseTo(0);
+      expect(cosineSimilarity([1, 0], [-2, 0])).toBeCloseTo(-1);
+    });
+
+    it('returns 0 for mismatched dimensions (embedding model switch) instead of comparing prefixes', () => {
+      // A truncated-prefix dot product would report ~1 here — meaningless after
+      // a provider/dimension switch. Must be 0 so Jaccard remains the fallback.
+      expect(cosineSimilarity([1, 0], [1, 0, 0.9])).toBe(0);
+      expect(cosineSimilarity([1, 0, 0], [1])).toBe(0);
+    });
+
+    it('returns 0 for zero-magnitude or empty vectors', () => {
+      expect(cosineSimilarity([0, 0], [1, 0])).toBe(0);
+      expect(cosineSimilarity([], [])).toBe(0);
     });
   });
 });

@@ -143,10 +143,11 @@ describe('TopicProposalsService (JJ-64/JJ-69)', () => {
   }
 
   function buildService(
-    opts: { embeddingsEnabled?: boolean; topicsEnabled?: boolean } = {},
+    opts: { embeddingsEnabled?: boolean; topicsEnabled?: boolean; config?: Record<string, unknown> } = {},
     queue?: TopicProposalGenerationQueue,
   ): TopicProposalsService {
     return new TopicProposalsService(
+      makeConfig(opts.config),
       fakeInbox(),
       fakeTopics(opts.topicsEnabled ?? true),
       fakeEmbeddings({ enabled: opts.embeddingsEnabled ?? true }),
@@ -236,7 +237,7 @@ describe('TopicProposalsService (JJ-64/JJ-69)', () => {
     expect(bProposal?.itemCount).toBe(3);
     expect(aProposal?.status).toBe('pending');
     // The run settled as succeeded (inline worker ran to completion).
-    expect(res.generation.status).toBe('succeeded');
+    expect(res.generation?.status).toBe('succeeded');
   });
 
   it('does not re-propose a dismissed cluster and does not duplicate a pending one', async () => {
@@ -339,6 +340,61 @@ describe('TopicProposalsService (JJ-64/JJ-69)', () => {
     const row = await repo.findOneByOrFail({ id: proposal.id });
     expect(row.status).toBe('dismissed');
     expect(row.acceptedTopicId).toBeNull();
+  });
+
+  it('dismiss loses cleanly to a concurrent accept (conditional claim, not save-by-PK)', async () => {
+    const aIds = await seedCluster([1, 0], 4);
+    const service = buildService();
+    await service.generate(USER);
+    const { proposals } = await service.listProposals(USER);
+    const proposal = proposals.find((p) => p.sampleItemIds.some((id) => aIds.includes(id)))!;
+
+    // Simulate the multi-tab interleaving: the proposal is ACCEPTED after this
+    // request's pre-read but before its claim. The stale pre-read sees
+    // 'pending'; the guarded conditional update must then affect zero rows and
+    // Conflict — NOT overwrite status='accepted' with 'dismissed' while the
+    // created topic and acceptedTopicId live on.
+    const repo = dataSource.getRepository(TopicProposalEntity);
+    const stale = await repo.findOneByOrFail({ id: proposal.id });
+    const topicId = '00000000-0000-0000-0000-0000000000cc';
+    await dataSource.getRepository(TopicEntity).save({
+      id: topicId,
+      userId: USER,
+      name: 'Hausbau',
+      description: null,
+      archived: false,
+    });
+    await repo.update({ id: proposal.id }, { status: 'accepted', acceptedTopicId: topicId });
+    const spy = jest.spyOn(repo, 'findOne').mockResolvedValueOnce({ ...stale, status: 'pending' });
+    try {
+      await expect(service.dismiss(USER, proposal.id)).rejects.toBeInstanceOf(ConflictException);
+    } finally {
+      spy.mockRestore();
+    }
+
+    // The accept's outcome is intact.
+    const row = await repo.findOneByOrFail({ id: proposal.id });
+    expect(row.status).toBe('accepted');
+    expect(row.acceptedTopicId).toBe(topicId);
+  });
+
+  it('dismiss is idempotent when it loses to a concurrent dismiss', async () => {
+    const aIds = await seedCluster([1, 0], 4);
+    const service = buildService();
+    await service.generate(USER);
+    const { proposals } = await service.listProposals(USER);
+    const proposal = proposals.find((p) => p.sampleItemIds.some((id) => aIds.includes(id)))!;
+
+    const repo = dataSource.getRepository(TopicProposalEntity);
+    const stale = await repo.findOneByOrFail({ id: proposal.id });
+    await repo.update({ id: proposal.id }, { status: 'dismissed' });
+    const spy = jest.spyOn(repo, 'findOne').mockResolvedValueOnce({ ...stale, status: 'pending' });
+    try {
+      await expect(service.dismiss(USER, proposal.id)).resolves.toBeUndefined();
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await repo.findOneByOrFail({ id: proposal.id })).status).toBe('dismissed');
   });
 
   it('generate skips a cluster whose fingerprint was concurrently stored (unique index)', async () => {
@@ -446,15 +502,7 @@ describe('TopicProposalsService (JJ-64/JJ-69)', () => {
 
     // retention = 2 (the processor owns the prune).
     const processor = buildProcessor({ config: { TOPIC_PROPOSALS_RETENTION: 2 } });
-    const svc = new TopicProposalsService(
-      fakeInbox(),
-      fakeTopics(true),
-      fakeEmbeddings({ enabled: true }),
-      fakeAiConfig(true),
-      inlineQueue(processor),
-      dataSource.getRepository(TopicProposalEntity),
-      dataSource.getRepository(TopicProposalRunEntity),
-    );
+    const svc = buildService({}, inlineQueue(processor));
     await svc.generate(USER);
 
     const remaining = await repo.find({ where: { userId: USER, status: 'dismissed' }, order: { createdAt: 'DESC' } });
@@ -477,7 +525,7 @@ describe('TopicProposalsService (JJ-64/JJ-69)', () => {
 
     const res = await service.generate(USER);
     expect(queue.jobs).toHaveLength(1);
-    expect(res.generation.status).toBe('queued');
+    expect(res.generation?.status).toBe('queued');
     // Nothing labeled/persisted yet — the worker hasn't run.
     expect(res.proposals).toHaveLength(0);
     expect(labelCalls).toBe(0);
@@ -486,7 +534,7 @@ describe('TopicProposalsService (JJ-64/JJ-69)', () => {
     const processor = buildProcessor();
     await processor.process(queue.jobs[0]);
     const after = await service.listProposals(USER);
-    expect(after.generation.status).toBe('succeeded');
+    expect(after.generation?.status).toBe('succeeded');
     expect(after.proposals).toHaveLength(1);
   });
 
@@ -497,10 +545,74 @@ describe('TopicProposalsService (JJ-64/JJ-69)', () => {
 
     const [first, second] = await Promise.all([service.generate(USER), service.generate(USER)]);
     expect(queue.jobs).toHaveLength(1); // exactly one run enqueued
-    expect(first.generation.status).toBe('queued');
-    expect(second.generation.status).toBe('queued');
+    expect(first.generation?.status).toBe('queued');
+    expect(second.generation?.status).toBe('queued');
     // A single run row exists for the user.
     expect(await dataSource.getRepository(TopicProposalRunEntity).count()).toBe(1);
+  });
+
+  it('takes over a STALE stranded run (worker died mid-run) instead of locking the user out', async () => {
+    await seedCluster([1, 0], 4);
+    const runs = dataSource.getRepository(TopicProposalRunEntity);
+    // A run stranded at 'processing': the worker was SIGKILLed after the claim
+    // and never wrote a terminal status. Backdate updatedAt beyond the stale
+    // threshold (raw SQL so the @UpdateDateColumn hook can't refresh it).
+    const stranded = await runs.save({ userId: USER, status: 'processing', error: null, proposalsCreated: 0 });
+    await dataSource.query(
+      `UPDATE "topic_proposal_runs" SET "updatedAt" = '2020-01-01 00:00:00' WHERE "id" = ?`,
+      [stranded.id],
+    );
+
+    const queue = deferredQueue();
+    const service = buildService({}, queue);
+    const res = await service.generate(USER);
+
+    // The stale row was taken over (flipped back to queued) and a job enqueued.
+    expect(queue.jobs).toHaveLength(1);
+    expect(res.generation?.status).toBe('queued');
+    expect(await runs.count()).toBe(1); // still one row per user
+
+    // And the new job runs to completion on the taken-over row.
+    await buildProcessor().process(queue.jobs[0]);
+    expect((await service.listProposals(USER)).generation?.status).toBe('succeeded');
+  });
+
+  it('does NOT take over a FRESH in-flight run (recent updatedAt still coalesces)', async () => {
+    await seedCluster([1, 0], 4);
+    const runs = dataSource.getRepository(TopicProposalRunEntity);
+    // A run legitimately processing right now — updatedAt is current.
+    await runs.save({ userId: USER, status: 'processing', error: null, proposalsCreated: 0 });
+
+    const queue = deferredQueue();
+    const service = buildService({}, queue);
+    const res = await service.generate(USER);
+
+    expect(queue.jobs).toHaveLength(0); // coalesced, no duplicate enqueue
+    expect(res.generation?.status).toBe('processing');
+  });
+
+  it('a zombie run finishing after a stale takeover cannot clobber the fresh run status', async () => {
+    await seedCluster([1, 0], 4);
+    const runs = dataSource.getRepository(TopicProposalRunEntity);
+    const stranded = await runs.save({ userId: USER, status: 'processing', error: null, proposalsCreated: 0 });
+    await dataSource.query(
+      `UPDATE "topic_proposal_runs" SET "updatedAt" = '2020-01-01 00:00:00' WHERE "id" = ?`,
+      [stranded.id],
+    );
+
+    const queue = deferredQueue();
+    const service = buildService({}, queue);
+    await service.generate(USER); // takeover: row is 'queued' again
+
+    // The zombie worker (slow, not dead) now writes its terminal status: the
+    // conditional `WHERE status='processing'` write must no-op — the row is
+    // owned by the fresh run.
+    const zombieWrite = await runs.update(
+      { userId: USER, status: 'processing' },
+      { status: 'succeeded', proposalsCreated: 99, error: null },
+    );
+    expect(zombieWrite.affected ?? 0).toBe(0);
+    expect((await service.listProposals(USER)).generation?.status).toBe('queued');
   });
 
   it('a fresh generate after a run finishes starts a new run (terminal -> queued flip)', async () => {
@@ -511,11 +623,11 @@ describe('TopicProposalsService (JJ-64/JJ-69)', () => {
 
     await service.generate(USER); // enqueues run 1
     await processor.process(queue.jobs[0]); // run 1 -> succeeded
-    expect((await service.listProposals(USER)).generation.status).toBe('succeeded');
+    expect((await service.listProposals(USER)).generation?.status).toBe('succeeded');
 
     await service.generate(USER); // terminal -> queued again
     expect(queue.jobs).toHaveLength(2);
-    expect((await service.listProposals(USER)).generation.status).toBe('queued');
+    expect((await service.listProposals(USER)).generation?.status).toBe('queued');
   });
 
   // ---- Run failure surfacing (JJ-69) ----
@@ -523,19 +635,11 @@ describe('TopicProposalsService (JJ-64/JJ-69)', () => {
   it('marks the run failed and surfaces the error when generation throws', async () => {
     await seedCluster([1, 0], 4);
     const processor = buildProcessor({ throwOnCentroids: true });
-    const service = new TopicProposalsService(
-      fakeInbox(),
-      fakeTopics(true),
-      fakeEmbeddings({ enabled: true }),
-      fakeAiConfig(true),
-      inlineQueue(processor),
-      dataSource.getRepository(TopicProposalEntity),
-      dataSource.getRepository(TopicProposalRunEntity),
-    );
+    const service = buildService({}, inlineQueue(processor));
 
     const res = await service.generate(USER);
-    expect(res.generation.status).toBe('failed');
-    expect(res.generation.error).toContain('embeddings exploded');
+    expect(res.generation?.status).toBe('failed');
+    expect(res.generation?.error).toContain('embeddings exploded');
     expect(res.proposals).toHaveLength(0);
   });
 
@@ -565,7 +669,7 @@ describe('TopicProposalsService (JJ-64/JJ-69)', () => {
     expect(res.enabled).toBe(false);
     expect(res.proposals).toHaveLength(0);
     expect(queue.jobs).toHaveLength(0);
-    expect(res.generation.status).toBeNull();
+    expect(res.generation?.status).toBeNull();
   });
 
   it('reports disabled when the topics capability (labeling LLM) is absent', async () => {

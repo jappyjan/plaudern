@@ -155,11 +155,14 @@ export type TopicProposalGeneration = z.infer<typeof topicProposalGenerationSche
  * all. `enabled` is false when embeddings or the labeling LLM are unconfigured,
  * so the UI hides the section instead of offering a button that always fails.
  * `generation` reports the async run state so the UI can spin + poll (JJ-69).
+ * Optional (not just nullable-inside) so a NEW web bundle talking to an OLD API
+ * during a deploy window still parses — absent means "no run tracking on this
+ * server" and the UI treats it as "no run in flight".
  */
 export const topicProposalListResponseSchema = z.object({
   proposals: z.array(topicProposalSchema),
   enabled: z.boolean(),
-  generation: topicProposalGenerationSchema,
+  generation: topicProposalGenerationSchema.optional(),
 });
 export type TopicProposalListResponse = z.infer<typeof topicProposalListResponseSchema>;
 

@@ -129,9 +129,13 @@ export function TopicsPage() {
  */
 const PROPOSAL_POLL_INTERVAL_MS = 3000;
 
-/** A generation run is in flight while its status is queued or processing. */
-function isGenerating(generation: TopicProposalGeneration): boolean {
-  return generation.status === 'queued' || generation.status === 'processing';
+/**
+ * A generation run is in flight while its status is queued or processing.
+ * `generation` is absent when talking to an older API that has no run tracking
+ * (a deploy-window skew) — treated as "no run in flight".
+ */
+function isGenerating(generation: TopicProposalGeneration | undefined): boolean {
+  return generation?.status === 'queued' || generation?.status === 'processing';
 }
 
 function TopicProposals({ onAccepted }: { onAccepted: () => void }) {
@@ -149,10 +153,10 @@ function TopicProposals({ onAccepted }: { onAccepted: () => void }) {
       setProposals(res.proposals);
       setEnabled(res.enabled);
       setGenerating(isGenerating(res.generation));
-      if (res.generation.status === 'failed' && res.generation.error) {
+      if (res.generation?.status === 'failed' && res.generation.error) {
         setError(res.generation.error);
       }
-      return res.generation;
+      return res.generation ?? null;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       return null;
@@ -194,7 +198,7 @@ function TopicProposals({ onAccepted }: { onAccepted: () => void }) {
       setEnabled(res.enabled);
       setGenerating(isGenerating(res.generation));
       if (isGenerating(res.generation)) startPolling();
-      else if (res.generation.status === 'failed' && res.generation.error) {
+      else if (res.generation?.status === 'failed' && res.generation.error) {
         setError(res.generation.error);
       }
     } catch (cause) {

@@ -121,15 +121,19 @@ export class TopicProposalGenerationProcessor {
 
     try {
       const created = await this.generate(userId);
+      // Terminal writes are conditional on still owning the row (`processing`):
+      // if this run went stale and a fresh generate took the row over (flipped
+      // it back to `queued` — see TopicProposalsService.startRun), a zombie
+      // slow-but-alive run must not clobber the fresh run's status.
       await this.runs.update(
-        { userId },
+        { userId, status: 'processing' },
         { status: 'succeeded', proposalsCreated: created, error: null },
       );
       this.logger.log(`generated ${created} proposal(s) for user ${userId}`);
     } catch (err) {
       const message = (err as Error).message;
       this.logger.error(`proposal generation failed for user ${userId}: ${message}`);
-      await this.runs.update({ userId }, { status: 'failed', error: message });
+      await this.runs.update({ userId, status: 'processing' }, { status: 'failed', error: message });
       throw err;
     }
   }
