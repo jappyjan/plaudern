@@ -185,6 +185,13 @@ export function isLocalEndpoint(url: string | null | undefined): boolean {
   // literal (no dots) would otherwise wrongly match.
   if (host.includes(':')) {
     if (host === '::1') return true; // loopback
+    // AWS IMDSv6 cloud-metadata address (JJ-86): sits inside fd00::/8 ULA space
+    // but is semantically non-local (SSRF target) — exclude it explicitly
+    // before the generic ULA rule below, mirroring the IPv4 169.254.169.254
+    // exclusion. The IPv4-mapped form (::ffff:169.254.169.254) already falls
+    // through to `return false` below since it doesn't match the f[cd]/fe8-b
+    // prefixes, so it needs no separate check.
+    if (host === 'fd00:ec2::254') return false;
     if (/^f[cd][0-9a-f]*(?::|$)/.test(host)) return true; // fc00::/7 ULA
     if (/^fe[89ab][0-9a-f]*(?::|$)/.test(host)) return true; // fe80::/10 link-local
     return false;

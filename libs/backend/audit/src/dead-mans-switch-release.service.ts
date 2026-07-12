@@ -46,9 +46,22 @@ const TERMINAL: DeadMansSwitchReleaseStatus[] = ['cancelled', 'revoked'];
  * time. Firing is idempotent: once a release exists for a lapse it never
  * re-arms and the contact is emailed exactly once.
  *
+ * A revoke (F1, JJ-80 review) durably disarms the switch for the lapse that
+ * produced it: `revokeRelease` also marks the switch (`armingSuspendedForCheckInAt`)
+ * so a still-lapsed switch does NOT arm a fresh release and re-warn the owner
+ * on the next sweep. Only a genuine check-in — which changes `lastCheckInAt` —
+ * lifts the suppression and lets a later lapse arm normally.
+ *
+ * Editing the switch's contact (F4) refreshes any still-`pending` release's
+ * snapshot (`syncPendingContactSnapshot`) so a grace-window grant always goes
+ * to the CURRENT contact, never a stale one. Disabling the switch (F7) fully
+ * stands it down (`disarmForDisable`): cancels any pending release and revokes
+ * any active grant, rather than merely pausing new firings.
+ *
  * No construction cycle: this service depends on `DataSovereigntyService` (for
- * the export) one-directionally; the reverse coupling (cancel-on-check-in) is
- * composed at the controller, so neither service injects the other's owner.
+ * the export) one-directionally; the reverse coupling (cancel-on-check-in,
+ * contact-sync-on-edit, disarm-on-disable) is composed at the controller, so
+ * neither service injects the other's owner.
  */
 @Injectable()
 export class DeadMansSwitchReleaseService {
@@ -83,17 +96,20 @@ export class DeadMansSwitchReleaseService {
     const sw = await this.dataSource
       .getRepository(DeadMansSwitchEntity)
       .findOne({ where: { userId } });
-    // F7 (intended): disabling the switch only stops NEW firings here — it does
-    // NOT auto-revoke a grant that already went `active`. Revoking an existing
-    // grant is an explicit owner action (`revokeRelease`), never a side effect.
+    // Disabling the switch only stops NEW firings HERE — it does not itself
+    // revoke a grant that already went `active`. That side effect is handled
+    // explicitly (F7, `disarmForDisable`), called by the controller the
+    // moment the owner flips the switch off, so an already-disabled switch
+    // never has a live grant to revoke by the time we get here.
     if (!sw || !sw.enabled || !sw.contactEmail || !sw.lastCheckInAt) return 0;
 
     const triggersAt = Date.parse(sw.lastCheckInAt) + sw.checkInIntervalDays * DAY_MS;
     const releases = this.dataSource.getRepository(DeadMansSwitchReleaseEntity);
-    // Only a non-terminal (pending/active) release blocks re-firing. F1
-    // (intended): after a `revoked`/`cancelled` release, a switch that is still
-    // lapsed will ARM a fresh release on the next sweep — a revoke closes one
-    // grant, it does not permanently disarm the switch.
+    // Only a non-terminal (pending/active) release blocks re-firing. F1: a
+    // `revoked` release also sets `armingSuspendedForCheckInAt` (below), so a
+    // still-lapsed switch does NOT arm a fresh release until a real check-in
+    // moves `lastCheckInAt` forward. A plain `cancelled` (re-check-in) release
+    // does not set the marker — the switch is no longer lapsed at that point.
     let release = await releases.findOne({
       where: { userId, status: Not(In(TERMINAL)) },
     });
@@ -113,6 +129,15 @@ export class DeadMansSwitchReleaseService {
 
     // Lapsed. ARM: create the pending release + open the grace window + tell owner.
     if (!release) {
+      // F1: a revoke suppresses re-arming for THIS lapse — `lastCheckInAt`
+      // hasn't moved since the revoke, so do not create a new pending release
+      // (and re-warn the owner) until a fresh check-in advances it.
+      if (
+        sw.armingSuspendedForCheckInAt !== null &&
+        sw.armingSuspendedForCheckInAt === sw.lastCheckInAt
+      ) {
+        return 0;
+      }
       const graceMs = this.graceDays() * DAY_MS;
       release = releases.create({
         userId,
@@ -177,7 +202,13 @@ export class DeadMansSwitchReleaseService {
     return pending.length;
   }
 
-  /** Owner revokes an active grant: the token stops resolving immediately. */
+  /**
+   * Owner revokes an active (or still-pending) grant: the token stops
+   * resolving immediately. F1: this also durably disarms the switch for the
+   * CURRENT lapse — without it, the next sweep would arm a brand-new pending
+   * release for the same still-lapsed check-in and re-warn the owner. Normal
+   * arming resumes only after a fresh check-in.
+   */
   async revokeRelease(
     userId: string,
     releaseId: string,
@@ -192,9 +223,96 @@ export class DeadMansSwitchReleaseService {
       release.tokenHash = null; // the credential can no longer resolve.
       release.closedAt = now.toISOString();
       await releases.save(release);
+      await this.suppressArmingForCurrentLapse(userId);
       this.logger.warn(`dms: owner ${userId} revoked release ${releaseId}`);
     }
     return toReleaseDto(release);
+  }
+
+  /**
+   * F4: refresh the fire-time contact snapshot on any still-open (`pending`)
+   * release when the owner edits the switch's contact. Without this, editing
+   * the contact mid-grace-window keeps the STALE snapshot, so the OLD contact
+   * — not the one the owner just configured — would be the one granted access
+   * when the window elapses. An already-`active` grant already went out to the
+   * contact it named, so it is intentionally left alone.
+   */
+  async syncPendingContactSnapshot(userId: string, contactEmail: string | null): Promise<void> {
+    if (!contactEmail) return; // the release's contactEmail column is non-nullable.
+    const releases = this.dataSource.getRepository(DeadMansSwitchReleaseEntity);
+    const result = await releases
+      .createQueryBuilder()
+      .update()
+      .set({ contactEmail })
+      .where('userId = :userId AND status = :status', { userId, status: 'pending' })
+      .execute();
+    if ((result.affected ?? 0) > 0) {
+      this.logger.log(`dms: refreshed pending release contact snapshot for ${userId}`);
+    }
+  }
+
+  /**
+   * F7: disabling the switch must fully stand it down — not just stop new
+   * firings. Cancels any grace-window release and revokes any already-active
+   * grant (mirroring the owner's explicit `revokeRelease`, including the F1
+   * arm-suppression so re-enabling later does not immediately re-arm off a
+   * stale, already-handled lapse).
+   */
+  async disarmForDisable(userId: string, now = new Date()): Promise<void> {
+    const releases = this.dataSource.getRepository(DeadMansSwitchReleaseEntity);
+
+    // CONDITIONAL flip, not save()-by-PK: a concurrent sweep may promote this
+    // release pending→active at grace expiry between our read and our write —
+    // a blind save would clobber that ACTIVE grant back to 'cancelled' with
+    // stale fields (and leave a minted token at large while the row claims
+    // cancelled). Guarding on status='pending' means a lost race is simply a
+    // miss here, and the active-revoke pass below (a FRESH query, so it sees
+    // the just-promoted row) revokes the grant properly instead.
+    const cancelResult = await releases
+      .createQueryBuilder()
+      .update()
+      .set({ status: 'cancelled', closedAt: now.toISOString() })
+      .where('userId = :userId AND status = :status', { userId, status: 'pending' })
+      .execute();
+    const cancelledCount = cancelResult.affected ?? 0;
+
+    const active = await releases.find({ where: { userId, status: 'active' } });
+    let revokedCount = 0;
+    for (const r of active) {
+      // Conditional flip, same guard as the sweep's grant transition: only
+      // count/act on rows we actually won.
+      const result = await releases
+        .createQueryBuilder()
+        .update()
+        .set({ status: 'revoked', tokenHash: null, closedAt: now.toISOString() })
+        .where('id = :id AND status = :status', { id: r.id, status: 'active' })
+        .execute();
+      if (result.affected === 1) revokedCount += 1;
+    }
+
+    // F1 suppression whenever ANYTHING was stood down — a disable that only
+    // cancelled a pending release must not re-arm + re-warn immediately on
+    // re-enable while the same stale lapse persists, exactly like a revoke.
+    if (cancelledCount + revokedCount > 0) {
+      await this.suppressArmingForCurrentLapse(userId);
+      this.logger.warn(
+        `dms: disable disarmed switch for ${userId} (${cancelledCount} cancelled, ${revokedCount} revoked)`,
+      );
+    }
+  }
+
+  /**
+   * F1: mark the switch so the CURRENT lapse cannot arm a new release. Stores
+   * `lastCheckInAt` as of the revoke; `sweepUser` skips arming while this
+   * still matches `lastCheckInAt` (no check-in since). A real check-in
+   * changes (and clears) `lastCheckInAt`, so the marker goes stale on its own
+   * and the next lapse arms normally.
+   */
+  private async suppressArmingForCurrentLapse(userId: string): Promise<void> {
+    const switches = this.dataSource.getRepository(DeadMansSwitchEntity);
+    const sw = await switches.findOne({ where: { userId } });
+    if (!sw) return;
+    await switches.update({ userId }, { armingSuspendedForCheckInAt: sw.lastCheckInAt });
   }
 
   /** The owner's release history (newest first) for the sovereignty surface. */

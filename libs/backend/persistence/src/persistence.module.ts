@@ -109,6 +109,8 @@ import { CreateNudgeState1720000000047 } from './migrations/1720000000047-Create
 import { SimplifyAiConfig1720000000048 } from './migrations/1720000000048-SimplifyAiConfig';
 import { CreateDeadMansSwitchRelease1720000000049 } from './migrations/1720000000049-CreateDeadMansSwitchRelease';
 import { IndexOcrFullText1720000000050 } from './migrations/1720000000050-IndexOcrFullText';
+// NOTE: 051 is reserved by another lane — do not take it here.
+import { DeadMansSwitchArmingSuspension1720000000052 } from './migrations/1720000000052-DeadMansSwitchArmingSuspension';
 import { AddQuestionAnswer1720000000053 } from './migrations/1720000000053-AddQuestionAnswer';
 
 export const ALL_ENTITIES = [
@@ -223,6 +225,7 @@ export const ALL_MIGRATIONS = [
   SimplifyAiConfig1720000000048,
   CreateDeadMansSwitchRelease1720000000049,
   IndexOcrFullText1720000000050,
+  DeadMansSwitchArmingSuspension1720000000052,
   AddQuestionAnswer1720000000053,
 ];
 

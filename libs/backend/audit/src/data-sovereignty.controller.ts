@@ -69,8 +69,16 @@ export class DataSovereigntyController {
     return this.sovereignty.getDeadMansSwitch(user.id);
   }
 
+  /**
+   * F4/F7 (JJ-80 review follow-ups), composed here for the same reason
+   * check-in's cancel is composed here: neither service injects the other's
+   * owner. F4 — refreshes any still-`pending` release's contact snapshot so a
+   * grace-window grant always goes to the CURRENT contact. F7 — disabling the
+   * switch fully stands it down: cancels any pending release and revokes any
+   * already-active grant, rather than merely pausing new firings.
+   */
   @Put('dead-mans-switch')
-  updateDeadMansSwitch(
+  async updateDeadMansSwitch(
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: unknown,
   ): Promise<DeadMansSwitchDto> {
@@ -78,7 +86,12 @@ export class DataSovereigntyController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues[0]?.message ?? 'invalid request');
     }
-    return this.sovereignty.updateDeadMansSwitch(user.id, parsed.data);
+    const dto = await this.sovereignty.updateDeadMansSwitch(user.id, parsed.data);
+    await this.releases.syncPendingContactSnapshot(user.id, parsed.data.contactEmail);
+    if (!parsed.data.enabled) {
+      await this.releases.disarmForDisable(user.id);
+    }
+    return dto;
   }
 
   /**

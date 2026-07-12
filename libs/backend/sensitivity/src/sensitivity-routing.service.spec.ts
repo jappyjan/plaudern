@@ -74,6 +74,8 @@ describe('isLocalEndpoint', () => {
     'http://[2001:4860:4860::8888]/v1', // public IPv6 (Google DNS)
     'http://[fec0::1]/v1', // deprecated site-local, not fc00::/7 or fe80::/10
     'http://[::]/v1', // unspecified
+    'http://[fd00:ec2::254]/latest/meta-data/', // AWS IMDSv6 metadata (JJ-86 gap)
+    'http://[::ffff:169.254.169.254]/latest', // IPv4-mapped metadata address
     '',
     'not-a-url',
     undefined,
