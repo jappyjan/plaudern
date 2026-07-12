@@ -7,3 +7,4 @@ export * from './inbox-events.controller';
 export * from './owner-events.service';
 export * from './self-profile.service';
 export * from './extractor';
+export * from './source-text';

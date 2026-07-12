@@ -6,17 +6,20 @@ import { EntitiesService, ENTITIES_EXTRACTOR_VERSION } from './entities.service'
 
 /**
  * Named-entity extraction as a node of the extraction DAG (JJ-32). Depends on
- * transcription (required — there is nothing to extract entities from without a
- * transcript). Independent of diarization: person entities are linked to the
- * contact book by name, not by voice, so a missing diarization must not block
- * extraction.
+ * the "source text" OR-group `{transcription, ocr}` (JJ-83): entities run once
+ * EITHER a transcript OR OCR-recognized text succeeds, so scanned documents are
+ * entity-linked like transcribed audio. Audio/typed-note items resolve to the
+ * transcription exactly as before. Independent of diarization: person entities
+ * are linked to the contact book by name, not by voice, so a missing
+ * diarization must not block extraction.
  */
 @Injectable()
 export class EntitiesExtractor implements Extractor {
   readonly kind = 'entities' as const;
   readonly version = ENTITIES_EXTRACTOR_VERSION;
   readonly dependsOn: ExtractorDependency[] = [
-    { kind: 'transcription', requires: 'succeeded' },
+    { kind: 'transcription', requires: 'succeeded', group: 'sourceText' },
+    { kind: 'ocr', requires: 'succeeded', group: 'sourceText' },
   ];
 
   constructor(

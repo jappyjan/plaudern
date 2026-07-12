@@ -88,6 +88,7 @@ describe('SearchService', () => {
       occurredAt?: string;
       transcript?: string;
       summaryTitle?: string;
+      ocr?: string;
       userId?: string;
     } = {},
   ): Promise<void> {
@@ -125,6 +126,17 @@ describe('SearchService', () => {
             layout: 'note',
             markdown: 'body',
           }),
+        }),
+      );
+    }
+    if (opts.ocr !== undefined) {
+      await payloads.save(
+        payloads.create({
+          inboxItemId: id,
+          kind: 'ocr',
+          provider: 'test',
+          status: 'succeeded',
+          content: opts.ocr,
         }),
       );
     }
@@ -222,6 +234,35 @@ describe('SearchService', () => {
       expect(res.results[0].snippet).toContain('<mark>');
       expect(res.results[0].keywordScore).not.toBeNull();
       expect(res.results[0].semanticScore).toBeNull();
+    });
+  });
+
+  describe('OCR-derived content (JJ-83)', () => {
+    it('returns an OCR-only document (no transcription) from keyword search', async () => {
+      embedding.enabled = false; // keyword leg alone — the OCR text is what matches
+      await addItem('doc', {
+        sourceType: 'image',
+        ocr: 'Rechnung von ACME GmbH über 42 EUR',
+      });
+      await addItem('other', { transcript: 'unrelated cooking notes' });
+
+      const res = await service.search(USER, { query: 'ACME' });
+
+      expect(res.legs.keyword).toBe('ran');
+      expect(res.results.map((r) => r.itemId)).toContain('doc');
+      const doc = res.results.find((r) => r.itemId === 'doc')!;
+      expect(doc.keywordScore).not.toBeNull();
+      expect(doc.snippet).toContain('<mark>ACME</mark>');
+    });
+
+    it('collapses to one hit when both an OCR row and a transcription carry the text', async () => {
+      embedding.enabled = false;
+      // A real scanned document also gets a passthrough transcription; the item
+      // must still appear exactly once (best payload per item).
+      await addItem('doc', { sourceType: 'image', transcript: 'ACME invoice', ocr: 'ACME invoice' });
+
+      const res = await service.search(USER, { query: 'ACME' });
+      expect(res.results.filter((r) => r.itemId === 'doc')).toHaveLength(1);
     });
   });
 

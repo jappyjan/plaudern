@@ -1,4 +1,5 @@
 import { summaryPayloadSchema } from '@plaudern/contracts';
+import { resolveSourceText } from '@plaudern/inbox';
 import type { ExtractedPayloadEntity, InboxItemEntity } from '@plaudern/persistence';
 
 /** Upper bound on the classified text so a long transcript can't blow the context window. */
@@ -14,9 +15,10 @@ export interface TopicContent {
 /**
  * Assemble the text a `topics` classification runs over. Prefers the latest
  * succeeded summary (title + markdown — the densest, cleanest signal) and falls
- * back to the raw transcription when no summary exists yet. Returns null when
- * the item has neither, so the processor can fail the job cleanly. The result
- * is truncated to `maxChars` to bound token usage.
+ * back to the resolved source text — the transcription, or a scanned document's
+ * OCR text (JJ-83) — when no summary exists yet. Returns null when the item has
+ * neither, so the processor can fail the job cleanly. The result is truncated to
+ * `maxChars` to bound token usage.
  */
 export function buildTopicContent(
   item: InboxItemEntity,
@@ -30,11 +32,11 @@ export function buildTopicContent(
     if (text) return { content: truncate(text, maxChars) };
   }
 
-  const transcription = latestOfKind(extractions, 'transcription');
-  if (transcription?.status === 'succeeded' && transcription.content?.trim()) {
+  const source = resolveSourceText(item);
+  if (source && source.text.trim()) {
     return {
-      content: truncate(transcription.content.trim(), maxChars),
-      language: transcription.language ?? undefined,
+      content: truncate(source.text.trim(), maxChars),
+      language: source.language,
     };
   }
 

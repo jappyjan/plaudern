@@ -108,6 +108,7 @@ import { AddDocumentDate1720000000046 } from './migrations/1720000000046-AddDocu
 import { CreateNudgeState1720000000047 } from './migrations/1720000000047-CreateNudgeState';
 import { SimplifyAiConfig1720000000048 } from './migrations/1720000000048-SimplifyAiConfig';
 import { CreateDeadMansSwitchRelease1720000000049 } from './migrations/1720000000049-CreateDeadMansSwitchRelease';
+import { IndexOcrFullText1720000000050 } from './migrations/1720000000050-IndexOcrFullText';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -220,6 +221,7 @@ export const ALL_MIGRATIONS = [
   CreateNudgeState1720000000047,
   SimplifyAiConfig1720000000048,
   CreateDeadMansSwitchRelease1720000000049,
+  IndexOcrFullText1720000000050,
 ];
 
 /**

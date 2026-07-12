@@ -12,10 +12,22 @@ import type { InboxItemEntity } from '@plaudern/persistence';
  *   attempt reaches a terminal state, but tolerate failure; if it does not
  *   apply, proceed without it (a summary survives a failed diarization — it
  *   just loses speaker attribution).
+ *
+ * `group` turns a set of dependencies into an OR: dependencies sharing a group
+ * key are satisfied when ANY member succeeds (used for the "source text" group
+ * `{transcription, ocr}` — an item is extractable from a transcript OR from
+ * OCR text, JJ-83). Ungrouped dependencies keep their plain AND semantics.
  */
 export interface ExtractorDependency {
   kind: ExtractionKind;
   requires: ExtractorDependencyRequirement;
+  /**
+   * Optional OR-group key. Members of the same group are evaluated together:
+   * the group is ready once any member satisfies its `requires`, blocks while a
+   * member is still on its way, and can-never-run only if no member can ever
+   * satisfy it. Omit for the default AND behavior.
+   */
+  group?: string;
 }
 
 /**

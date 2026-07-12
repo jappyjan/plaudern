@@ -17,6 +17,11 @@ import type {
   SummarizationResult,
 } from '@plaudern/summarization';
 import type { EmbeddingProvider, EmbeddingResult } from '@plaudern/embeddings';
+import type {
+  EntityExtractionInput,
+  EntityExtractionProvider,
+  EntityExtractionResult,
+} from '@plaudern/entities';
 import type { AudioConcatenator, ConcatResult } from '@plaudern/ingestion';
 
 /**
@@ -202,6 +207,26 @@ export class FakeEmbeddingProvider implements EmbeddingProvider {
       vectors: texts.map((text) => deterministicVector(text, this.dimensions)),
       model: 'fake-embedding-model',
       dimensions: this.dimensions,
+    };
+  }
+}
+
+/**
+ * Deterministic entity-extraction double, injected via
+ * overrideProvider(ENTITY_EXTRACTION_PROVIDER). Pulls capitalized tokens out of
+ * the input text as organization entities, so the result is derived from — and
+ * proves consumption of — whatever source text (transcript or OCR) it was given.
+ */
+export class FakeEntityProvider implements EntityExtractionProvider {
+  readonly id = 'fake-entity';
+
+  async extract(_userId: string, input: EntityExtractionInput): Promise<EntityExtractionResult> {
+    const names = Array.from(
+      new Set((input.text.match(/\b[A-Z][A-Za-z]{2,}\b/g) ?? []).slice(0, 5)),
+    );
+    return {
+      entities: names.map((name) => ({ type: 'organization' as const, name, mentions: [name] })),
+      model: 'fake-entity-model',
     };
   }
 }

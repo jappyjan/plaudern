@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
 import { AiConfigService } from '@plaudern/ai-config';
-import { InboxService } from '@plaudern/inbox';
+import { InboxService, hasSucceededSourceExtraction } from '@plaudern/inbox';
 import type { ExtractionStatus } from '@plaudern/contracts';
 import type { ExtractedPayloadEntity } from '@plaudern/persistence';
 import { EMBEDDING_PROVIDER, type EmbeddingProvider } from './embedding.provider';
@@ -51,9 +51,8 @@ export class EmbeddingService {
     }
     const item = await this.inbox.getItem(userId, inboxItemId);
     const extractions = item.extractions ?? [];
-    const transcription = latestOfKind(extractions, 'transcription');
-    if (transcription?.status !== 'succeeded') {
-      throw new BadRequestException('item has no completed transcription to embed');
+    if (!hasSucceededSourceExtraction(item)) {
+      throw new BadRequestException('item has no completed transcription or OCR text to embed');
     }
     const embedding = latestOfKind(extractions, 'embedding');
     if (embedding && ACTIVE_STATUSES.includes(embedding.status)) {
