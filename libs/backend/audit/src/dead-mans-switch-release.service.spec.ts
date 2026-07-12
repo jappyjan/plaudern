@@ -212,4 +212,118 @@ describe('DeadMansSwitchReleaseService', () => {
     expect(row.status).toBe('cancelled');
     expect(row.tokenHash).toBeNull();
   });
+
+  it(
+    'F1: a revoke suppresses re-arming for the same lapse; a fresh check-in ' +
+      'and a new lapse arm normally again',
+    async () => {
+      await seedSwitch({}); // lapsed 100d ago, interval 90d.
+      const service = makeService('0'); // arm + grant in one sweep.
+
+      // Lapse → arm (+ grant, since grace=0).
+      expect(await service.sweepUser(USER, NOW)).toBe(1);
+      const releaseRepo = dataSource.getRepository(DeadMansSwitchReleaseEntity);
+      const first = (await releaseRepo.find())[0];
+      expect(first.status).toBe('active');
+
+      // Revoke, while the switch is STILL lapsed (no check-in happened).
+      const dto = await service.revokeRelease(USER, first.id, NOW);
+      expect(dto.status).toBe('revoked');
+      const switches = dataSource.getRepository(DeadMansSwitchEntity);
+      const swAfterRevoke = await switches.findOne({ where: { userId: USER } });
+      expect(swAfterRevoke!.armingSuspendedForCheckInAt).toBe(swAfterRevoke!.lastCheckInAt);
+
+      // Sweep again: NO re-arm, NO re-notify, for the same lapse.
+      notifications.notify.mockClear();
+      notifications.notifyEmailAddress.mockClear();
+      expect(await service.sweepUser(USER, new Date(NOW.getTime() + DAY_MS))).toBe(0);
+      expect(await releaseRepo.count()).toBe(1); // no new pending release.
+      expect(notifications.notify).not.toHaveBeenCalled();
+      expect(notifications.notifyEmailAddress).not.toHaveBeenCalled();
+
+      // Owner checks in — lifts the suppression (mirrors
+      // DataSovereigntyService#checkInDeadMansSwitch).
+      const checkInAt = new Date(NOW.getTime() + 2 * DAY_MS);
+      await switches.update(
+        { userId: USER },
+        { lastCheckInAt: checkInAt.toISOString(), armingSuspendedForCheckInAt: null },
+      );
+
+      // A NEW lapse (90 days after the fresh check-in) arms normally again.
+      const newLapse = new Date(checkInAt.getTime() + 91 * DAY_MS);
+      expect(await service.sweepUser(USER, newLapse)).toBe(1);
+      const rows = await releaseRepo.find();
+      expect(rows).toHaveLength(2);
+      const second = rows.find((r) => r.id !== first.id)!;
+      expect(second.status).toBe('active');
+      expect(notifications.notifyEmailAddress).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("F4: refreshes a pending release's contact snapshot but leaves an active grant's snapshot alone", async () => {
+    await seedSwitch({});
+    const service = makeService('10'); // grace window stays open (pending).
+    await service.sweepUser(USER, NOW);
+    const releaseRepo = dataSource.getRepository(DeadMansSwitchReleaseEntity);
+    const pending = (await releaseRepo.find())[0];
+    expect(pending.status).toBe('pending');
+
+    const NEW_CONTACT = 'new-trusted@example.com';
+    await service.syncPendingContactSnapshot(USER, NEW_CONTACT);
+    const refreshed = await releaseRepo.findOne({ where: { id: pending.id } });
+    expect(refreshed!.contactEmail).toBe(NEW_CONTACT);
+
+    // A null contact (e.g. clearing the field) must not stomp the snapshot —
+    // the release's contactEmail column is non-nullable.
+    await service.syncPendingContactSnapshot(USER, null);
+    const stillSet = await releaseRepo.findOne({ where: { id: pending.id } });
+    expect(stillSet!.contactEmail).toBe(NEW_CONTACT);
+
+    // Once the grant goes active, further contact edits do not retarget it —
+    // the credential was already emailed to the fire-time contact.
+    const grantService = makeService('0');
+    await releaseRepo.update({ id: pending.id }, { status: 'active' });
+    await grantService.syncPendingContactSnapshot(USER, 'yet-another@example.com');
+    const activeRow = await releaseRepo.findOne({ where: { id: pending.id } });
+    expect(activeRow!.contactEmail).toBe(NEW_CONTACT);
+  });
+
+  it('F7: disarmForDisable cancels a pending release', async () => {
+    await seedSwitch({});
+    const service = makeService('10'); // pending-only.
+    await service.sweepUser(USER, NOW);
+    const releaseRepo = dataSource.getRepository(DeadMansSwitchReleaseEntity);
+    const pending = (await releaseRepo.find())[0];
+    expect(pending.status).toBe('pending');
+
+    await service.disarmForDisable(USER, new Date(NOW.getTime() + DAY_MS));
+
+    const after = await releaseRepo.findOne({ where: { id: pending.id } });
+    expect(after!.status).toBe('cancelled');
+    expect(after!.closedAt).toBeTruthy();
+  });
+
+  it('F7: disarmForDisable revokes an active grant and suppresses re-arming', async () => {
+    await seedSwitch({});
+    const service = makeService('0'); // arm + grant in one sweep.
+    await service.sweepUser(USER, NOW);
+    const token = tokenFromEmail(notifications.notifyEmailAddress);
+    const releaseRepo = dataSource.getRepository(DeadMansSwitchReleaseEntity);
+    const active = (await releaseRepo.find())[0];
+    expect(active.status).toBe('active');
+
+    await service.disarmForDisable(USER, new Date(NOW.getTime() + DAY_MS));
+
+    const after = await releaseRepo.findOne({ where: { id: active.id } });
+    expect(after!.status).toBe('revoked');
+    expect(after!.tokenHash).toBeNull();
+    expect(await service.resolveEmergencyAccess(token)).toBeNull();
+
+    // Same F1 invariant applies to a disable-triggered revoke: no re-arm for
+    // the same lapse until a fresh check-in.
+    notifications.notifyEmailAddress.mockClear();
+    expect(await service.sweepUser(USER, new Date(NOW.getTime() + 2 * DAY_MS))).toBe(0);
+    expect(await releaseRepo.count()).toBe(1);
+    expect(notifications.notifyEmailAddress).not.toHaveBeenCalled();
+  });
 });

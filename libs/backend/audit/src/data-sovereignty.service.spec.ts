@@ -155,4 +155,29 @@ describe('DataSovereigntyService', () => {
     expect(dto.lastCheckInAt).not.toBeNull();
     expect(dto.triggersAt).not.toBeNull();
   });
+
+  it('F1: a check-in clears any revoke-driven arm suppression', async () => {
+    const service = new DataSovereigntyService(
+      {} as unknown as InboxService,
+      {} as unknown as StorageService,
+      dataSource,
+    );
+    await service.updateDeadMansSwitch('suppressed-user', {
+      enabled: true,
+      contactEmail: 'trustee@example.com',
+      checkInIntervalDays: 30,
+    });
+    // Simulate a prior revoke having suppressed arming for the current lapse
+    // (`DeadMansSwitchReleaseService#suppressArmingForCurrentLapse`).
+    await dataSource
+      .getRepository(DeadMansSwitchEntity)
+      .update({ userId: 'suppressed-user' }, { armingSuspendedForCheckInAt: 'stale-marker' });
+
+    await service.checkInDeadMansSwitch('suppressed-user');
+
+    const row = await dataSource
+      .getRepository(DeadMansSwitchEntity)
+      .findOne({ where: { userId: 'suppressed-user' } });
+    expect(row!.armingSuspendedForCheckInAt).toBeNull();
+  });
 });

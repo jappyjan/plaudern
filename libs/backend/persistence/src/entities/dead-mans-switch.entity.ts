@@ -44,6 +44,18 @@ export class DeadMansSwitchEntity {
   @Column({ type: 'varchar', nullable: true })
   lastCheckInAt!: string | null;
 
+  /**
+   * JJ-80 review follow-up (F1): when the owner revokes a release, this is set
+   * to the `lastCheckInAt` value in effect at revoke time — a marker for "the
+   * CURRENT lapse is disarmed". A sweep skips arming a new release while this
+   * still equals `lastCheckInAt` (no fresh check-in yet). The next real
+   * check-in changes `lastCheckInAt` (and clears this field), so the marker
+   * goes stale and a later lapse arms normally again. Null means "not
+   * suppressed" (the common case).
+   */
+  @Column({ type: 'varchar', nullable: true })
+  armingSuspendedForCheckInAt!: string | null;
+
   @CreateDateColumn()
   createdAt!: Date;
 

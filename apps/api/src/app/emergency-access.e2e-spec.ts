@@ -25,7 +25,11 @@ import { DataSource } from 'typeorm';
 import { SESSION_COOKIE, SessionService } from '@plaudern/auth';
 import { DeadMansSwitchReleaseService } from '@plaudern/audit';
 import { EMAIL_SENDER, type EmailMessage } from '@plaudern/notifications';
-import { DeadMansSwitchEntity, UserEntity } from '@plaudern/persistence';
+import {
+  DeadMansSwitchEntity,
+  DeadMansSwitchReleaseEntity,
+  UserEntity,
+} from '@plaudern/persistence';
 import { createE2eApp } from '../testing/e2e-app';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -136,6 +140,169 @@ describe('Dead-man’s-switch emergency access (e2e, Path A)', () => {
 
     // PUBLIC: the revoked token no longer resolves.
     await request(server).get(`/api/v1/account/emergency-access/${token}`).expect(404);
+  });
+
+  it('durably disarms the switch after a revoke, until the next check-in (F1)', async () => {
+    const owner = await createUserSession('dms-owner-f1');
+    const server = app.getHttpServer();
+
+    await request(server)
+      .put('/api/v1/account/dead-mans-switch')
+      .set('cookie', owner.cookie)
+      .send({ enabled: true, contactEmail: CONTACT, checkInIntervalDays: 1 })
+      .expect(200);
+
+    await dataSource
+      .getRepository(DeadMansSwitchEntity)
+      .update(
+        { userId: owner.userId },
+        { lastCheckInAt: new Date(Date.now() - 100 * DAY_MS).toISOString() },
+      );
+
+    // First sweep on the lapsed check-in arms + grants (grace=0 in this file).
+    email.sent.length = 0;
+    expect(await releases.sweepUser(owner.userId)).toBe(1);
+    let list = await request(server)
+      .get('/api/v1/account/dead-mans-switch/releases')
+      .set('cookie', owner.cookie)
+      .expect(200);
+    expect(list.body.releases).toHaveLength(1);
+    const firstReleaseId = list.body.releases[0].id;
+
+    // Owner revokes it — the switch is STILL lapsed (no check-in happened).
+    await request(server)
+      .post(`/api/v1/account/dead-mans-switch/releases/${firstReleaseId}/revoke`)
+      .set('cookie', owner.cookie)
+      .expect(201);
+
+    // A later sweep must NOT arm a fresh release for the same lapse, and the
+    // contact must not be re-notified.
+    email.sent.length = 0;
+    expect(await releases.sweepUser(owner.userId)).toBe(0);
+    list = await request(server)
+      .get('/api/v1/account/dead-mans-switch/releases')
+      .set('cookie', owner.cookie)
+      .expect(200);
+    expect(list.body.releases).toHaveLength(1); // no new row.
+    expect(email.sent).toHaveLength(0);
+
+    // Owner checks in — the ONLY thing that lifts the suppression.
+    await request(server)
+      .post('/api/v1/account/dead-mans-switch/check-in')
+      .set('cookie', owner.cookie)
+      .expect(201);
+
+    // Force a brand-new lapse and sweep again: normal arming resumes.
+    await dataSource
+      .getRepository(DeadMansSwitchEntity)
+      .update(
+        { userId: owner.userId },
+        { lastCheckInAt: new Date(Date.now() - 100 * DAY_MS).toISOString() },
+      );
+    email.sent.length = 0;
+    expect(await releases.sweepUser(owner.userId)).toBe(1);
+    list = await request(server)
+      .get('/api/v1/account/dead-mans-switch/releases')
+      .set('cookie', owner.cookie)
+      .expect(200);
+    expect(list.body.releases).toHaveLength(2); // the new lapse armed its own release.
+    expect(email.sent).toHaveLength(1);
+  });
+
+  it("refreshes a pending release's contact snapshot when the owner edits the contact (F4)", async () => {
+    const owner = await createUserSession('dms-owner-f4');
+    const server = app.getHttpServer();
+
+    await request(server)
+      .put('/api/v1/account/dead-mans-switch')
+      .set('cookie', owner.cookie)
+      .send({ enabled: true, contactEmail: CONTACT, checkInIntervalDays: 90 })
+      .expect(200);
+
+    // Manually open a grace window (this file forces GRACE_DAYS=0, so a real
+    // sweep would grant instantly) so there is a still-open pending release to
+    // refresh, mirroring the mid-grace-window edit the finding describes.
+    const pending = await dataSource.getRepository(DeadMansSwitchReleaseEntity).save({
+      userId: owner.userId,
+      contactEmail: CONTACT,
+      status: 'pending',
+      tokenHash: null,
+      firedAt: new Date().toISOString(),
+      graceUntil: new Date(Date.now() + DAY_MS).toISOString(),
+      grantedAt: null,
+      closedAt: null,
+    });
+
+    const NEW_CONTACT = 'new-trusted@example.com';
+    await request(server)
+      .put('/api/v1/account/dead-mans-switch')
+      .set('cookie', owner.cookie)
+      .send({ enabled: true, contactEmail: NEW_CONTACT, checkInIntervalDays: 90 })
+      .expect(200);
+
+    const refreshed = await dataSource
+      .getRepository(DeadMansSwitchReleaseEntity)
+      .findOne({ where: { id: pending.id } });
+    expect(refreshed?.contactEmail).toBe(NEW_CONTACT);
+  });
+
+  it('revokes an active grant and cancels a pending release when the switch is disabled (F7)', async () => {
+    const owner = await createUserSession('dms-owner-f7');
+    const server = app.getHttpServer();
+
+    await request(server)
+      .put('/api/v1/account/dead-mans-switch')
+      .set('cookie', owner.cookie)
+      .send({ enabled: true, contactEmail: CONTACT, checkInIntervalDays: 1 })
+      .expect(200);
+
+    await dataSource
+      .getRepository(DeadMansSwitchEntity)
+      .update(
+        { userId: owner.userId },
+        { lastCheckInAt: new Date(Date.now() - 100 * DAY_MS).toISOString() },
+      );
+
+    email.sent.length = 0;
+    expect(await releases.sweepUser(owner.userId)).toBe(1); // active grant.
+    const active = (
+      await dataSource.getRepository(DeadMansSwitchReleaseEntity).find({
+        where: { userId: owner.userId },
+      })
+    )[0];
+    expect(active.status).toBe('active');
+    const token = tokenFromEmail(email);
+
+    // A second, independently-seeded pending release exercises the cancel side
+    // of the disable fix alongside the revoke side.
+    const pending = await dataSource.getRepository(DeadMansSwitchReleaseEntity).save({
+      userId: owner.userId,
+      contactEmail: CONTACT,
+      status: 'pending',
+      tokenHash: null,
+      firedAt: new Date().toISOString(),
+      graceUntil: new Date(Date.now() + DAY_MS).toISOString(),
+      grantedAt: null,
+      closedAt: null,
+    });
+
+    await request(server)
+      .put('/api/v1/account/dead-mans-switch')
+      .set('cookie', owner.cookie)
+      .send({ enabled: false, contactEmail: CONTACT, checkInIntervalDays: 1 })
+      .expect(200);
+
+    const rows = await dataSource
+      .getRepository(DeadMansSwitchReleaseEntity)
+      .find({ where: { userId: owner.userId } });
+    const activeAfter = rows.find((r) => r.id === active.id)!;
+    const pendingAfter = rows.find((r) => r.id === pending.id)!;
+    expect(activeAfter.status).toBe('revoked');
+    expect(activeAfter.tokenHash).toBeNull();
+    expect(pendingAfter.status).toBe('cancelled');
+
+    // The revoked token no longer resolves.
+    expect(await releases.resolveEmergencyAccess(token)).toBeNull();
   });
 
   it('walls the authenticated switch routes off without a session', async () => {
