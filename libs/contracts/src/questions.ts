@@ -98,6 +98,12 @@ export const questionSchema = z.object({
   /** The question text. */
   question: z.string(),
   status: questionStatusSchema,
+  /**
+   * The recorded answer text (set by MCP answer_question); null when the
+   * question was resolved without recorded text. User-owned — survives
+   * re-extraction.
+   */
+  answer: z.string().nullable(),
   /** Segment start (seconds into the recording) the question was heard at. */
   sourceTimestamp: z.number().nonnegative().nullable(),
   /** When the source recording occurred. */

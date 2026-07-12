@@ -195,12 +195,31 @@ export interface AccountExportItem {
   source: AccountExportAsset | null;
   extractions: AccountExportExtraction[];
 }
+/**
+ * One question row in the export. Included because questions carry USER-AUTHORED
+ * state that no recording or re-extraction can regenerate: the settled status
+ * and — since the MCP `answer_question` tool — the recorded `answer` text.
+ */
+export interface AccountExportQuestion {
+  id: string;
+  inboxItemId: string;
+  direction: string;
+  counterpartyName: string;
+  question: string;
+  status: string;
+  /** The recorded answer text; null when resolved without recorded text. */
+  answer: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
 export interface AccountExport {
   schemaVersion: 1;
   exportedAt: string;
   userId: string;
   itemCount: number;
   items: AccountExportItem[];
+  /** The user's questions, including user-authored answers/statuses. */
+  questions: AccountExportQuestion[];
   /** A combined, human-readable Markdown rendering of the whole archive. */
   markdown: string;
 }

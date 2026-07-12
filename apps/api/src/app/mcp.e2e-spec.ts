@@ -16,6 +16,7 @@ import { Repository } from 'typeorm';
 import request from 'supertest';
 import { EMBEDDING_PROVIDER } from '@plaudern/embeddings';
 import { InboxService } from '@plaudern/inbox';
+import { McpTokenService } from '@plaudern/mcp';
 import { TasksRegistryService } from '@plaudern/tasks';
 import {
   AiProviderCallEntity,
@@ -335,20 +336,48 @@ describe('MCP server (e2e)', () => {
     expect(row?.status).toBe('open');
   });
 
-  it('answer_question marks an allowed question answered and list_questions reflects it', async () => {
+  it('answer_question marks an allowed question answered, durably storing the answer text', async () => {
     const questionId = await seedQuestion('normal');
     const res = await mcp('tools/call', {
       name: 'answer_question',
       arguments: { questionId, answer: 'yes — sending it at 3pm' },
     }).expect(200);
-    expect((toolPayload(res.body) as { status: string }).status).toBe('answered');
+    const updated = toolPayload(res.body) as { status: string; answer: string | null };
+    expect(updated.status).toBe('answered');
+    expect(updated.answer).toBe('yes — sending it at 3pm');
+
+    // The answer is durable on the question row (not only in the audit trail)
+    // and surfaces in the read model.
+    const repo = app.get<Repository<QuestionEntity>>(getRepositoryToken(QuestionEntity));
+    const row = await repo.findOne({ where: { id: questionId } });
+    expect(row?.answer).toBe('yes — sending it at 3pm');
 
     const listed = await mcp('tools/call', {
       name: 'list_questions',
       arguments: { limit: 50, status: 'answered' },
     }).expect(200);
-    const payload = toolPayload(listed.body) as { questions: Array<{ id: string; status: string }> };
-    expect(payload.questions.some((q) => q.id === questionId && q.status === 'answered')).toBe(true);
+    const payload = toolPayload(listed.body) as {
+      questions: Array<{ id: string; status: string; answer: string | null }>;
+    };
+    const entry = payload.questions.find((q) => q.id === questionId);
+    expect(entry?.status).toBe('answered');
+    expect(entry?.answer).toBe('yes — sending it at 3pm');
+  });
+
+  it('refuses answering a question the owner already dropped (user resolution is final)', async () => {
+    const questionId = await seedQuestion('normal');
+    const repo = app.get<Repository<QuestionEntity>>(getRepositoryToken(QuestionEntity));
+    await repo.update({ id: questionId }, { status: 'dropped' });
+
+    const res = await mcp('tools/call', {
+      name: 'answer_question',
+      arguments: { questionId, answer: 'overriding your decision' },
+    }).expect(200);
+    expect(res.body.result.isError).toBe(true);
+
+    const row = await repo.findOne({ where: { id: questionId } });
+    expect(row?.status).toBe('dropped');
+    expect(row?.answer).toBeNull();
   });
 
   it('refuses answering a question on a sensitive item (fail closed)', async () => {
@@ -362,5 +391,68 @@ describe('MCP server (e2e)', () => {
     const repo = app.get<Repository<QuestionEntity>>(getRepositoryToken(QuestionEntity));
     const row = await repo.findOne({ where: { id: questionId } });
     expect(row?.status).toBe('open');
+  });
+
+  describe('cross-user isolation', () => {
+    // A second account's token: every mutation is scoped to ITS owner, so user
+    // A's rows must be unreachable — refused without confirming they exist.
+    const OTHER_USER = '00000000-0000-0000-0000-0000000000b2';
+    let otherToken: string;
+
+    beforeAll(async () => {
+      otherToken = (await app.get(McpTokenService).mint(OTHER_USER)).token;
+    });
+
+    it("token B cannot mutate user A's task", async () => {
+      const created = await mcp('tools/call', {
+        name: 'create_task',
+        arguments: { title: 'user A private task' },
+      }).expect(200);
+      const task = toolPayload(created.body) as { id: string };
+
+      const res = await mcp(
+        'tools/call',
+        { name: 'update_task_status', arguments: { taskId: task.id, status: 'completed' } },
+        otherToken,
+      ).expect(200);
+      expect(res.body.result.isError).toBe(true);
+
+      // A's task is untouched.
+      const registry = app.get(TasksRegistryService);
+      const found = await registry.findForMcpMutation(DEFAULT_USER_ID, task.id);
+      expect(found?.status).toBe('open');
+    });
+
+    it("token B cannot mutate user A's commitment", async () => {
+      const commitmentId = await seedCommitment('normal');
+      const res = await mcp(
+        'tools/call',
+        {
+          name: 'update_commitment_status',
+          arguments: { commitmentId, status: 'fulfilled' },
+        },
+        otherToken,
+      ).expect(200);
+      expect(res.body.result.isError).toBe(true);
+
+      const repo = app.get<Repository<CommitmentEntity>>(getRepositoryToken(CommitmentEntity));
+      const row = await repo.findOne({ where: { id: commitmentId } });
+      expect(row?.status).toBe('open');
+    });
+
+    it("token B cannot answer user A's question", async () => {
+      const questionId = await seedQuestion('normal');
+      const res = await mcp(
+        'tools/call',
+        { name: 'answer_question', arguments: { questionId, answer: 'intruder answer' } },
+        otherToken,
+      ).expect(200);
+      expect(res.body.result.isError).toBe(true);
+
+      const repo = app.get<Repository<QuestionEntity>>(getRepositoryToken(QuestionEntity));
+      const row = await repo.findOne({ where: { id: questionId } });
+      expect(row?.status).toBe('open');
+      expect(row?.answer).toBeNull();
+    });
   });
 });

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   isLocalOnlyTier,
   summaryPayloadSchema,
@@ -536,11 +536,13 @@ export class McpToolsService {
   }
 
   /**
-   * answer_question: mark an open question answered. The `answer` text has no
-   * durable column on the questions table (no migration in this lane), so it is
-   * preserved in the AUDIT trail as the record of what was answered, while the
-   * question row flips to `answered` (race-safe). Refused when the question's
-   * source item may not cross this surface (fail closed).
+   * answer_question: mark an OPEN question answered, durably recording the
+   * answer text on the question row (user-owned `answer` column — re-extraction
+   * never touches it) with a race-safe flip. Refused when the question's source
+   * item may not cross this surface (fail closed), and refused with Conflict
+   * when the question is not open — an external agent must never override the
+   * owner's settled resolution (a user's `dropped` means "I won't answer this",
+   * and an existing `answered` must not be silently rewritten).
    */
   async answerQuestion(
     actor: McpActor,
@@ -549,11 +551,15 @@ export class McpToolsService {
     const found = await this.questions.findForStatusUpdate(actor.userId, args.questionId);
     if (!found) throw new NotFoundException('question not found');
     await this.assertItemUngated(found.inboxItemId, 'question not found');
+    if (found.status !== 'open') {
+      throw new ConflictException(`question is ${found.status}, not open — only open questions can be answered`);
+    }
     const updated = await this.questions.setStatusIfUnchanged(
       actor.userId,
       args.questionId,
-      found.status,
+      'open',
       'answered',
+      args.answer,
     );
     await this.audit.recordMcpMutation({
       userId: actor.userId,

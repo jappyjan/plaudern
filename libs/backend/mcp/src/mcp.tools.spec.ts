@@ -707,29 +707,52 @@ describe('McpToolsService', () => {
       );
     });
 
-    it('answer_question marks answered for an allowed item and records the answer in the audit', async () => {
+    it('answer_question marks answered for an allowed item, persisting the answer text durably', async () => {
       const { service, fakes } = build();
       fakes.questions.findForStatusUpdate.mockResolvedValue({
         status: 'open',
         inboxItemId: 'ok',
       });
       fakes.sensitivity.effectiveTiers = tierMap({ ok: 'normal' });
-      fakes.questions.setStatusIfUnchanged.mockResolvedValue({ id: 'q-1', status: 'answered' });
+      fakes.questions.setStatusIfUnchanged.mockResolvedValue({
+        id: 'q-1',
+        status: 'answered',
+        answer: 'yes, at 3pm',
+      });
 
       const result = await service.answerQuestion(actor, { questionId: 'q-1', answer: 'yes, at 3pm' });
+      // The answer text rides the same conditional write as the status flip, so
+      // it lands on the durable user-owned column, not only in the audit trail.
       expect(fakes.questions.setStatusIfUnchanged).toHaveBeenCalledWith(
         'user-1',
         'q-1',
         'open',
         'answered',
+        'yes, at 3pm',
       );
       expect(result.status).toBe('answered');
+      expect(result.answer).toBe('yes, at 3pm');
       expect(fakes.audit.recordMcpMutation).toHaveBeenCalledWith(
         expect.objectContaining({
           tool: 'answer_question',
           change: expect.objectContaining({ answer: 'yes, at 3pm', to: 'answered' }),
         }),
       );
+    });
+
+    it('answer_question refuses a non-open question (never overrides the owner\'s dropped/answered)', async () => {
+      const { service, fakes } = build();
+      fakes.questions.findForStatusUpdate.mockResolvedValue({
+        status: 'dropped',
+        inboxItemId: 'ok',
+      });
+      fakes.sensitivity.effectiveTiers = tierMap({ ok: 'normal' });
+
+      await expect(
+        service.answerQuestion(actor, { questionId: 'q-1', answer: 'x' }),
+      ).rejects.toThrow(/not open/);
+      expect(fakes.questions.setStatusIfUnchanged).not.toHaveBeenCalled();
+      expect(fakes.audit.recordMcpMutation).not.toHaveBeenCalled();
     });
 
     it('answer_question refuses an unknown id', async () => {

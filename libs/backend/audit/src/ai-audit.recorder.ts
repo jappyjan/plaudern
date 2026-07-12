@@ -101,8 +101,13 @@ export class AiAuditRecorder {
         }),
       );
     } catch (err) {
+      // Best-effort by design (never fail the mutation it observes), but LOUD:
+      // a broken audit trail must be visible in the logs, with enough context
+      // (tool + user + the change's ids) to reconstruct what went unrecorded.
       this.logger.error(
-        `failed to record MCP mutation audit for ${params.tool}: ${(err as Error).message}`,
+        `failed to record MCP mutation audit — tool=${params.tool} user=${params.userId} ` +
+          `token=${params.tokenPrefix} change=${safeStringify(params.change)}: ` +
+          `${(err as Error).message}`,
       );
     }
   }
@@ -159,6 +164,15 @@ function sanitizeEndpoint(endpoint: string): string {
  * Binary payloads (e.g. audio Buffers sent to transcription/diarization) are
  * stored as a size placeholder rather than a lossy UTF-8 mangling.
  */
+/** Stringify for a log line without ever throwing from the error path itself. */
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '[unserializable]';
+  }
+}
+
 function truncateForStorage(payload: string | Buffer, byteLength: number): string {
   if (Buffer.isBuffer(payload)) return `[binary payload, ${byteLength} bytes]`;
   return payload.length > MAX_STORED_PAYLOAD_CHARS

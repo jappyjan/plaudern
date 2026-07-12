@@ -173,21 +173,23 @@ export class QuestionsService {
    * RACE-SAFE status flip: a conditional `UPDATE … WHERE id AND userId AND
    * status=:expected` that changes exactly one row, or throws Conflict — so a
    * concurrent writer can't be silently clobbered the way save()-by-PK
-   * (`updateStatus`) would. `answered` is durable and user-owned: the extraction
-   * upsert only ever promotes open→answered and never demotes/reaps it, so this
-   * write survives re-extraction. `UpdateResult.affected` is honored on both the
-   * Postgres and better-sqlite3 drivers.
+   * (`updateStatus`) would. `answered` — and the recorded `answer` text, when
+   * provided — is durable and user-owned: the extraction upsert only ever
+   * promotes open→answered and never demotes/reaps it or writes the answer
+   * column, so this write survives re-extraction. `UpdateResult.affected` is
+   * honored on both the Postgres and better-sqlite3 drivers.
    */
   async setStatusIfUnchanged(
     userId: string,
     id: string,
     expected: QuestionStatus,
     next: QuestionStatus,
+    answer?: string,
   ): Promise<QuestionDto> {
     const result = await this.questions
       .createQueryBuilder()
       .update(QuestionEntity)
-      .set({ status: next })
+      .set(answer === undefined ? { status: next } : { status: next, answer })
       .where('id = :id', { id })
       .andWhere('"userId" = :userId', { userId })
       .andWhere('status = :expected', { expected })
@@ -227,6 +229,7 @@ function toQuestionDto(row: QuestionEntity, occurredAt: string): QuestionDto {
     counterpartyEntityId: row.counterpartyEntityId,
     question: row.question,
     status: row.status,
+    answer: row.answer,
     sourceTimestamp: row.sourceTimestamp,
     occurredAt,
     createdAt: iso(row.createdAt)!,

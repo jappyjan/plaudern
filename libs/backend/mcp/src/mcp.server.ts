@@ -522,8 +522,9 @@ export function buildMcpServer(actor: McpActor, tools: McpToolsService): McpServ
     {
       title: 'Answer question',
       description:
-        'Mark an open question as answered, recording the answer text. Use an id from ' +
-        'list_questions. Returns the updated question.',
+        'Mark an OPEN question as answered, durably recording the answer text on the ' +
+        'question. Only open questions can be answered — a dropped or already-answered ' +
+        'question is refused. Use an id from list_questions. Returns the updated question.',
       inputSchema: {
         questionId: z.string().uuid().describe('The id of the question to answer.'),
         answer: z.string().min(1).max(10_000).describe('The answer text.'),
