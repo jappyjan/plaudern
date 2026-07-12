@@ -301,6 +301,61 @@ describe('DeadMansSwitchReleaseService', () => {
     const after = await releaseRepo.findOne({ where: { id: pending.id } });
     expect(after!.status).toBe('cancelled');
     expect(after!.closedAt).toBeTruthy();
+
+    // A disable that only cancelled a PENDING release still suppresses arming:
+    // re-enabling while the same lapse is stale must not immediately re-arm
+    // and re-warn the owner.
+    const switches = dataSource.getRepository(DeadMansSwitchEntity);
+    const sw = await switches.findOne({ where: { userId: USER } });
+    expect(sw!.armingSuspendedForCheckInAt).toBe(sw!.lastCheckInAt);
+
+    // Re-enable + sweep on the same stale lapse: no new release, no warning.
+    notifications.notify.mockClear();
+    expect(await service.sweepUser(USER, new Date(NOW.getTime() + 2 * DAY_MS))).toBe(0);
+    expect(await releaseRepo.count()).toBe(1);
+    expect(notifications.notify).not.toHaveBeenCalled();
+
+    // A fresh check-in lifts the suppression; the next lapse arms again
+    // (grace=10d in this test → arm only, no grant yet).
+    const checkInAt = new Date(NOW.getTime() + 3 * DAY_MS);
+    await switches.update(
+      { userId: USER },
+      { lastCheckInAt: checkInAt.toISOString(), armingSuspendedForCheckInAt: null },
+    );
+    expect(
+      await service.sweepUser(USER, new Date(checkInAt.getTime() + 91 * DAY_MS)),
+    ).toBe(0);
+    expect(await releaseRepo.count()).toBe(2);
+    expect(notifications.notify).toHaveBeenCalledTimes(1); // owner warned for the NEW lapse.
+  });
+
+  it('F7: disarmForDisable does not clobber a release a concurrent sweep just promoted to active', async () => {
+    await seedSwitch({});
+    const service = makeService('10');
+    await service.sweepUser(USER, NOW);
+    const releaseRepo = dataSource.getRepository(DeadMansSwitchReleaseEntity);
+    const release = (await releaseRepo.find())[0];
+    expect(release.status).toBe('pending');
+
+    // Model the race: between the disable request landing and its writes, the
+    // sweep promotes the release pending→active (grace expired) and mints a
+    // token. The conditional cancel must MISS, and the fresh active pass must
+    // then revoke the grant properly (token cleared) instead of leaving a live
+    // token behind a row that lies 'cancelled'.
+    await releaseRepo.update(
+      { id: release.id },
+      { status: 'active', tokenHash: 'deadbeef', grantedAt: NOW.toISOString() },
+    );
+
+    await service.disarmForDisable(USER, new Date(NOW.getTime() + DAY_MS));
+
+    const after = await releaseRepo.findOne({ where: { id: release.id } });
+    expect(after!.status).toBe('revoked'); // NOT 'cancelled'.
+    expect(after!.tokenHash).toBeNull(); // the credential is dead.
+    const sw = await dataSource
+      .getRepository(DeadMansSwitchEntity)
+      .findOne({ where: { userId: USER } });
+    expect(sw!.armingSuspendedForCheckInAt).toBe(sw!.lastCheckInAt);
   });
 
   it('F7: disarmForDisable revokes an active grant and suppresses re-arming', async () => {

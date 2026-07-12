@@ -261,12 +261,20 @@ export class DeadMansSwitchReleaseService {
   async disarmForDisable(userId: string, now = new Date()): Promise<void> {
     const releases = this.dataSource.getRepository(DeadMansSwitchReleaseEntity);
 
-    const pending = await releases.find({ where: { userId, status: 'pending' } });
-    for (const r of pending) {
-      r.status = 'cancelled';
-      r.closedAt = now.toISOString();
-    }
-    if (pending.length > 0) await releases.save(pending);
+    // CONDITIONAL flip, not save()-by-PK: a concurrent sweep may promote this
+    // release pending→active at grace expiry between our read and our write —
+    // a blind save would clobber that ACTIVE grant back to 'cancelled' with
+    // stale fields (and leave a minted token at large while the row claims
+    // cancelled). Guarding on status='pending' means a lost race is simply a
+    // miss here, and the active-revoke pass below (a FRESH query, so it sees
+    // the just-promoted row) revokes the grant properly instead.
+    const cancelResult = await releases
+      .createQueryBuilder()
+      .update()
+      .set({ status: 'cancelled', closedAt: now.toISOString() })
+      .where('userId = :userId AND status = :status', { userId, status: 'pending' })
+      .execute();
+    const cancelledCount = cancelResult.affected ?? 0;
 
     const active = await releases.find({ where: { userId, status: 'active' } });
     let revokedCount = 0;
@@ -282,10 +290,13 @@ export class DeadMansSwitchReleaseService {
       if (result.affected === 1) revokedCount += 1;
     }
 
-    if (revokedCount > 0) await this.suppressArmingForCurrentLapse(userId);
-    if (pending.length > 0 || revokedCount > 0) {
+    // F1 suppression whenever ANYTHING was stood down — a disable that only
+    // cancelled a pending release must not re-arm + re-warn immediately on
+    // re-enable while the same stale lapse persists, exactly like a revoke.
+    if (cancelledCount + revokedCount > 0) {
+      await this.suppressArmingForCurrentLapse(userId);
       this.logger.warn(
-        `dms: disable disarmed switch for ${userId} (${pending.length} cancelled, ${revokedCount} revoked)`,
+        `dms: disable disarmed switch for ${userId} (${cancelledCount} cancelled, ${revokedCount} revoked)`,
       );
     }
   }
