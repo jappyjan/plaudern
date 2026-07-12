@@ -9,6 +9,13 @@ export interface ClusterInput {
 /** A discovered cluster of related items. */
 export interface Cluster {
   memberItemIds: string[];
+  /**
+   * The cluster's mean direction — the L2-normalized sum of its members'
+   * normalized vectors (JJ-69). Stored on the proposal so a later run can
+   * suppress a regrown-but-drifted version of a dismissed cluster by centroid
+   * cosine, which Jaccard on member ids misses.
+   */
+  centroid: number[];
 }
 
 export interface ClusterOptions {
@@ -85,7 +92,13 @@ export function clusterItems(items: ClusterInput[], options: ClusterOptions): Cl
   return {
     clusters: clusters
       .filter((c) => c.memberItemIds.length >= options.minSize)
-      .map((c) => ({ memberItemIds: c.memberItemIds }))
+      // `normalize` can't return null here: a surviving cluster has >=1 member,
+      // each a unit vector, so the running sum has positive magnitude. Fall back
+      // to the raw sum defensively rather than asserting.
+      .map((c) => ({
+        memberItemIds: c.memberItemIds,
+        centroid: normalize(c.centroidSum) ?? c.centroidSum,
+      }))
       .sort((a, b) => b.memberItemIds.length - a.memberItemIds.length),
     mismatchedDimensionCount,
   };
@@ -114,6 +127,20 @@ export function jaccard(a: string[], b: string[]): number {
   for (const id of setA) if (setB.has(id)) intersection += 1;
   const union = setA.size + setB.size - intersection;
   return union === 0 ? 0 : intersection / union;
+}
+
+/**
+ * Cosine similarity of two vectors, in [-1, 1]. Used to suppress a fresh
+ * cluster whose centroid points the same direction as one the user already
+ * dismissed/accepted, catching regrown clusters that member-id Jaccard misses.
+ * Normalizes internally, so callers can pass either raw or normalized vectors;
+ * returns 0 when either vector has zero magnitude (nothing to compare).
+ */
+export function cosineSimilarity(a: number[], b: number[]): number {
+  const ua = normalize(a);
+  const ub = normalize(b);
+  if (!ua || !ub) return 0;
+  return dot(ua, ub);
 }
 
 /** L2-normalize; returns null for a zero-magnitude or empty vector. */

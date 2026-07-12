@@ -3,10 +3,13 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  JoinColumn,
+  ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 import type { TopicProposalStatus } from '@plaudern/contracts';
+import { TopicEntity } from './topic.entity';
 
 /**
  * A proposed taxonomy extension from an embedding cluster (JJ-64). A recurring/
@@ -26,6 +29,9 @@ import type { TopicProposalStatus } from '@plaudern/contracts';
 // the losing insert catches the violation and skips (same race-recovery
 // pattern as the commitments/tasks persistence).
 @Index(['userId', 'fingerprint'], { unique: true })
+// Supports the retention query (JJ-69): "newest N resolved rows per user" for
+// the suppression set, and the prune that keeps the history bounded.
+@Index(['userId', 'status', 'createdAt'])
 export class TopicProposalEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -56,10 +62,29 @@ export class TopicProposalEntity {
   @Column({ type: 'simple-json' })
   sampleItemIds!: string[];
 
+  /**
+   * The cluster's mean (L2-normalized) embedding at proposal time (JJ-69). Used
+   * to suppress a dismissed cluster that REGREW: member-id Jaccard alone misses
+   * a cluster that more-than-doubled, but its centroid barely moves, so a fresh
+   * cluster whose centroid cosine-matches a dismissed one is suppressed too.
+   * Null on legacy rows created before this column existed — those fall back to
+   * Jaccard-only suppression.
+   */
+  @Column({ type: 'simple-json', nullable: true })
+  centroid!: number[] | null;
+
   @Column({ type: 'varchar', default: 'pending' })
   status!: TopicProposalStatus;
 
-  /** The taxonomy topic created on accept, else null. */
+  /**
+   * The taxonomy topic created on accept, else null. FK to `topics` with
+   * ON DELETE SET NULL (JJ-69): deleting an accepted topic clears this rather
+   * than leaving a dangling id.
+   */
+  @ManyToOne(() => TopicEntity, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'acceptedTopicId' })
+  acceptedTopic?: TopicEntity | null;
+
   @Column({ type: 'uuid', nullable: true })
   acceptedTopicId!: string | null;
 

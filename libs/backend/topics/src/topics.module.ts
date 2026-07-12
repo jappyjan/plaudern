@@ -10,12 +10,14 @@ import {
   TopicDocumentEntity,
   TopicEntity,
   TopicProposalEntity,
+  TopicProposalRunEntity,
 } from '@plaudern/persistence';
 import { BullJobQueue, InlineJobQueue, redisConnectionFromConfig } from '@plaudern/queue';
 import { TOPIC_CLASSIFICATION_PROVIDER } from './topics.provider';
 import { TOPIC_PROPOSAL_LABEL_PROVIDER } from './topic-proposals.provider';
 import { TOPIC_DOCUMENT_PROVIDER } from './topic-document.provider';
 import { TOPICS_QUEUE } from './topics.job';
+import { TOPIC_PROPOSAL_GENERATION_QUEUE } from './topic-proposals.job';
 import { TOPIC_DOCUMENT_QUEUE } from './topic-document.job';
 import { OpenAiTopicClassificationProvider } from './providers/openai.provider';
 import { OpenAiTopicProposalLabelProvider } from './providers/openai.labeler';
@@ -23,6 +25,7 @@ import { OpenAiTopicDocumentProvider } from './providers/openai.document';
 import { TopicsProcessor } from './topics.processor';
 import { TopicsService } from './topics.service';
 import { TopicProposalsService } from './topic-proposals.service';
+import { TopicProposalGenerationProcessor } from './topic-proposals.processor';
 import { TopicDocumentService } from './topic-document.service';
 import { TopicDocumentProcessor } from './topic-document.processor';
 import { TopicDocumentBackfillService } from './topic-document.backfill';
@@ -43,6 +46,7 @@ import { TopicDocumentController } from './topic-document.controller';
       ItemTopicEntity,
       InboxItemEntity,
       TopicProposalEntity,
+      TopicProposalRunEntity,
       TopicDocumentEntity,
     ]),
   ],
@@ -74,6 +78,23 @@ import { TopicDocumentController } from './topic-document.controller';
           : new InlineJobQueue(processor),
     },
     TopicsService,
+    // Taxonomy-proposal generation on the queue/worker (JJ-69): the endpoint
+    // enqueues and returns; this processor does the slow clustering + labeling.
+    TopicProposalGenerationProcessor,
+    {
+      provide: TOPIC_PROPOSAL_GENERATION_QUEUE,
+      inject: [ConfigService, TopicProposalGenerationProcessor],
+      useFactory: (config: ConfigService, processor: TopicProposalGenerationProcessor) =>
+        config.get<string>('QUEUE_DRIVER', 'inline') === 'bull'
+          ? new BullJobQueue(
+              'topic-proposals',
+              'generate',
+              redisConnectionFromConfig(config),
+              processor,
+              { concurrency: 1, backoffDelayMs: 2_000 },
+            )
+          : new InlineJobQueue(processor),
+    },
     TopicProposalsService,
     TopicsExtractor,
     // Living topic documents (JJ-12): its own generation provider, queue,

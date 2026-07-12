@@ -133,13 +133,33 @@ export const topicProposalSchema = z.object({
 export type TopicProposalDto = z.infer<typeof topicProposalSchema>;
 
 /**
+ * Status of the latest proposal-generation run for the user (JJ-69). Generation
+ * moved to the queue/worker because labeling up to N clusters with inline LLM
+ * calls could take minutes and time out behind a proxy: `POST generate` now
+ * enqueues and returns immediately, and the UI polls the list endpoint until
+ * `status` settles to `succeeded`/`failed`. `status` is null when the user has
+ * never generated. `queued`/`processing` mean a run is in flight (the Suggest
+ * button coalesces a double-click onto it rather than enqueuing a duplicate).
+ */
+export const topicProposalGenerationSchema = z.object({
+  status: extractionStatusSchema.nullable(),
+  /** Failure reason of the latest run when it failed; null otherwise. */
+  error: z.string().nullable(),
+  /** When the latest run was last touched; null when there has never been one. */
+  updatedAt: z.string().datetime().nullable(),
+});
+export type TopicProposalGeneration = z.infer<typeof topicProposalGenerationSchema>;
+
+/**
  * The proposals surfaced in the topics UI plus whether the feature can run at
  * all. `enabled` is false when embeddings or the labeling LLM are unconfigured,
  * so the UI hides the section instead of offering a button that always fails.
+ * `generation` reports the async run state so the UI can spin + poll (JJ-69).
  */
 export const topicProposalListResponseSchema = z.object({
   proposals: z.array(topicProposalSchema),
   enabled: z.boolean(),
+  generation: topicProposalGenerationSchema,
 });
 export type TopicProposalListResponse = z.infer<typeof topicProposalListResponseSchema>;
 

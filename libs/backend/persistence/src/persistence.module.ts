@@ -55,6 +55,7 @@ import {
   TopicDocumentEntity,
   TopicEntity,
   TopicProposalEntity,
+  TopicProposalRunEntity,
   UserEntity,
   VoiceProfileEntity,
 } from './entities';
@@ -109,6 +110,7 @@ import { CreateNudgeState1720000000047 } from './migrations/1720000000047-Create
 import { SimplifyAiConfig1720000000048 } from './migrations/1720000000048-SimplifyAiConfig';
 import { CreateDeadMansSwitchRelease1720000000049 } from './migrations/1720000000049-CreateDeadMansSwitchRelease';
 import { IndexOcrFullText1720000000050 } from './migrations/1720000000050-IndexOcrFullText';
+import { HardenTopicProposals1720000000051 } from './migrations/1720000000051-HardenTopicProposals';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -121,6 +123,7 @@ export const ALL_ENTITIES = [
   TopicEntity,
   ItemTopicEntity,
   TopicProposalEntity,
+  TopicProposalRunEntity,
   TopicDocumentEntity,
   JournalDocumentEntity,
   CommitmentEntity,
@@ -222,6 +225,7 @@ export const ALL_MIGRATIONS = [
   SimplifyAiConfig1720000000048,
   CreateDeadMansSwitchRelease1720000000049,
   IndexOcrFullText1720000000050,
+  HardenTopicProposals1720000000051,
 ];
 
 /**

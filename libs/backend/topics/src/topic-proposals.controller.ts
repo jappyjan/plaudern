@@ -18,8 +18,14 @@ export class TopicProposalsController {
     return this.proposals.listProposals(user.id);
   }
 
-  /** Trigger a fresh clustering + labeling pass, then return the refreshed list. */
+  /**
+   * Enqueue a fresh clustering + labeling pass and return immediately (202) with
+   * the current list + run status (JJ-69). The heavy pass runs on the worker; the
+   * UI polls GET /topics/proposals until `generation.status` settles. A double-
+   * click coalesces onto the in-flight run rather than enqueuing a duplicate.
+   */
   @Post('generate')
+  @HttpCode(HttpStatus.ACCEPTED)
   generate(@CurrentUser() user: AuthenticatedUser): Promise<TopicProposalListResponse> {
     return this.proposals.generate(user.id);
   }

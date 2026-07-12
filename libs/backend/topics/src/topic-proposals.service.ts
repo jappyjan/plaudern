@@ -6,37 +6,23 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { runWithAiAudit } from '@plaudern/audit';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { AiConfigService } from '@plaudern/ai-config';
 import { InboxService } from '@plaudern/inbox';
 import { EmbeddingSearchService } from '@plaudern/embeddings';
 import type { TopicDto, TopicProposalDto, TopicProposalListResponse } from '@plaudern/contracts';
 import {
-  InboxItemEntity,
-  ItemTopicEntity,
   TopicEntity,
   TopicProposalEntity,
+  TopicProposalRunEntity,
 } from '@plaudern/persistence';
 import { TopicsService } from './topics.service';
 import { buildTopicContent } from './topic-context';
 import {
-  clusterFingerprint,
-  clusterItems,
-  jaccard,
-  type ClusterInput,
-} from './topic-proposals.clustering';
-import {
-  TOPIC_PROPOSAL_LABEL_PROVIDER,
-  type TopicProposalLabelProvider,
-} from './topic-proposals.provider';
-
-/** Number of member excerpts sent to the labeler and stored for the UI preview. */
-const SAMPLE_ITEMS = 6;
-/** Per-sample excerpt length — enough to name the theme, small enough to stay cheap. */
-const SAMPLE_CHARS = 600;
+  TOPIC_PROPOSAL_GENERATION_QUEUE,
+  type TopicProposalGenerationQueue,
+} from './topic-proposals.job';
 
 /**
  * Proposes taxonomy extensions from embedding clusters (JJ-64). On demand
@@ -44,8 +30,15 @@ const SAMPLE_CHARS = 600;
  * item embeddings, excludes items already well-covered by the existing taxonomy,
  * labels each new cluster with the LLM, and stores pending proposals. Accepting
  * one creates the topic and reclassifies the cluster's items via the existing
- * per-item topics pipeline; dismissed/accepted rows are retained so their
- * clusters are not re-proposed.
+ * per-item topics pipeline; dismissed/accepted rows are retained (bounded, JJ-69)
+ * so their clusters are not re-proposed.
+ *
+ * The heavy clustering + labeling pass runs on the queue/worker
+ * (`TopicProposalGenerationProcessor`), not inline on the HTTP request (JJ-69):
+ * labeling up to N clusters could take minutes and time out behind a proxy. This
+ * service owns the request-side concerns — the enabled gate, the race-safe
+ * in-flight run guard, the read model (pending proposals + run status), and the
+ * accept/dismiss transitions.
  *
  * The whole feature degrades to disabled when either embeddings or the labeling
  * LLM are unconfigured, so it never surfaces a button that always fails.
@@ -53,37 +46,19 @@ const SAMPLE_CHARS = 600;
 @Injectable()
 export class TopicProposalsService {
   private readonly logger = new Logger(TopicProposalsService.name);
-  private readonly recentDays: number;
-  private readonly maxItems: number;
-  private readonly minClusterSize: number;
-  private readonly similarity: number;
-  private readonly coveredConfidence: number;
-  private readonly maxPerRun: number;
-  private readonly suppressJaccard: number;
 
   constructor(
-    config: ConfigService,
     private readonly inbox: InboxService,
     private readonly topics: TopicsService,
     private readonly embeddings: EmbeddingSearchService,
     private readonly aiConfig: AiConfigService,
-    @Inject(TOPIC_PROPOSAL_LABEL_PROVIDER)
-    private readonly labeler: TopicProposalLabelProvider,
+    @Inject(TOPIC_PROPOSAL_GENERATION_QUEUE)
+    private readonly queue: TopicProposalGenerationQueue,
     @InjectRepository(TopicProposalEntity)
     private readonly proposals: Repository<TopicProposalEntity>,
-    @InjectRepository(InboxItemEntity)
-    private readonly items: Repository<InboxItemEntity>,
-    @InjectRepository(ItemTopicEntity)
-    private readonly assignments: Repository<ItemTopicEntity>,
-  ) {
-    this.recentDays = num(config, 'TOPIC_PROPOSALS_RECENT_DAYS', 30);
-    this.maxItems = num(config, 'TOPIC_PROPOSALS_MAX_ITEMS', 200);
-    this.minClusterSize = num(config, 'TOPIC_PROPOSALS_MIN_CLUSTER_SIZE', 4);
-    this.similarity = num(config, 'TOPIC_PROPOSALS_SIMILARITY', 0.82);
-    this.coveredConfidence = num(config, 'TOPIC_PROPOSALS_COVERED_CONFIDENCE', 0.5);
-    this.maxPerRun = num(config, 'TOPIC_PROPOSALS_MAX_PER_RUN', 5);
-    this.suppressJaccard = num(config, 'TOPIC_PROPOSALS_SUPPRESS_JACCARD', 0.5);
-  }
+    @InjectRepository(TopicProposalRunEntity)
+    private readonly runs: Repository<TopicProposalRunEntity>,
+  ) {}
 
   /** Feature runs only when embeddings AND the labeling LLM are both configured. */
   async isEnabled(userId: string): Promise<boolean> {
@@ -93,108 +68,86 @@ export class TopicProposalsService {
     );
   }
 
-  /** The pending proposals surfaced in the topics UI, newest first. */
+  /**
+   * The pending proposals surfaced in the topics UI, newest first, plus the
+   * async generation-run status the UI polls (JJ-69).
+   */
   async listProposals(userId: string): Promise<TopicProposalListResponse> {
-    const rows = await this.proposals.find({
-      where: { userId, status: 'pending' },
-      order: { createdAt: 'DESC' },
-    });
-    return { proposals: rows.map(toProposalDto), enabled: await this.isEnabled(userId) };
+    const [rows, run, enabled] = await Promise.all([
+      this.proposals.find({
+        where: { userId, status: 'pending' },
+        order: { createdAt: 'DESC' },
+      }),
+      this.runs.findOne({ where: { userId } }),
+      this.isEnabled(userId),
+    ]);
+    return {
+      proposals: rows.map(toProposalDto),
+      enabled,
+      generation: {
+        status: run?.status ?? null,
+        error: run?.status === 'failed' ? run.error ?? null : null,
+        updatedAt: run ? iso(run.updatedAt) : null,
+      },
+    };
   }
-
-  /** Users with a generate run in flight — a double-click coalesces, not duplicates. */
-  private readonly generating = new Set<string>();
 
   /**
-   * (Re)generate proposals: cluster recent uncovered items, label the largest
-   * new clusters, and persist them as pending. Suppresses clusters the user
-   * already dismissed/accepted and clusters already pending. No-ops (returning
-   * the current list) when the feature is disabled or a run is already in
-   * flight for the user. Returns the refreshed list.
+   * Trigger a fresh clustering + labeling pass on the queue/worker, then return
+   * the current list + run status (JJ-69). Enqueue-and-return: the endpoint
+   * responds immediately (202) and the UI polls `listProposals` until the run
+   * settles. No-ops (returning the current list) when the feature is disabled or
+   * a run is already IN FLIGHT for the user — a double-click coalesces onto the
+   * running one instead of enqueuing a duplicate.
    */
   async generate(userId: string): Promise<TopicProposalListResponse> {
-    if (!(await this.isEnabled(userId))) return this.listProposals(userId);
-    if (this.generating.has(userId)) return this.listProposals(userId);
-    this.generating.add(userId);
-    try {
-      return await this.generateLocked(userId);
-    } finally {
-      this.generating.delete(userId);
+    if (await this.isEnabled(userId)) {
+      await this.startRun(userId);
     }
+    return this.listProposals(userId);
   }
 
-  private async generateLocked(userId: string): Promise<TopicProposalListResponse> {
-    const candidateIds = await this.recentUncoveredItemIds(userId);
-    if (candidateIds.length < this.minClusterSize) return this.listProposals(userId);
-
-    // Cluster in recency order (newest first), so leader clusters seed from the
-    // most recent items and the fingerprint of a growing theme stays stable-ish.
-    const centroids = await this.embeddings.itemCentroids(userId, candidateIds);
-    const byId = new Map(centroids.map((c) => [c.inboxItemId, c.vector]));
-    const ordered: ClusterInput[] = [];
-    for (const id of candidateIds) {
-      const vector = byId.get(id);
-      if (vector) ordered.push({ inboxItemId: id, vector });
+  /**
+   * Admit a fresh generation run, race-safely (JJ-69). The run is one row per
+   * user whose status is the guard:
+   *  - a terminal row (succeeded/failed) is flipped back to `queued` by a guarded
+   *    conditional UPDATE — only the one caller whose update affects a row wins
+   *    and enqueues;
+   *  - no row yet: INSERT one (unique `userId` index makes a concurrent double
+   *    insert lose cleanly, and that loser coalesces);
+   *  - an in-flight row (queued/processing): coalesce — return without enqueuing.
+   *
+   * This is the "conditional UPDATE/insert guard, not save()-by-PK" the double-
+   * click needs: it works identically on sqlite and Postgres.
+   */
+  private async startRun(userId: string): Promise<void> {
+    const flipped = await this.runs
+      .createQueryBuilder()
+      .update()
+      .set({ status: 'queued', error: null, proposalsCreated: 0 })
+      .where('userId = :userId AND status IN (:...terminal)', {
+        userId,
+        terminal: ['succeeded', 'failed'],
+      })
+      .execute();
+    if (flipped.affected === 1) {
+      await this.queue.enqueue({ userId });
+      return;
     }
 
-    const { clusters, mismatchedDimensionCount } = clusterItems(ordered, {
-      threshold: this.similarity,
-      minSize: this.minClusterSize,
-    });
-    if (mismatchedDimensionCount > 0) {
-      // An embedding provider/dimension switch mid-history; those items can't
-      // be compared against the current run's vectors, so they sat out.
-      this.logger.warn(
-        `skipped ${mismatchedDimensionCount} item(s) with mismatched embedding dimensions for user ${userId}`,
-      );
+    // Nothing terminal to flip: either a run is in flight, or there's no row yet.
+    const existing = await this.runs.findOne({ where: { userId } });
+    if (existing) return; // queued/processing — coalesce onto the in-flight run.
+
+    try {
+      await this.runs.insert({ userId, status: 'queued', error: null, proposalsCreated: 0 });
+    } catch (err) {
+      // Lost the unique-userId race with a concurrent first trigger; that run
+      // will cover this request too, so coalesce.
+      if (isUniqueViolation(err)) return;
+      throw err;
     }
-    if (clusters.length === 0) return this.listProposals(userId);
-
-    const existing = await this.proposals.find({ where: { userId } });
-    // Clusters the user already ruled on (dismissed or accepted) — never re-propose.
-    const suppressed = existing
-      .filter((p) => p.status === 'dismissed' || p.status === 'accepted')
-      .map((p) => p.memberItemIds);
-    // Clusters already awaiting a decision — don't duplicate.
-    const pending = existing.filter((p) => p.status === 'pending').map((p) => p.memberItemIds);
-
-    let budget = this.maxPerRun;
-    for (const cluster of clusters) {
-      if (budget <= 0) break;
-      const overlaps = (sets: string[][]) =>
-        sets.some((s) => jaccard(cluster.memberItemIds, s) >= this.suppressJaccard);
-      if (overlaps(suppressed) || overlaps(pending)) continue;
-
-      const labeled = await this.labelCluster(userId, cluster.memberItemIds);
-      if (!labeled) continue;
-
-      const sampleItemIds = cluster.memberItemIds.slice(0, SAMPLE_ITEMS);
-      try {
-        await this.proposals.save(
-          this.proposals.create({
-            userId,
-            fingerprint: clusterFingerprint(cluster.memberItemIds),
-            label: labeled.label,
-            description: labeled.description,
-            itemCount: cluster.memberItemIds.length,
-            memberItemIds: cluster.memberItemIds,
-            sampleItemIds,
-            status: 'pending',
-            acceptedTopicId: null,
-          }),
-        );
-      } catch (err) {
-        // Lost a race on the (userId, fingerprint) unique index — a concurrent
-        // generate already stored this exact cluster; skip it.
-        if (!isUniqueViolation(err)) throw err;
-        continue;
-      }
-      // Track the just-created cluster so a near-duplicate later in the run is skipped.
-      pending.push(cluster.memberItemIds);
-      budget -= 1;
-    }
-
-    return this.listProposals(userId);
+    await this.queue.enqueue({ userId });
   }
 
   /**
@@ -277,67 +230,6 @@ export class TopicProposalsService {
     proposal.status = 'dismissed';
     await this.proposals.save(proposal);
   }
-
-  /**
-   * Recent items not already well-covered by the taxonomy, newest first. An item
-   * is "covered" when it carries any topic assignment at/above the confidence
-   * threshold, so clustering focuses on genuinely un-triaged material.
-   */
-  private async recentUncoveredItemIds(userId: string): Promise<string[]> {
-    const since = new Date(Date.now() - this.recentDays * 24 * 60 * 60 * 1000);
-    const rows = await this.items
-      .createQueryBuilder('item')
-      .select('item.id', 'id')
-      .where('item.userId = :userId', { userId })
-      .andWhere('item.ingestedAt >= :since', { since })
-      .andWhere((qb) => {
-        const covered = qb
-          .subQuery()
-          .select('1')
-          .from(ItemTopicEntity, 'it')
-          .where('it.inboxItemId = item.id')
-          .andWhere('it.confidence >= :covered')
-          .getQuery();
-        return `NOT EXISTS ${covered}`;
-      })
-      .setParameter('covered', this.coveredConfidence)
-      .orderBy('item.ingestedAt', 'DESC')
-      .addOrderBy('item.id', 'DESC')
-      .limit(this.maxItems)
-      .getRawMany<{ id: string }>();
-    return rows.map((r) => r.id);
-  }
-
-  /** Fetch sample excerpts for a cluster and ask the labeler to name it. */
-  private async labelCluster(
-    userId: string,
-    memberItemIds: string[],
-  ): Promise<{ label: string; description: string | null } | null> {
-    const samples: string[] = [];
-    let language: string | undefined;
-    for (const id of memberItemIds.slice(0, SAMPLE_ITEMS)) {
-      const item = await this.inbox.getItemById(id);
-      if (!item || item.userId !== userId) continue;
-      const content = buildTopicContent(item);
-      if (!content) continue;
-      samples.push(content.content.slice(0, SAMPLE_CHARS));
-      if (!language && content.language) language = content.language;
-    }
-    if (samples.length === 0) return null;
-
-    try {
-      const result = await runWithAiAudit(
-        { userId, kind: 'topic_proposals' },
-        () => this.labeler.label(userId, { samples, language }),
-      );
-      const label = result.label.trim();
-      if (!label) return null;
-      return { label, description: result.description };
-    } catch (err) {
-      this.logger.warn(`cluster labeling failed: ${(err as Error).message}`);
-      return null;
-    }
-  }
 }
 
 function toProposalDto(row: TopicProposalEntity): TopicProposalDto {
@@ -369,11 +261,6 @@ function toTopicDto(row: TopicEntity): TopicDto {
 function iso(value: Date | string | null): string | null {
   if (value === null) return null;
   return value instanceof Date ? value.toISOString() : value;
-}
-
-function num(config: ConfigService, key: string, fallback: number): number {
-  const parsed = Number(config.get<string>(key, String(fallback)));
-  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 /**

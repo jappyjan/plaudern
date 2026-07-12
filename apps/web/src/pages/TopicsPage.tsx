@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Card, CardBody, Chip, Spinner } from '@heroui/react';
-import type { TopicDto, TopicProposalDto } from '@plaudern/contracts';
+import type { TopicDto, TopicProposalDto, TopicProposalGeneration } from '@plaudern/contracts';
 import { Link } from 'react-router-dom';
 import {
   acceptTopicProposal,
@@ -127,42 +127,80 @@ export function TopicsPage() {
  * nothing to suggest, so it never nags. Accepting one creates the topic and
  * reclassifies the cluster's items server-side; dismissing suppresses it.
  */
+const PROPOSAL_POLL_INTERVAL_MS = 3000;
+
+/** A generation run is in flight while its status is queued or processing. */
+function isGenerating(generation: TopicProposalGeneration): boolean {
+  return generation.status === 'queued' || generation.status === 'processing';
+}
+
 function TopicProposals({ onAccepted }: { onAccepted: () => void }) {
   const [proposals, setProposals] = useState<TopicProposalDto[]>([]);
   const [enabled, setEnabled] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<TopicProposalGeneration | null> => {
     try {
       const res = await listTopicProposals();
       setProposals(res.proposals);
       setEnabled(res.enabled);
+      setGenerating(isGenerating(res.generation));
+      if (res.generation.status === 'failed' && res.generation.error) {
+        setError(res.generation.error);
+      }
+      return res.generation;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+      return null;
     } finally {
       setLoaded(true);
     }
   }, []);
 
-  useEffect(() => {
-    void load();
+  // Poll the list while a generation run is in flight, so the async worker's
+  // results appear without a manual refresh. Self-cancelling once it settles.
+  const startPolling = useCallback(() => {
+    if (pollRef.current) clearTimeout(pollRef.current);
+    const tick = async () => {
+      const generation = await load();
+      if (generation && isGenerating(generation)) {
+        pollRef.current = setTimeout(() => void tick(), PROPOSAL_POLL_INTERVAL_MS);
+      }
+    };
+    pollRef.current = setTimeout(() => void tick(), PROPOSAL_POLL_INTERVAL_MS);
   }, [load]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void load().then((generation) => {
+      if (!cancelled && generation && isGenerating(generation)) startPolling();
+    });
+    return () => {
+      cancelled = true;
+      if (pollRef.current) clearTimeout(pollRef.current);
+    };
+  }, [load, startPolling]);
+
   const generate = useCallback(async () => {
-    setBusy('generate');
     setError(null);
     try {
+      // Enqueue-and-return (202): the worker runs the slow pass; poll for it.
       const res = await generateTopicProposals();
       setProposals(res.proposals);
       setEnabled(res.enabled);
+      setGenerating(isGenerating(res.generation));
+      if (isGenerating(res.generation)) startPolling();
+      else if (res.generation.status === 'failed' && res.generation.error) {
+        setError(res.generation.error);
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(null);
     }
-  }, []);
+  }, [startPolling]);
 
   const accept = useCallback(
     async (id: string) => {
@@ -197,6 +235,8 @@ function TopicProposals({ onAccepted }: { onAccepted: () => void }) {
   // Stay out of the way until we know the feature is usable.
   if (!loaded || !enabled) return null;
 
+  const hasProposals = proposals.length > 0;
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
@@ -211,10 +251,11 @@ function TopicProposals({ onAccepted }: { onAccepted: () => void }) {
         <Button
           size="sm"
           variant="flat"
-          isLoading={busy === 'generate'}
+          isLoading={generating}
+          isDisabled={generating}
           onPress={() => void generate()}
         >
-          {proposals.length > 0 ? 'Refresh' : 'Suggest topics'}
+          {hasProposals ? 'Refresh' : 'Suggest topics'}
         </Button>
       </div>
 
@@ -222,7 +263,13 @@ function TopicProposals({ onAccepted }: { onAccepted: () => void }) {
         <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">{error}</div>
       )}
 
-      {proposals.length > 0 && (
+      {generating && (
+        <p className="text-sm text-default-500">
+          Looking for clusters of recent items… this runs in the background and can take a minute.
+        </p>
+      )}
+
+      {!generating && hasProposals && (
         <p className="text-sm text-default-500">
           We found clusters of recent items that don&apos;t fit your topics yet. Accepting one
           creates the topic and reclassifies its items.
