@@ -3,6 +3,7 @@ export * from './ocr.job';
 export * from './ocr.service';
 export * from './ocr.processor';
 export * from './ocr.extractor';
+export * from './pdf-rasterizer';
 export * from './inbox-ocr.controller';
 export * from './ocr.module';
 export * from './providers/openai-vision.provider';

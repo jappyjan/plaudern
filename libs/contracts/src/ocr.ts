@@ -22,6 +22,18 @@ export const ocrExtractionPayloadSchema = z.object({
   model: z.string(),
   /** Number of characters recognized (for a quick "did it read anything" check). */
   charCount: z.number().int().nonnegative(),
+  /**
+   * For PDFs: how many pages were rasterized and OCR'd page-by-page (JJ-82). The
+   * recognized text carries `[page N]` markers so downstream (entities/embeddings/
+   * search) keeps page references. Absent for single-image scans.
+   */
+  pageCount: z.number().int().positive().optional(),
+  /**
+   * True when the PDF had more pages than the configured cap and the tail was
+   * dropped (the truncation is also noted inline in the recognized text). Absent
+   * or false otherwise.
+   */
+  truncated: z.boolean().optional(),
 });
 export type OcrExtractionPayload = z.infer<typeof ocrExtractionPayloadSchema>;
 

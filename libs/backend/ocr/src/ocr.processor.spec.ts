@@ -2,8 +2,9 @@ import type { InboxService } from '@plaudern/inbox';
 import type { StorageService } from '@plaudern/storage';
 import type { TranscriptionService } from '@plaudern/transcription';
 import { OcrProcessor } from './ocr.processor';
-import type { OcrProvider } from './ocr.provider';
+import type { OcrInput, OcrProvider } from './ocr.provider';
 import type { OcrJob } from './ocr.job';
+import type { PdfRasterizer, RasterizedPdf } from './pdf-rasterizer';
 
 const JOB: OcrJob = {
   extractionId: 'ext-1',
@@ -11,6 +12,14 @@ const JOB: OcrJob = {
   storageKey: 'blobs/doc.png',
   contentType: 'image/png',
   filename: 'doc.png',
+};
+
+const PDF_JOB: OcrJob = {
+  extractionId: 'ext-2',
+  inboxItemId: 'item-1',
+  storageKey: 'blobs/doc.pdf',
+  contentType: 'application/pdf',
+  filename: 'contract.pdf',
 };
 
 /** Storage stand-in that streams a fixed buffer for the document blob. */
@@ -27,9 +36,12 @@ function fakeStorage(): StorageService {
 
 function fakeInbox(): {
   service: InboxService;
-  completed: Array<{ id: string; result: { status: string; content?: string } }>;
+  completed: Array<{ id: string; result: { status: string; content?: string; language?: string } }>;
 } {
-  const completed: Array<{ id: string; result: { status: string; content?: string } }> = [];
+  const completed: Array<{
+    id: string;
+    result: { status: string; content?: string; language?: string };
+  }> = [];
   const service = {
     async setExtractionStatus() {
       /* no-op */
@@ -39,7 +51,10 @@ function fakeInbox(): {
     async getItemById(id: string) {
       return { id, userId: 'user-1' };
     },
-    async completeExtraction(id: string, result: { status: string; content?: string }) {
+    async completeExtraction(
+      id: string,
+      result: { status: string; content?: string; language?: string },
+    ) {
       completed.push({ id, result });
     },
   } as unknown as InboxService;
@@ -53,6 +68,19 @@ function fakeProvider(result: { text: string; language?: string }): OcrProvider 
   };
 }
 
+/** A rasterizer that never sees a PDF — the single-image path (JJ-30 shape). */
+function imageRasterizer(): PdfRasterizer {
+  return { isPdf: () => false } as unknown as PdfRasterizer;
+}
+
+/** A rasterizer that yields `pages` fake PNGs for the PDF path. */
+function pdfRasterizer(result: RasterizedPdf): PdfRasterizer {
+  return {
+    isPdf: () => true,
+    rasterize: async () => result,
+  } as unknown as PdfRasterizer;
+}
+
 describe('OcrProcessor', () => {
   it('bridges recognized text into a passthrough transcription so the DAG cascades', async () => {
     const { service: inbox } = fakeInbox();
@@ -64,6 +92,7 @@ describe('OcrProcessor', () => {
       fakeStorage(),
       transcription,
       fakeProvider({ text: 'Patient: Jan Jaap\nDiagnose: Rückenschmerzen', language: 'de' }),
+      imageRasterizer(),
     );
 
     await processor.process(JOB);
@@ -85,10 +114,74 @@ describe('OcrProcessor', () => {
       fakeStorage(),
       transcription,
       fakeProvider({ text: '   \n  ' }),
+      imageRasterizer(),
     );
 
     await processor.process(JOB);
 
     expect(record).not.toHaveBeenCalled();
+  });
+
+  it('OCRs a PDF page-by-page and concatenates the text behind [page N] markers', async () => {
+    const { service: inbox, completed } = fakeInbox();
+    const record = jest.fn(async () => 'transcription-1');
+    const transcription = { recordExtractedText: record } as unknown as TranscriptionService;
+
+    // One vision call per page; return text derived from the per-page filename
+    // hint so we can prove each page was sent separately.
+    const recognize = jest.fn(async (_userId: string, input: OcrInput) => ({
+      text: input.filename?.includes('page 1/2') ? 'first page text' : 'second page text',
+      language: 'en',
+      model: 'vision-x',
+    }));
+    const provider: OcrProvider = { id: 'test:ocr', recognize };
+
+    const processor = new OcrProcessor(
+      inbox,
+      fakeStorage(),
+      transcription,
+      provider,
+      pdfRasterizer({
+        pages: [Buffer.from('png-1'), Buffer.from('png-2')],
+        totalPages: 2,
+        truncated: false,
+      }),
+    );
+
+    await processor.process(PDF_JOB);
+
+    // Two separate vision calls, one per page.
+    expect(recognize).toHaveBeenCalledTimes(2);
+    const expected = '[page 1]\nfirst page text\n\n[page 2]\nsecond page text';
+    expect(completed[0].result).toMatchObject({ status: 'succeeded', content: expected, language: 'en' });
+    // The page markers survive into the bridged transcription (downstream input).
+    expect(record).toHaveBeenCalledWith('item-1', { content: expected, language: 'en' });
+  });
+
+  it('records truncation inline when a PDF exceeds the page cap (never fails)', async () => {
+    const { service: inbox, completed } = fakeInbox();
+    const transcription = {
+      recordExtractedText: jest.fn(async () => 't'),
+    } as unknown as TranscriptionService;
+
+    const processor = new OcrProcessor(
+      inbox,
+      fakeStorage(),
+      transcription,
+      fakeProvider({ text: 'page body', language: 'en' }),
+      pdfRasterizer({
+        pages: [Buffer.from('png-1'), Buffer.from('png-2')],
+        totalPages: 5,
+        truncated: true,
+      }),
+    );
+
+    await processor.process(PDF_JOB);
+
+    expect(completed[0].result.status).toBe('succeeded');
+    expect(completed[0].result.content).toBe(
+      '[page 1]\npage body\n\n[page 2]\npage body\n\n' +
+        '[truncated: OCR processed the first 2 of 5 pages]',
+    );
   });
 });
