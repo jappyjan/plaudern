@@ -3,7 +3,11 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuditModule } from '@plaudern/audit';
 import { InboxModule } from '@plaudern/inbox';
-import { SpeakerOccurrenceEntity, SummarizationSettingsEntity } from '@plaudern/persistence';
+import {
+  CorrectionNoteEntity,
+  SpeakerOccurrenceEntity,
+  SummarizationSettingsEntity,
+} from '@plaudern/persistence';
 import { BullJobQueue, InlineJobQueue, redisConnectionFromConfig } from '@plaudern/queue';
 import { SUMMARIZATION_PROVIDER } from './summarization.provider';
 import { SUMMARIZATION_QUEUE } from './summarization.job';
@@ -16,6 +20,8 @@ import {
   SummarizationController,
   SummarizationSettingsController,
 } from './summarization.controller';
+import { CorrectionNotesController } from './correction-notes.controller';
+import { CorrectionNotesService } from './correction-notes.service';
 import { SummaryExtractor } from './summary.extractor';
 
 @Module({
@@ -23,7 +29,11 @@ import { SummaryExtractor } from './summary.extractor';
     ConfigModule,
     AuditModule,
     InboxModule,
-    TypeOrmModule.forFeature([SpeakerOccurrenceEntity, SummarizationSettingsEntity]),
+    TypeOrmModule.forFeature([
+      CorrectionNoteEntity,
+      SpeakerOccurrenceEntity,
+      SummarizationSettingsEntity,
+    ]),
   ],
   providers: [
     OpenAiSummarizationProvider,
@@ -49,9 +59,14 @@ import { SummaryExtractor } from './summary.extractor';
           : new InlineJobQueue(processor),
     },
     SummarizationService,
+    CorrectionNotesService,
     SummaryExtractor,
   ],
-  controllers: [SummarizationController, SummarizationSettingsController],
+  controllers: [
+    SummarizationController,
+    SummarizationSettingsController,
+    CorrectionNotesController,
+  ],
   exports: [SummarizationService, SummaryExtractor],
 })
 export class SummarizationModule {}

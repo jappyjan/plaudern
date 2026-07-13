@@ -6,5 +6,7 @@ export * from './summarization.processor';
 export * from './summarization.service';
 export * from './summary.extractor';
 export * from './summarization.controller';
+export * from './correction-notes.service';
+export * from './correction-notes.controller';
 export * from './summarization.module';
 export * from './providers/openai.provider';

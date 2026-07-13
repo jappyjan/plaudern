@@ -13,6 +13,7 @@ import {
   ChatMessageEntity,
   CommitmentEntity,
   ConsentSettingsEntity,
+  CorrectionNoteEntity,
   DeadMansSwitchEntity,
   DeadMansSwitchReleaseEntity,
   DecisionEntity,
@@ -112,6 +113,7 @@ import { CreateDeadMansSwitchRelease1720000000049 } from './migrations/172000000
 import { IndexOcrFullText1720000000050 } from './migrations/1720000000050-IndexOcrFullText';
 import { HardenTopicProposals1720000000051 } from './migrations/1720000000051-HardenTopicProposals';
 import { DeadMansSwitchArmingSuspension1720000000052 } from './migrations/1720000000052-DeadMansSwitchArmingSuspension';
+import { CreateCorrectionNotes1720000000053 } from './migrations/1720000000053-CreateCorrectionNotes';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -170,6 +172,7 @@ export const ALL_ENTITIES = [
   DeadMansSwitchEntity,
   DeadMansSwitchReleaseEntity,
   NudgeStateEntity,
+  CorrectionNoteEntity,
 ];
 
 // Referenced as classes (not a glob) so migrations load identically under
@@ -228,6 +231,7 @@ export const ALL_MIGRATIONS = [
   IndexOcrFullText1720000000050,
   HardenTopicProposals1720000000051,
   DeadMansSwitchArmingSuspension1720000000052,
+  CreateCorrectionNotes1720000000053,
 ];
 
 /**

@@ -7,6 +7,7 @@ import {
   type SummarySpeakerDto,
 } from '@plaudern/contracts';
 import {
+  CorrectionNoteEntity,
   ExtractedPayloadEntity,
   InboxItemEntity,
   SpeakerOccurrenceEntity,
@@ -37,6 +38,8 @@ export class SummaryContextService {
   constructor(
     @InjectRepository(SpeakerOccurrenceEntity)
     private readonly occurrences: Repository<SpeakerOccurrenceEntity>,
+    @InjectRepository(CorrectionNoteEntity)
+    private readonly notes: Repository<CorrectionNoteEntity>,
   ) {}
 
   async build(item: InboxItemEntity): Promise<SummaryContext> {
@@ -89,6 +92,14 @@ export class SummaryContextService {
       isSelf: s.isSelf,
     }));
 
+    // User correction notes (oldest first) so the prompt can override
+    // transcription/scanning errors without ever touching the source rows.
+    const noteRows = await this.notes.find({
+      where: { inboxItemId: item.id },
+      order: { createdAt: 'ASC' },
+    });
+    const correctionNotes = noteRows.map((n) => n.body);
+
     return {
       input: {
         transcript,
@@ -101,6 +112,7 @@ export class SummaryContextService {
         // arrive as a generic 'file' upload and still be a real recording).
         sourceKind:
           transcription.provider === TEXT_PASSTHROUGH_PROVIDER_ID ? 'note' : 'recording',
+        correctionNotes: correctionNotes.length > 0 ? correctionNotes : undefined,
       },
       speakers: roster,
     };

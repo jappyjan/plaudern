@@ -25,6 +25,8 @@ import {
   plaudSyncNowResponseSchema,
   plaudTestConnectionResponseSchema,
   consentSettingsSchema,
+  correctionNoteListResponseSchema,
+  correctionNoteMutationResponseSchema,
   speakerTranscriptSchema,
   summarizationSettingsSchema,
   summarySchema,
@@ -59,6 +61,8 @@ import {
   type ItemEventsResponse,
   type LinkResponse,
   type ConsentSettingsDto,
+  type CorrectionNoteListResponse,
+  type CorrectionNoteMutationResponse,
   type SpeakerTranscriptDto,
   type SummarizationSettingsDto,
   type SummaryDto,
@@ -476,6 +480,38 @@ export async function getSummary(itemId: string): Promise<SummaryDto> {
 export async function retrySummary(itemId: string): Promise<SummaryDto> {
   return summarySchema.parse(
     await requestJson(`/inbox/${itemId}/summary/retry`, { method: 'POST' }),
+  );
+}
+
+/** User correction notes on the item, oldest first. */
+export async function listCorrectionNotes(itemId: string): Promise<CorrectionNoteListResponse> {
+  return correctionNoteListResponseSchema.parse(await requestJson(`/inbox/${itemId}/notes`));
+}
+
+/**
+ * Add a correction note ("the name is 'Meier', not 'Maier'"). The server
+ * best-effort queues a fresh summary generation that applies all notes;
+ * `summaryQueued` says whether one was started.
+ */
+export async function addCorrectionNote(
+  itemId: string,
+  body: string,
+): Promise<CorrectionNoteMutationResponse> {
+  return correctionNoteMutationResponseSchema.parse(
+    await requestJson(`/inbox/${itemId}/notes`, {
+      method: 'POST',
+      body: JSON.stringify({ body }),
+    }),
+  );
+}
+
+/** Remove a correction note; the summary is regenerated without it. */
+export async function deleteCorrectionNote(
+  itemId: string,
+  noteId: string,
+): Promise<CorrectionNoteMutationResponse> {
+  return correctionNoteMutationResponseSchema.parse(
+    await requestJson(`/inbox/${itemId}/notes/${noteId}`, { method: 'DELETE' }),
   );
 }
 

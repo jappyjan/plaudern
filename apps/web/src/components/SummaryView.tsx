@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Accordion, AccordionItem, Button, Chip, Spinner } from '@heroui/react';
 import type { SummaryDto, SummaryLayout } from '@plaudern/contracts';
 import { getSummary, retrySummary } from '../lib/api';
+import { CorrectionNotes } from './CorrectionNotes';
 import { Markdown } from './Markdown';
 import { SpeakerRosterContext } from './SpeakerMention';
 
@@ -27,6 +28,9 @@ export function SummaryView({ itemId }: { itemId: string }) {
   const [summary, setSummary] = useState<SummaryDto | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [regenerating, setRegenerating] = useState(false);
+  // Bumped when a correction note queues a regeneration server-side, so the
+  // fetch-and-poll effect re-arms and picks up the fresh in-flight summary.
+  const [pollNonce, setPollNonce] = useState(0);
 
   const load = useCallback(async (): Promise<SummaryDto | null> => {
     try {
@@ -55,7 +59,7 @@ export function SummaryView({ itemId }: { itemId: string }) {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [load]);
+  }, [load, pollNonce]);
 
   const regenerate = useCallback(async () => {
     setRegenerating(true);
@@ -172,6 +176,28 @@ export function SummaryView({ itemId }: { itemId: string }) {
             </AccordionItem>
           </Accordion>
         )}
+
+        <Accordion isCompact className="rounded-medium border border-default-200 px-3">
+          <AccordionItem
+            key="corrections"
+            aria-label="Corrections & notes"
+            title={
+              <span className="text-sm font-medium text-default-500">Corrections & notes</span>
+            }
+            subtitle={
+              <span className="text-xs text-default-400">
+                Fix mistakes in the summary without touching the original
+              </span>
+            }
+          >
+            <div className="pb-2">
+              <CorrectionNotes
+                itemId={itemId}
+                onSummaryQueued={() => setPollNonce((nonce) => nonce + 1)}
+              />
+            </div>
+          </AccordionItem>
+        </Accordion>
 
         {loadError && <p className="text-xs text-danger">{loadError}</p>}
       </div>

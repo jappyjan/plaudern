@@ -36,3 +36,4 @@ export * from './mcp';
 export * from './search';
 export * from './chat';
 export * from './audit';
+export * from './correction-notes';

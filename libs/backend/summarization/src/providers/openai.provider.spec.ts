@@ -88,6 +88,25 @@ describe('buildUserPrompt', () => {
     const prompt = buildUserPrompt({ ...baseInput, targetLanguage: 'German' });
     expect(prompt).toContain('in German, regardless of the transcript');
   });
+
+  it('renders correction notes as an authoritative numbered block before the transcript', () => {
+    const prompt = buildUserPrompt({
+      ...baseInput,
+      correctionNotes: ["The name is 'Meier', not 'Maier'.", 'The amount was 24 EUR.'],
+    });
+    expect(prompt).toContain('Correction notes from the user (authoritative');
+    expect(prompt).toContain("1. The name is 'Meier', not 'Maier'.");
+    expect(prompt).toContain('2. The amount was 24 EUR.');
+    // Corrections come before the transcript so the model reads them first.
+    expect(prompt.indexOf('Correction notes')).toBeLessThan(prompt.indexOf('Transcript:'));
+  });
+
+  it('omits the corrections section when there are no notes', () => {
+    expect(buildUserPrompt(baseInput)).not.toContain('Correction notes');
+    expect(buildUserPrompt({ ...baseInput, correctionNotes: [] })).not.toContain(
+      'Correction notes',
+    );
+  });
 });
 
 describe('parseSummaryResponse', () => {
