@@ -1,8 +1,15 @@
 import { useRef, useState } from 'react';
 import { Button, Progress } from '@heroui/react';
+import { hasDocumentPayload, type SourceType } from '@plaudern/contracts';
 import { useIngest } from '../hooks/useIngest';
 import { extractFileMetadata } from '../lib/fileMetadata';
 import { UploadIcon } from './icons';
+
+function sourceTypeFor(contentType: string): SourceType {
+  if (contentType.startsWith('audio/')) return 'audio';
+  if (hasDocumentPayload(contentType)) return 'image';
+  return 'file';
+}
 
 interface UploadFabProps {
   onSaved: (inboxItemId: string) => void;
@@ -29,7 +36,7 @@ export function UploadFab({ onSaved }: UploadFabProps) {
       const itemId = await ingest({
         blob: file,
         contentType: file.type || 'application/octet-stream',
-        sourceType: file.type.startsWith('audio/') ? 'audio' : 'file',
+        sourceType: sourceTypeFor(file.type),
         occurredAt: extracted.occurredAt ?? new Date(file.lastModified).toISOString(),
         idempotencyKey: `${file.name}:${file.size}:${file.lastModified}`,
         originalFilename: file.name,
@@ -49,10 +56,16 @@ export function UploadFab({ onSaved }: UploadFabProps) {
 
   return (
     <div className="flex flex-col items-end gap-2">
+      {/*
+        Accepts audio, images and PDFs — not just audio. On iOS, `accept="audio/*"`
+        alone maps to the video picker (there is no system audio picker in the
+        Photos flow), which made the button offer videos only and blocked
+        selecting images from the gallery.
+      */}
       <input
         ref={inputRef}
         type="file"
-        accept="audio/*"
+        accept="audio/*,image/*,application/pdf"
         multiple
         className="hidden"
         onChange={(event) => void handleFiles(event.target.files)}

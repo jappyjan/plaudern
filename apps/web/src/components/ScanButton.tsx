@@ -14,8 +14,9 @@ interface ScanFabProps {
  * card, a handwritten note — or upload a PDF — and it flows into the OCR +
  * docmeta pipeline (vault, deadline reminders, business-card contacts).
  *
- * On mobile the `capture` attribute lets the OS offer the camera directly;
- * desktop falls back to a file picker. Accepts images and PDFs.
+ * No `capture` attribute: on iOS it would force the camera open and make the
+ * photo library unreachable. Without it, mobile browsers offer both the camera
+ * and the gallery; desktop falls back to a file picker. Accepts images and PDFs.
  */
 export function ScanFab({ onSaved }: ScanFabProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -56,7 +57,6 @@ export function ScanFab({ onSaved }: ScanFabProps) {
         ref={inputRef}
         type="file"
         accept="image/*,application/pdf"
-        capture="environment"
         multiple
         className="hidden"
         onChange={(event) => void handleFiles(event.target.files)}
