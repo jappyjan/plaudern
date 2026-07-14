@@ -41,6 +41,7 @@ export * from './decision.entity';
 export * from './reminder.entity';
 export * from './nudge-state.entity';
 export * from './item-sensitivity.entity';
+export * from './correction-note.entity';
 export * from './document-metadata.entity';
 export * from './task.entity';
 export * from './task-citation.entity';

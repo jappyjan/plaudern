@@ -168,6 +168,11 @@ export class FakeSummarizationProvider implements SummarizationProvider {
       // language preference reaches the provider.
       `Language: ${input.targetLanguage ?? 'auto'}.`,
       mentions ? `Speakers: ${mentions}.` : 'No speakers detected.',
+      // Echo any user correction notes so tests can assert they reach the
+      // provider on regeneration.
+      ...(input.correctionNotes?.length
+        ? [`Corrections: ${input.correctionNotes.join(' | ')}.`]
+        : []),
       '',
       '```mermaid',
       'flowchart TD',

@@ -83,6 +83,7 @@ export const SYSTEM_PROMPT = [
   '- When you refer to a speaker in prose, mention them with the exact token @[LABEL] using their diarization LABEL (e.g. @[SPEAKER_00]); the app turns these into clickable chips. Never invent a LABEL that is not in the roster. Inside mermaid diagrams use the plain display name instead of the token.',
   '- If no speaker roster is provided, just write naturally without mention tokens.',
   '- Be faithful to the transcript; do not invent facts. Prefer concise bullet points over long paragraphs.',
+  '- If the user message contains correction notes, they are authoritative: the transcript may contain transcription or scanning errors, and where a note contradicts it, follow the note. Apply corrections silently — never mention the notes or the correction process in the output.',
 ].join('\n');
 
 /** Build the user message: roster + metadata + the transcript, plus layout menu. */
@@ -139,6 +140,16 @@ export function buildUserPrompt(input: SummarizationInput): string {
         'the right speaker; write the owner\'s own action items as theirs ("you").',
       );
     }
+  }
+
+  if (input.correctionNotes && input.correctionNotes.length > 0) {
+    parts.push(
+      '',
+      `Correction notes from the user (authoritative — the ${
+        isNote ? 'text below' : 'transcript below'
+      } may contain ${isNote ? 'errors' : 'transcription errors'}; where a note contradicts it, trust the note and apply the correction throughout, e.g. to misheard names, numbers or words). Never quote or mention these notes in the output:`,
+      ...input.correctionNotes.map((note, index) => `${index + 1}. ${note.trim()}`),
+    );
   }
 
   parts.push('', isNote ? 'Note content:' : 'Transcript:', '"""', input.transcript.trim(), '"""');

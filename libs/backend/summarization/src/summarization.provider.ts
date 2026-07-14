@@ -36,6 +36,13 @@ export interface SummarizationInput {
    * prompt wording; defaults to 'recording'.
    */
   sourceKind?: 'recording' | 'note';
+  /**
+   * User correction notes on the item (oldest first): authoritative fixes for
+   * transcription/scanning errors ("the name is 'Meier', not 'Maier'") plus
+   * clarifying context. The prompt instructs the model to trust them over the
+   * transcript; the transcript itself is never altered.
+   */
+  correctionNotes?: string[];
 }
 
 export interface SummarizationResult {
