@@ -1,4 +1,9 @@
-import type { AiCapability, AiProviderProtocol } from '@plaudern/contracts';
+import type {
+  AiCapability,
+  AiCapabilityInactiveReason,
+  AiProviderProtocol,
+  EffectiveAiCapabilitySettingDto,
+} from '@plaudern/contracts';
 
 /**
  * A fully-resolved, ready-to-use AI configuration for one user + capability.
@@ -22,6 +27,13 @@ export interface ResolvedAiConfig {
   /** The provider connection backing this resolution. */
   providerId: string;
   providerName: string;
+}
+
+/** Shared result used by runtime resolution and the settings read model. */
+export interface AiConfigResolution {
+  effective: EffectiveAiCapabilitySettingDto;
+  config: ResolvedAiConfig | null;
+  inactiveReason: AiCapabilityInactiveReason | null;
 }
 
 /** Read a numeric param with a fallback (params are stored as loose JSON). */

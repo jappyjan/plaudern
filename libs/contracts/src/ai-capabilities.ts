@@ -71,24 +71,58 @@ export const aiCapabilityCatalogEntrySchema = z.object({
 });
 export type AiCapabilityCatalogEntry = z.infer<typeof aiCapabilityCatalogEntrySchema>;
 
-/** Per-user assignment of a capability to a provider connection. */
+/** Sparse per-capability values stored as an override of the shared group. */
+export const aiCapabilityOverrideSchema = z.object({
+  /** null inherits the group's provider. */
+  providerId: z.string().uuid().nullable(),
+  /** null inherits the group or registry model. */
+  model: z.string().nullable(),
+  /** null inherits the group or registry timeout. */
+  timeoutMs: z.number().int().positive().nullable(),
+  /** null means there is no stored row; false is an explicit disable. */
+  enabled: z.boolean().nullable(),
+  params: z.record(z.string(), z.unknown()),
+});
+export type AiCapabilityOverrideDto = z.infer<typeof aiCapabilityOverrideSchema>;
+
+export const aiCapabilityValueSourceSchema = z.enum(['capability', 'group', 'registry']);
+export type AiCapabilityValueSource = z.infer<typeof aiCapabilityValueSourceSchema>;
+
+export const aiCapabilityInactiveReasonSchema = z.enum([
+  'explicitly-disabled',
+  'group-disabled',
+  'opt-in-required',
+  'no-provider',
+  'provider-unavailable',
+  'incompatible-provider',
+  'no-model',
+]);
+export type AiCapabilityInactiveReason = z.infer<typeof aiCapabilityInactiveReasonSchema>;
+
+/** Fully resolved, non-secret values the backend will use for this capability. */
+export const effectiveAiCapabilitySettingSchema = z.object({
+  providerId: z.string().uuid().nullable(),
+  providerSource: aiCapabilityValueSourceSchema.nullable(),
+  model: z.string().nullable(),
+  modelSource: aiCapabilityValueSourceSchema,
+  timeoutMs: z.number().int().positive(),
+  params: z.record(z.string(), z.unknown()),
+});
+export type EffectiveAiCapabilitySettingDto = z.infer<
+  typeof effectiveAiCapabilitySettingSchema
+>;
+
+/** Per-user override and backend-resolved state for one capability. */
 export const aiCapabilitySettingSchema = z.object({
   capability: aiCapabilitySchema,
-  /** Chosen provider connection id, or null when unconfigured (⇒ disabled). */
-  providerId: z.string().uuid().nullable(),
-  /** Model override; null falls back to the capability's default. */
-  model: z.string().nullable(),
-  /** Request timeout override in ms; null falls back to the default. */
-  timeoutMs: z.number().int().positive().nullable(),
-  /** User toggle to switch the capability off without unassigning the provider. */
-  enabled: z.boolean(),
-  /** Capability-specific params (see the catalog descriptors). */
-  params: z.record(z.string(), z.unknown()),
+  override: aiCapabilityOverrideSchema,
+  effective: effectiveAiCapabilitySettingSchema,
   /**
-   * Whether the capability currently resolves to a usable provider — the
-   * DB-settings equivalent of the old "API key present" gate.
+   * Whether the capability currently resolves to a usable provider. The reason
+   * is populated whenever this is false so callers do not reconstruct policy.
    */
   active: z.boolean(),
+  inactiveReason: aiCapabilityInactiveReasonSchema.nullable(),
 });
 export type AiCapabilitySettingDto = z.infer<typeof aiCapabilitySettingSchema>;
 
@@ -99,7 +133,7 @@ export const aiCapabilitiesResponseSchema = z.object({
 export type AiCapabilitiesResponseDto = z.infer<typeof aiCapabilitiesResponseSchema>;
 
 export const updateAiCapabilityRequestSchema = z.object({
-  /** null unassigns the provider (disables the capability). */
+  /** null removes the provider override and inherits the group provider. */
   providerId: z.string().uuid().nullable(),
   model: z.string().max(200).nullable().optional(),
   timeoutMs: z.number().int().positive().nullable().optional(),

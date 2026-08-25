@@ -10,7 +10,7 @@ import {
   decryptSecret,
 } from '@plaudern/persistence';
 import { capabilityMeta } from './capability-registry';
-import type { ResolvedAiConfig } from './resolved-config';
+import type { AiConfigResolution, ResolvedAiConfig } from './resolved-config';
 
 interface UserAiConfig {
   providers: Map<string, AiProviderEntity>;
@@ -83,6 +83,11 @@ export class AiConfigService {
    * or has explicitly disabled it.
    */
   async resolve(userId: string, capability: AiCapability): Promise<ResolvedAiConfig | null> {
+    return (await this.resolveDetailed(userId, capability)).config;
+  }
+
+  /** Resolve runtime config and the non-secret effective values for API reads. */
+  async resolveDetailed(userId: string, capability: AiCapability): Promise<AiConfigResolution> {
     const user = await this.load(userId);
     return this.resolveFrom(user, capability);
   }
@@ -92,28 +97,45 @@ export class AiConfigService {
     return (await this.resolve(userId, capability)) !== null;
   }
 
-  private resolveFrom(user: UserAiConfig, capability: AiCapability): ResolvedAiConfig | null {
+  private resolveFrom(user: UserAiConfig, capability: AiCapability): AiConfigResolution {
     const meta = capabilityMeta(capability);
     const override = user.settings.get(capability);
     const group = user.groups.get(meta.kind);
 
+    const providerId = override?.providerId ?? group?.providerId ?? null;
+    const providerSource = override?.providerId ? 'capability' : group?.providerId ? 'group' : null;
+    const model = override?.model ?? group?.model ?? meta.defaultModel;
+    const modelSource = override?.model ? 'capability' : group?.model ? 'group' : 'registry';
+    const timeoutMs = override?.timeoutMs ?? group?.timeoutMs ?? meta.defaultTimeoutMs;
+    const params = {
+      ...meta.defaultParams,
+      ...(group?.params ?? {}),
+      ...(override?.params ?? {}),
+    };
+    const effective = { providerId, providerSource, model, modelSource, timeoutMs, params } as const;
+
+    const inactive = (
+      inactiveReason: AiConfigResolution['inactiveReason'],
+    ): AiConfigResolution => ({ effective, config: null, inactiveReason });
+
     // Disable checks: an explicit per-task disable, or the whole group off.
-    if (override && override.enabled === false) return null;
-    if (group && group.enabled === false) return null;
+    if (override?.enabled === false) return inactive('explicitly-disabled');
+    if (group?.enabled === false) return inactive('group-disabled');
 
     // Opt-in capabilities (only web_research) stay off unless the user has
     // explicitly enabled them with their own provider in the Advanced view —
     // configuring the shared chat group must not silently switch them on.
-    if (meta.optIn && !(override?.providerId && override.enabled !== false)) return null;
+    if (meta.optIn && !override?.providerId) {
+      return inactive('opt-in-required');
+    }
 
-    // Layer the setting: per-task override ?? shared group ?? registry default.
-    const providerId = override?.providerId ?? group?.providerId ?? null;
-    if (!providerId) return null;
+    if (!providerId) return inactive('no-provider');
     const provider = user.providers.get(providerId);
-    if (!provider) return null;
-
-    const model = override?.model ?? group?.model ?? meta.defaultModel;
-    if (!model) return null;
+    if (!provider) return inactive('provider-unavailable');
+    if (!meta.compatibleProtocols.includes(provider.protocol)) {
+      return inactive('incompatible-provider');
+    }
+    if (!model) return inactive('no-model');
 
     let apiKey: string | null = null;
     if (provider.apiKeyEncrypted) {
@@ -123,24 +145,24 @@ export class AiConfigService {
         this.logger.error(
           `failed to decrypt API key for provider '${provider.name}' (${provider.id}): ${(err as Error).message}`,
         );
-        return null;
+        return inactive('provider-unavailable');
       }
     }
 
     return {
-      capability,
-      protocol: provider.protocol,
-      baseUrl: provider.baseUrl.replace(/\/+$/, ''),
-      apiKey,
-      model,
-      timeoutMs: override?.timeoutMs ?? group?.timeoutMs ?? meta.defaultTimeoutMs,
-      params: {
-        ...meta.defaultParams,
-        ...(group?.params ?? {}),
-        ...(override?.params ?? {}),
+      effective,
+      inactiveReason: null,
+      config: {
+        capability,
+        protocol: provider.protocol,
+        baseUrl: provider.baseUrl.replace(/\/+$/, ''),
+        apiKey,
+        model,
+        timeoutMs,
+        params,
+        providerId: provider.id,
+        providerName: provider.name,
       },
-      providerId: provider.id,
-      providerName: provider.name,
     };
   }
 }
