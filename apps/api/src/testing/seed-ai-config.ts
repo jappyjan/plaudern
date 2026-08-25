@@ -1,7 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
-import { AiConfigService } from '@plaudern/ai-config';
+import { AiConfigService, capabilityMeta } from '@plaudern/ai-config';
 import type { AiCapability, AiProviderProtocol } from '@plaudern/contracts';
 import {
   AiCapabilitySettingEntity,
@@ -33,7 +33,9 @@ export async function seedAiCapability(
   } = {},
 ): Promise<void> {
   const userId = opts.userId ?? DEFAULT_USER_ID;
-  const providerName = opts.providerName ?? 'test-provider';
+  const meta = capabilityMeta(capability);
+  const protocol = opts.protocol ?? meta.compatibleProtocols[0];
+  const providerName = opts.providerName ?? `test-${protocol}-provider`;
   const encryptionSecret = process.env.APP_ENCRYPTION_SECRET ?? 'change-me';
 
   const providerRepo = app.get<Repository<AiProviderEntity>>(
@@ -50,8 +52,8 @@ export async function seedAiCapability(
       providerRepo.create({
         userId,
         name: providerName,
-        protocol: opts.protocol ?? 'openai-compatible',
-        baseUrl: opts.baseUrl ?? 'https://provider.test/v1',
+        protocol,
+        baseUrl: opts.baseUrl ?? meta.defaultBaseUrl ?? 'https://provider.test/v1',
         apiKeyEncrypted: apiKey === null ? null : encryptSecret(apiKey, encryptionSecret),
       }),
     );
