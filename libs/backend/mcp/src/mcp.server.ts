@@ -11,7 +11,6 @@ import {
   commitmentStatusSchema,
   decisionStatusSchema,
   entityTypeSchema,
-  journalPeriodTypeSchema,
   questionDirectionSchema,
   questionStatusSchema,
   relationTypeSchema,
@@ -36,7 +35,7 @@ function jsonResult(payload: unknown) {
  *
  * The knowledge-graph tools (list_entities/get_entity/list_relations/list_facts/
  * list_tasks/list_commitments/list_questions/list_decisions/list_reminders/
- * list_topics/get_topic/list_journal_periods/get_journal/list_calendar_events)
+ * list_topics/get_topic/list_calendar_events)
  * wrap the same per-user read services the web app uses, and every one that
  * returns item-derived content routes it through the JJ-21 sensitivity gate:
  * sensitive/secret and not-yet-classified items are excluded (fail closed), so
@@ -55,8 +54,7 @@ export function buildMcpServer(userId: string, tools: McpToolsService): McpServe
       'typed edges between entities; list_facts reads durable personal facts; ' +
       'list_tasks, list_commitments, list_questions, list_decisions and list_reminders ' +
       'read the extracted open loops; list_topics and get_topic read the topic taxonomy ' +
-      'and item assignments; list_journal_periods and get_journal read the daily/weekly/' +
-      'monthly/yearly rollups; list_calendar_events reads calendar events and their ' +
+      'and item assignments; list_calendar_events reads calendar events and their ' +
       'linked recordings. All tools are read-only and scoped to this user; sensitive ' +
       'content is filtered out. Compact list_* entries carry ids — pass them to the ' +
       'matching get_* for full detail, and page with the returned nextCursor.',
@@ -389,42 +387,6 @@ export function buildMcpServer(userId: string, tools: McpToolsService): McpServe
       },
     },
     async (args) => jsonResult(await tools.getTopic(userId, args)),
-  );
-
-  server.registerTool(
-    'list_journal_periods',
-    {
-      title: 'List journal periods',
-      description:
-        'List which journal rollups exist for a granularity (day/week/month/year), ' +
-        'newest first — periodKey and metadata only. Pass a periodKey to get_journal ' +
-        'for the composed narrative.',
-      inputSchema: {
-        periodType: journalPeriodTypeSchema.describe('day, week, month or year.'),
-      },
-    },
-    async (args) => jsonResult(await tools.listJournalPeriods(userId, args)),
-  );
-
-  server.registerTool(
-    'get_journal',
-    {
-      title: 'Get journal rollup',
-      description:
-        'Fetch one journal rollup\'s composed narrative for a period. periodType is ' +
-        'day/week/month/year and periodKey is its key (e.g. 2026-06-14 for a day). ' +
-        'Returns the markdown body with its citations; if any source item is sensitive ' +
-        'the body is withheld and redacted is true.',
-      inputSchema: {
-        periodType: journalPeriodTypeSchema.describe('day, week, month or year.'),
-        periodKey: z
-          .string()
-          .min(1)
-          .max(32)
-          .describe('The period key, e.g. 2026-06-14 (day) or 2026-W24 (week).'),
-      },
-    },
-    async (args) => jsonResult(await tools.getJournal(userId, args)),
   );
 
   server.registerTool(

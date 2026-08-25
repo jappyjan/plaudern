@@ -18,7 +18,6 @@ export const aiCapabilitySchema = z.enum([
   'web_research',
   'topics',
   'topic_docs',
-  'journal',
   'commitments',
   'questions',
   'tasks',

@@ -4,7 +4,7 @@
  * A memory prosthesis that confabulates is worse than none, so every generated
  * claim in a brief/answer/living-document must carry a citation to a source.
  * The canonical marker-positioning contract and the clause-level coverage check
- * live HERE and are reused by every prose-generating kind (memory chat, journal,
+ * live HERE and are reused by every prose-generating kind (memory chat,
  * living topic documents) rather than copy-pasted per kind.
  *
  * Two orthogonal pieces:
@@ -56,7 +56,7 @@ export interface CitationCoverageOptions {
   /**
    * When true, ANY uncited substantive claim forces low confidence — memory
    * chat's strict contract, where a single unsupported sentence is enough to
-   * hedge the whole answer. When false (journal/topic-docs), the softer
+   * hedge the whole answer. When false (topic documents), the softer
    * coverage-ratio threshold is used so normally-cited prose isn't over-flagged.
    */
   strictUncited?: boolean;

@@ -136,7 +136,7 @@ describe('analyzeCitationCoverage — strict (memory chat contract)', () => {
   });
 });
 
-describe('analyzeCitationCoverage — ratio (journal / topic-docs)', () => {
+describe('analyzeCitationCoverage — ratio (topic documents)', () => {
   it('tolerates a minority of uncited claims but flags a majority', () => {
     // 3 of 4 cited → ratio 0.75 > 0.5 → high.
     const mostlyCited = analyzeCitationCoverage(

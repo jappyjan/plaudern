@@ -17,8 +17,8 @@
  *
  * The identifier-guarded marker regexes and the clause-level coverage check are
  * SHARED across every prose-generating kind — they live in `@plaudern/citations`
- * so chat, journal, and topic documents enforce one positioning contract. Only
- * the chat-specific renumbering lives here; unlike the journal/topic-doc
+ * so chat and topic documents enforce one positioning contract. Only
+ * the chat-specific renumbering lives here; unlike the topic-document
  * sanitizers, chat renumbers survivors densely.
  */
 

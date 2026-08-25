@@ -209,22 +209,6 @@ const REGISTRY: Record<AiCapability, CapabilityMeta> = {
     legacyEnvPrefix: 'TOPIC_DOCS',
     legacyEnvFallbackPrefix: 'SUMMARIZATION',
   },
-  journal: {
-    capability: 'journal',
-    label: 'Auto-journal',
-    description: 'Generates day/week/month/year journal entries.',
-    kind: 'chat',
-    compatibleProtocols: CHAT_PROTOCOLS,
-    defaultBaseUrl: 'https://api.deepseek.com',
-    defaultModel: 'deepseek-v4-flash',
-    defaultTimeoutMs: 120_000,
-    optIn: false,
-    inheritsFrom: 'summarization',
-    defaultParams: {},
-    params: NO_PARAMS,
-    legacyEnvPrefix: 'JOURNAL',
-    legacyEnvFallbackPrefix: 'SUMMARIZATION',
-  },
   commitments: {
     capability: 'commitments',
     label: 'Commitments',
@@ -488,7 +472,7 @@ const GROUP_DEFS: Record<
   chat: {
     label: 'Reasoning & Chat',
     description:
-      'The text model behind summaries, extraction (tasks, entities, topics, …), journaling and memory chat.',
+      'The text model behind summaries, extraction (tasks, entities, topics, …) and memory chat.',
     primary: 'summarization',
   },
   vision: {

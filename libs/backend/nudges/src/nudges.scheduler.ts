@@ -25,7 +25,7 @@ const DEFAULT_DELAY_MS = 25_000;
  * promise. Firing is idempotent (`nudge_state.nudgedAt`), so a nudge fires once
  * and survives re-extraction; the sweep itself is a no-op when nothing is due.
  *
- * Mirrors the journal scheduler's guarantees: feature-gated
+ * Provides feature-gated scheduling guarantees:
  * (NUDGES_SCHEDULER_ENABLED), non-blocking (arms timers and returns), and a
  * Postgres advisory lock so exactly one replica sweeps (a no-op on sqlite).
  */

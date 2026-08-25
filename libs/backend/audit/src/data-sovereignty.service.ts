@@ -27,7 +27,6 @@ import {
   ExtractionRunEntity,
   ItemSensitivityEntity,
   ItemTopicEntity,
-  JournalDocumentEntity,
   McpTokenEntity,
   NotificationCategoryPreferenceEntity,
   NotificationDeliveryEntity,
@@ -150,7 +149,6 @@ export class DataSovereigntyService {
       // dismiss/snooze decisions. FK-cascades with commitments on Postgres but
       // lingers on sqlite (purge avoids cascades), so wipe it explicitly.
       await em.getRepository(NudgeStateEntity).delete({ userId });
-      await em.getRepository(JournalDocumentEntity).delete({ userId });
       // Entity-graph residue that purge's registry delete leaves behind: aliases
       // and suppressions hold the normalized NAMES of the user's people/places,
       // and extraction runs hold run history + error text. All user-scoped, and

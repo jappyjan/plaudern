@@ -12,7 +12,6 @@ import { QuestionsModule } from '@plaudern/questions';
 import { DecisionsModule } from '@plaudern/decisions';
 import { RemindersModule } from '@plaudern/reminders';
 import { TopicsModule } from '@plaudern/topics';
-import { JournalModule } from '@plaudern/journal';
 import { CalendarModule } from '@plaudern/calendar';
 import { SentinelModule } from '@plaudern/sensitivity';
 import { McpTokenService } from './mcp-token.service';
@@ -28,7 +27,7 @@ import { McpController } from './mcp.controller';
  *
  * JJ-78 extends the surface to the whole knowledge graph the extraction pipeline
  * derives — entities, dossiers, relations, facts, tasks, commitments, questions,
- * decisions, reminders, topics, journal and calendar — by wrapping each domain's
+ * decisions, reminders, topics and calendar — by wrapping each domain's
  * existing per-user read service. Every knowledge-graph tool routes item-derived
  * content through the JJ-21 sensitivity gate (SentinelModule) so sensitive/secret
  * or not-yet-classified items never leak over this external surface.
@@ -47,7 +46,6 @@ import { McpController } from './mcp.controller';
     DecisionsModule,
     RemindersModule,
     TopicsModule,
-    JournalModule,
     CalendarModule,
     SentinelModule,
   ],

@@ -1406,7 +1406,7 @@ function AiCapabilityGroupsSection() {
         <h2 className="text-lg font-semibold">AI settings</h2>
         <p className="text-sm text-default-500">
           Pick which provider and model power each kind of AI task. Set the reasoning model once and
-          every text feature — summaries, extraction, journaling, chat — uses it.
+          every text feature — summaries, extraction and chat — uses it.
         </p>
       </div>
 

@@ -33,7 +33,6 @@ import {
   InboxTombstoneEntity,
   ItemSensitivityEntity,
   ItemTopicEntity,
-  JournalDocumentEntity,
   McpTokenEntity,
   NotificationCategoryPreferenceEntity,
   NotificationDeliveryEntity,
@@ -115,6 +114,7 @@ import { HardenTopicProposals1720000000051 } from './migrations/1720000000051-Ha
 import { DeadMansSwitchArmingSuspension1720000000052 } from './migrations/1720000000052-DeadMansSwitchArmingSuspension';
 import { CreateCorrectionNotes1720000000053 } from './migrations/1720000000053-CreateCorrectionNotes';
 import { AddDocumentDateOverride1720000000054 } from './migrations/1720000000054-AddDocumentDateOverride';
+import { DropJournalDocuments1720000000055 } from './migrations/1720000000055-DropJournalDocuments';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -129,7 +129,6 @@ export const ALL_ENTITIES = [
   TopicProposalEntity,
   TopicProposalRunEntity,
   TopicDocumentEntity,
-  JournalDocumentEntity,
   CommitmentEntity,
   QuestionEntity,
   DecisionEntity,
@@ -234,6 +233,7 @@ export const ALL_MIGRATIONS = [
   DeadMansSwitchArmingSuspension1720000000052,
   CreateCorrectionNotes1720000000053,
   AddDocumentDateOverride1720000000054,
+  DropJournalDocuments1720000000055,
 ];
 
 /**

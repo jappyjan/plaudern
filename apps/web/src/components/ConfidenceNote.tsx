@@ -8,7 +8,7 @@ import { Chip } from '@heroui/react';
  *
  * Rendered as a plain HeroUI `Chip` (no Modal/Accordion) so it is safe on the
  * iOS PWA, where framer-motion-backed overlays drop their opens. Shared across
- * every prose surface (chat, journal, topic documents) so the phrasing and look
+ * every prose surface (chat and topic documents) so the phrasing and look
  * stay identical.
  */
 export function ConfidenceNote({
