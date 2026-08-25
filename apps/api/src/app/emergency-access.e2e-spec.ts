@@ -17,6 +17,7 @@ process.env.CALENDAR_POLL_INTERVAL_MS = '0';
 process.env.DEAD_MANS_SWITCH_SCHEDULER_ENABLED = 'false';
 process.env.DEAD_MANS_SWITCH_GRACE_DAYS = '0';
 process.env.PUBLIC_APP_URL = 'https://app.test';
+process.env.APP_ENCRYPTION_SECRET = 'emergency-access-e2e-secret';
 
 import { randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
