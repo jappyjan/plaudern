@@ -10,7 +10,7 @@ import { decryptSecret, encryptSecret } from './secret-crypto';
 import { rotateEncryptionSecret } from './rotate-encryption-secret';
 
 const OLD_SECRET = 'old-secret-that-may-have-been-weak';
-const NEW_SECRET = 'new-secret-0123456789abcdef0123456789abcdef';
+const NEW_SECRET = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=';
 
 describe('rotateEncryptionSecret', () => {
   let dataSource: DataSource;
@@ -44,6 +44,16 @@ describe('rotateEncryptionSecret', () => {
       preset: null,
       apiKeyEncrypted: encryptSecret('api-key', OLD_SECRET),
     });
+    await dataSource.getRepository(AiProviderEntity).save(
+      Array.from({ length: 100 }, (_, index) => ({
+        userId,
+        name: `provider-${index}`,
+        protocol: 'openai-compatible' as const,
+        baseUrl: 'https://provider.test',
+        preset: null,
+        apiKeyEncrypted: encryptSecret(`api-key-${index}`, OLD_SECRET),
+      })),
+    );
     await dataSource.getRepository(PlaudSettingsEntity).save({
       userId,
       email: 'user@example.test',
@@ -64,13 +74,17 @@ describe('rotateEncryptionSecret', () => {
       tokenHash: 'hash',
     });
 
-    await expect(rotateEncryptionSecret(dataSource, OLD_SECRET, NEW_SECRET)).resolves.toBe(5);
+    await expect(rotateEncryptionSecret(dataSource, OLD_SECRET, NEW_SECRET)).resolves.toBe(105);
 
     const provider = await dataSource.getRepository(AiProviderEntity).findOneByOrFail({ userId });
     const plaud = await dataSource.getRepository(PlaudSettingsEntity).findOneByOrFail({ userId });
     const calendar = await dataSource.getRepository(CalendarFeedEntity).findOneByOrFail({ userId });
     const email = await dataSource.getRepository(EmailSettingsEntity).findOneByOrFail({ userId });
     expect(decryptSecret(provider.apiKeyEncrypted!, NEW_SECRET)).toBe('api-key');
+    const lastProvider = await dataSource
+      .getRepository(AiProviderEntity)
+      .findOneByOrFail({ userId, name: 'provider-99' });
+    expect(decryptSecret(lastProvider.apiKeyEncrypted!, NEW_SECRET)).toBe('api-key-99');
     expect(decryptSecret(plaud.passwordEncrypted, NEW_SECRET)).toBe('password');
     expect(decryptSecret(calendar.urlEncrypted!, NEW_SECRET)).toBe('https://calendar.test/secret');
     expect(decryptSecret(calendar.googleRefreshTokenEncrypted!, NEW_SECRET)).toBe('refresh-token');

@@ -1,9 +1,19 @@
 import { validateEnvironment } from './environment';
 
 describe('validateEnvironment', () => {
-  const strongSecret = '0123456789abcdef0123456789abcdef';
+  const strongSecret = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=';
 
-  it.each([undefined, '', 'change-me', 'test-secret', 'short', 'a'.repeat(32), 'change-me'.repeat(4)])(
+  it.each([
+    undefined,
+    '',
+    'change-me',
+    'test-secret',
+    'short',
+    'a'.repeat(32),
+    'change-me'.repeat(4),
+    'abcdefghijklmnopqrstuvwx12345678',
+    'A'.repeat(44),
+  ])(
     'rejects a missing, default, or weak encryption secret (%p)',
     (secret) => {
       expect(() =>

@@ -295,8 +295,8 @@ curl -s localhost:3000/api/v1/inbox
 ## Configuration reference
 
 Backend env: `apps/api/.env.example` (DB, S3/MinIO, Redis, hosted-API keys).
-`APP_ENCRYPTION_SECRET` is always required and must contain at least 32
-characters. Generate it with `openssl rand -base64 32`, store it in a secret
+`APP_ENCRYPTION_SECRET` is always required and must be valid base64 encoding at
+least 32 bytes. Generate it with `openssl rand -base64 32`, store it in a secret
 manager, do not log it, and back it up separately from the database. Losing the
 key makes encrypted credentials unrecoverable.
 
