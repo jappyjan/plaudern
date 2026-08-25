@@ -61,19 +61,11 @@ export class AiCapabilityService {
   async getResponse(userId: string): Promise<AiCapabilitiesResponseDto> {
     const rows = await this.repo.find({ where: { userId } });
     const byCapability = new Map(rows.map((r) => [r.capability as AiCapability, r]));
-    const settings: AiCapabilitySettingDto[] = [];
-    for (const capability of ALL_CAPABILITIES) {
-      const row = byCapability.get(capability);
-      settings.push({
-        capability,
-        providerId: row?.providerId ?? null,
-        model: row?.model ?? null,
-        timeoutMs: row?.timeoutMs ?? null,
-        enabled: row?.enabled ?? true,
-        params: row?.params ?? {},
-        active: await this.aiConfig.isEnabled(userId, capability),
-      });
-    }
+    const settings = await Promise.all(
+      ALL_CAPABILITIES.map((capability) =>
+        this.buildSettingDto(userId, capability, byCapability.get(capability)),
+      ),
+    );
     return { catalog: capabilityCatalog(), settings };
   }
 
@@ -108,15 +100,7 @@ export class AiCapabilityService {
     await this.repo.save(row);
     this.aiConfig.invalidate(userId);
 
-    return {
-      capability,
-      providerId: row.providerId,
-      model: row.model,
-      timeoutMs: row.timeoutMs,
-      enabled: row.enabled,
-      params: row.params ?? {},
-      active: await this.aiConfig.isEnabled(userId, capability),
-    };
+    return this.buildSettingDto(userId, capability, row);
   }
 
   /* ---- Capability groups (the simplified, kind-level settings) ----------- */
@@ -133,19 +117,11 @@ export class AiCapabilityService {
 
     const rows = await this.repo.find({ where: { userId } });
     const byCapability = new Map(rows.map((r) => [r.capability as AiCapability, r]));
-    const settings: AiCapabilitySettingDto[] = [];
-    for (const capability of ALL_CAPABILITIES) {
-      const row = byCapability.get(capability);
-      settings.push({
-        capability,
-        providerId: row?.providerId ?? null,
-        model: row?.model ?? null,
-        timeoutMs: row?.timeoutMs ?? null,
-        enabled: row?.enabled ?? true,
-        params: row?.params ?? {},
-        active: await this.aiConfig.isEnabled(userId, capability),
-      });
-    }
+    const settings = await Promise.all(
+      ALL_CAPABILITIES.map((capability) =>
+        this.buildSettingDto(userId, capability, byCapability.get(capability)),
+      ),
+    );
     return { groups, catalog: capabilityCatalog(), settings };
   }
 
@@ -229,6 +205,27 @@ export class AiCapabilityService {
       active,
       memberCapabilities: meta.memberCapabilities,
       overriddenCapabilities,
+    };
+  }
+
+  private async buildSettingDto(
+    userId: string,
+    capability: AiCapability,
+    row: AiCapabilitySettingEntity | undefined,
+  ): Promise<AiCapabilitySettingDto> {
+    const resolution = await this.aiConfig.resolveDetailed(userId, capability);
+    return {
+      capability,
+      override: {
+        providerId: row?.providerId ?? null,
+        model: row?.model ?? null,
+        timeoutMs: row?.timeoutMs ?? null,
+        enabled: row?.enabled ?? null,
+        params: row?.params ?? {},
+      },
+      effective: resolution.effective,
+      active: resolution.config !== null,
+      inactiveReason: resolution.inactiveReason,
     };
   }
 }

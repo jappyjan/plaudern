@@ -198,6 +198,38 @@ describe('AiConfigService', () => {
       service.invalidate(USER); // the direct DB write bypasses the service cache
       expect(await service.resolve(USER, 'web_research')).not.toBeNull();
     });
+
+    it('uses the same policy for runtime config and the effective read model', async () => {
+      const provider = await createProvider();
+      await setGroup('chat', { providerId: provider.id, model: 'shared-model' });
+      await assign('journal', { providerId: null, model: 'journal-model' });
+
+      const resolution = await service.resolveDetailed(USER, 'journal');
+      expect(resolution.effective).toMatchObject({
+        providerId: provider.id,
+        providerSource: 'group',
+        model: 'journal-model',
+        modelSource: 'capability',
+      });
+      expect(resolution.config).toMatchObject({
+        providerId: resolution.effective.providerId,
+        model: resolution.effective.model,
+        timeoutMs: resolution.effective.timeoutMs,
+        params: resolution.effective.params,
+      });
+      expect(resolution.inactiveReason).toBeNull();
+    });
+
+    it('reports why an otherwise configured capability is inactive', async () => {
+      const provider = await createProvider();
+      await setGroup('chat', { providerId: provider.id });
+      await assign('journal', { enabled: false });
+
+      const resolution = await service.resolveDetailed(USER, 'journal');
+      expect(resolution.effective.providerId).toBe(provider.id);
+      expect(resolution.config).toBeNull();
+      expect(resolution.inactiveReason).toBe('explicitly-disabled');
+    });
   });
 
   describe('keyless provider', () => {

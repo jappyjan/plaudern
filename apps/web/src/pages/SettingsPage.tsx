@@ -98,6 +98,11 @@ import {
   updateSummarizationSettings,
 } from '../lib/api';
 import { disablePush, enablePush, isPushSupported } from '../lib/push';
+import {
+  createAiCapabilityDraft,
+  inheritedProviderOptionLabel,
+  reconcileAiCapabilityDraft,
+} from '../lib/ai-capability-draft';
 import { formatDateTime } from '../lib/format';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { MoonIcon, SunIcon } from '../components/icons';
@@ -934,25 +939,34 @@ function AiCapabilityRow({
   entry,
   setting,
   providers,
+  resetGeneration,
   onSaved,
 }: {
   entry: AiCapabilityCatalogEntry;
   setting: AiCapabilitySettingDto;
   providers: AiProviderDto[];
-  onSaved: (next: AiCapabilitySettingDto) => void;
+  resetGeneration: number;
+  onSaved: () => Promise<void>;
 }) {
-  const [providerId, setProviderId] = useState<string | null>(setting.providerId);
-  const [model, setModel] = useState(setting.model ?? '');
-  const [enabled, setEnabled] = useState(setting.enabled);
-  const [params, setParams] = useState<Record<string, unknown>>(setting.params);
+  const [draft, setDraft] = useState(() => createAiCapabilityDraft(setting, resetGeneration));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
+  useEffect(() => {
+    setDraft((current) => reconcileAiCapabilityDraft(current, setting, resetGeneration));
+  }, [setting, resetGeneration]);
+
   const compatible = providers.filter((p) => entry.compatibleProtocols.includes(p.protocol));
+  const effectiveProvider = providers.find((p) => p.id === setting.effective.providerId);
+  const inheritedProviderLabel = inheritedProviderOptionLabel(entry.optIn, effectiveProvider?.name);
 
   const setParam = (key: string, value: unknown) => {
-    setParams((prev) => ({ ...prev, [key]: value }));
+    setDraft((prev) => ({
+      ...prev,
+      params: { ...prev.params, [key]: value },
+      dirty: true,
+    }));
     setSaved(false);
   };
 
@@ -961,13 +975,14 @@ function AiCapabilityRow({
     setError(null);
     setSaved(false);
     try {
-      const next = await updateAiCapability(entry.capability, {
-        providerId,
-        model: model.trim() === '' ? null : model.trim(),
-        enabled,
-        params,
+      await updateAiCapability(entry.capability, {
+        providerId: draft.providerId,
+        model: draft.model.trim() === '' ? null : draft.model.trim(),
+        enabled: draft.enabled,
+        params: draft.params,
       });
-      onSaved(next);
+      await onSaved();
+      setDraft((current) => ({ ...current, dirty: false }));
       setSaved(true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -1001,15 +1016,28 @@ function AiCapabilityRow({
         </span>
       </div>
 
+      <p className="text-xs text-default-500">
+        Effective: {effectiveProvider?.name ?? 'no provider'}
+        {setting.effective.model ? ` · ${setting.effective.model}` : ''}
+        {setting.effective.providerSource === 'group' ? ' · inherited from group' : ''}
+        {!setting.active && setting.inactiveReason
+          ? ` · ${setting.inactiveReason.replaceAll('-', ' ')}`
+          : ''}
+      </p>
+
       <div className="flex flex-col gap-3 sm:flex-row">
         <Select
           label="Provider"
           className="sm:flex-1"
-          selectedKeys={[providerId ?? NO_PROVIDER_KEY]}
+          selectedKeys={[draft.providerId ?? NO_PROVIDER_KEY]}
           isDisabled={saving}
           onSelectionChange={(keys) => {
             const key = Array.from(keys)[0];
-            setProviderId(key === NO_PROVIDER_KEY || key === undefined ? null : String(key));
+            setDraft((prev) => ({
+              ...prev,
+              providerId: key === NO_PROVIDER_KEY || key === undefined ? null : String(key),
+              dirty: true,
+            }));
             setSaved(false);
           }}
           disallowEmptySelection
@@ -1018,16 +1046,16 @@ function AiCapabilityRow({
           }
         >
           {[
-            <SelectItem key={NO_PROVIDER_KEY}>None (disabled)</SelectItem>,
+            <SelectItem key={NO_PROVIDER_KEY}>{inheritedProviderLabel}</SelectItem>,
             ...compatible.map((p) => <SelectItem key={p.id}>{p.name}</SelectItem>),
           ]}
         </Select>
         <Input
           label="Model"
           className="sm:flex-1"
-          value={model}
+          value={draft.model}
           onValueChange={(v) => {
-            setModel(v);
+            setDraft((prev) => ({ ...prev, model: v, dirty: true }));
             setSaved(false);
           }}
           isDisabled={saving}
@@ -1039,7 +1067,7 @@ function AiCapabilityRow({
       {entry.params.length > 0 && (
         <div className="flex flex-col gap-3">
           {entry.params.map((param) => {
-            const value = params[param.key];
+            const value = draft.params[param.key];
             if (param.type === 'boolean') {
               return (
                 <Switch
@@ -1078,10 +1106,10 @@ function AiCapabilityRow({
       <div className="flex items-center gap-3">
         <Switch
           size="sm"
-          isSelected={enabled}
+          isSelected={draft.enabled}
           isDisabled={saving}
           onValueChange={(on) => {
-            setEnabled(on);
+            setDraft((prev) => ({ ...prev, enabled: on, dirty: true }));
             setSaved(false);
           }}
         >
@@ -1132,7 +1160,7 @@ function AiCapabilityGroupCard({
   providers: AiProviderDto[];
   catalog: AiCapabilityCatalogEntry[];
   settings: AiCapabilitySettingDto[];
-  onChanged: () => void;
+  onChanged: () => Promise<void>;
 }) {
   const [providerId, setProviderId] = useState<string | null>(group.providerId);
   const [model, setModel] = useState(group.model ?? '');
@@ -1142,6 +1170,7 @@ function AiCapabilityGroupCard({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [resetGeneration, setResetGeneration] = useState(0);
 
   useEffect(() => {
     setProviderId(group.providerId);
@@ -1172,7 +1201,7 @@ function AiCapabilityGroupCard({
         params,
       });
       setSaved(true);
-      onChanged();
+      await onChanged();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -1185,7 +1214,8 @@ function AiCapabilityGroupCard({
     setError(null);
     try {
       await resetAiCapabilityGroupOverrides(group.kind);
-      onChanged();
+      await onChanged();
+      setResetGeneration((value) => value + 1);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -1358,6 +1388,7 @@ function AiCapabilityGroupCard({
                     entry={entry}
                     setting={setting}
                     providers={providers}
+                    resetGeneration={resetGeneration}
                     onSaved={onChanged}
                   />
                 );
@@ -1427,7 +1458,7 @@ function AiCapabilityGroupsSection() {
               providers={providers}
               catalog={catalog}
               settings={settings}
-              onChanged={() => void refresh()}
+              onChanged={refresh}
             />
           ))}
         </div>
