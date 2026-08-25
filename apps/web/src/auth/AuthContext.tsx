@@ -29,7 +29,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const [me, authStatus] = await Promise.all([getMe(), getAuthStatus()]);
+      const authStatus = await getAuthStatus();
+      const me = await getMe(authStatus.authDisabled);
       setUser(me);
       setStatus(authStatus);
     } catch {
