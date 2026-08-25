@@ -7,7 +7,6 @@ process.env.DATABASE_URL = ':memory:';
 process.env.STORAGE_DRIVER = 'memory';
 process.env.QUEUE_DRIVER = 'inline';
 process.env.AUTH_DISABLED = 'true'; // single-user mode — auth has its own spec
-process.env.APP_ENCRYPTION_SECRET = 'test-secret';
 process.env.EMAIL_INBOUND_DOMAIN = 'in.example.com';
 process.env.EMAIL_WEBHOOK_SECRET = 'whsec_test_only';
 

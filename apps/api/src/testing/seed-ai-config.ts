@@ -34,7 +34,8 @@ export async function seedAiCapability(
 ): Promise<void> {
   const userId = opts.userId ?? DEFAULT_USER_ID;
   const providerName = opts.providerName ?? 'test-provider';
-  const encryptionSecret = process.env.APP_ENCRYPTION_SECRET ?? 'change-me';
+  const encryptionSecret = process.env.APP_ENCRYPTION_SECRET;
+  if (!encryptionSecret) throw new Error('APP_ENCRYPTION_SECRET is required by AI test seeding');
 
   const providerRepo = app.get<Repository<AiProviderEntity>>(
     getRepositoryToken(AiProviderEntity),

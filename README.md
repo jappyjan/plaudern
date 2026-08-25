@@ -158,6 +158,7 @@ set `ELEVENLABS_API_KEY` and `PYANNOTEAI_API_KEY` (without keys the stack still
 runs; those extraction jobs just fail with a clear error):
 
 ```bash
+export APP_ENCRYPTION_SECRET="$(openssl rand -base64 32)"
 ELEVENLABS_API_KEY=... PYANNOTEAI_API_KEY=... docker compose up -d --build
 open http://localhost:8080          # web app (nginx, proxies /api to the api)
 curl http://localhost:3000/api/health
@@ -178,6 +179,7 @@ three stages.
 pnpm install
 docker compose up -d postgres minio minio-init redis   # infra only
 cp apps/api/.env.example apps/api/.env      # fill in the API keys
+# Set APP_ENCRYPTION_SECRET in apps/api/.env to: openssl rand -base64 32
 pnpm nx run api:migrate                     # apply DB schema
 pnpm nx serve api                           # http://localhost:3000/api
 pnpm nx serve web                           # http://localhost:5173 (proxies /api)
@@ -293,6 +295,42 @@ curl -s localhost:3000/api/v1/inbox
 ## Configuration reference
 
 Backend env: `apps/api/.env.example` (DB, S3/MinIO, Redis, hosted-API keys).
+`APP_ENCRYPTION_SECRET` is always required and must be valid base64 encoding at
+least 32 bytes. Generate it with `openssl rand -base64 32`; do not create one
+from a phrase or reuse a generic generated password. Runtime validation can
+verify encoding, length, and reject known weak values, but cannot prove how much
+entropy an arbitrary value has or how it was generated. Store the generated key
+in a secret manager, do not log it, and back it up separately from the database.
+Losing the key makes encrypted credentials unrecoverable. For Coolify, add
+`APP_ENCRYPTION_SECRET` as an explicit environment variable with that generated
+value; the generic `SERVICE_PASSWORD_*` mechanism does not guarantee the required
+base64 format.
+
+### Rotate the encryption secret
+
+Rotation rewrites AI provider keys, Plaud passwords, calendar feed credentials,
+and email-in tokens. It is atomic: all values are decrypted with the old key and
+re-encrypted with the new key in one database transaction. A wrong old key or
+malformed value aborts and rolls back every write, leaving the old key usable.
+
+1. Back up the database and verify that the old key is recoverable.
+2. Stop every API/worker instance so nothing can write ciphertext during rotation.
+3. Generate a new key with `openssl rand -base64 32`.
+4. Run the command below against the same `DATABASE_URL` as the stopped API.
+
+```bash
+APP_ENCRYPTION_SECRET_OLD='<old key>' \
+APP_ENCRYPTION_SECRET='<new key>' \
+DATABASE_URL='postgres://...' \
+pnpm rotate:encryption-secret
+```
+
+5. Only after the command succeeds, replace `APP_ENCRYPTION_SECRET` in the
+   deployment secret manager and restart all instances with the new key.
+6. Verify credential-backed features, then retire the old key according to your
+   backup retention policy. If the command fails, keep/restart the old key,
+   investigate the reported non-secret error, and retry after correction.
+
 Key switches: `DATABASE_DRIVER` (postgres|sqlite), `STORAGE_DRIVER`
 (s3|memory), `QUEUE_DRIVER` (bull|inline), `SPEAKER_ID_PROVIDER`
 (pyannoteai|off; `pyannoteai` needs `PYANNOTEAI_API_KEY`),

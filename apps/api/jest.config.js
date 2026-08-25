@@ -9,6 +9,7 @@ module.exports = {
   rootDir: '.',
   testMatch: ['**/*.spec.ts', '**/*.e2e-spec.ts'],
   testPathIgnorePatterns: ['\\.integration-spec\\.ts$'],
+  setupFiles: ['<rootDir>/jest.setup.js'],
   moduleFileExtensions: ['ts', 'js', 'json'],
   moduleNameMapper: {
     // Order matters: the specific contracts mapping must precede the generic

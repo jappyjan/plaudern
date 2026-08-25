@@ -57,8 +57,8 @@ services:
       QUEUE_DRIVER: bull
       REDIS_URL: redis://redis:6379
       # General-purpose key encrypting secrets stored in Postgres (e.g. the
-      # Plaud password) — override in production.
-      APP_ENCRYPTION_SECRET: ${APP_ENCRYPTION_SECRET:-change-me}
+       # Plaud password). Compose refuses to start until this is explicitly set.
+      APP_ENCRYPTION_SECRET: ${APP_ENCRYPTION_SECRET:?set APP_ENCRYPTION_SECRET to a generated secret}
       # --- Authentication (passkeys / WebAuthn) ---
       # The domain the web app is served from; passkeys are cryptographically
       # bound to it. 'localhost' works locally — set your real domain when

@@ -51,9 +51,10 @@ services:
       - S3_FORCE_PATH_STYLE=true
       - QUEUE_DRIVER=bull
       - REDIS_URL=redis://:${SERVICE_PASSWORD_REDIS}@redis:6379
-      # General-purpose encryption key for secrets stored in the database
-      # (e.g. the Plaud password): Coolify generates & persists it.
-      - APP_ENCRYPTION_SECRET=${SERVICE_PASSWORD_APPENCRYPTION}
+      # General-purpose encryption key for secrets stored in the database.
+      # Set this Coolify variable to the output of: openssl rand -base64 32
+      # Generic SERVICE_PASSWORD_* values do not guarantee the required format.
+      - APP_ENCRYPTION_SECRET=${APP_ENCRYPTION_SECRET:?set APP_ENCRYPTION_SECRET in Coolify to a generated 32-byte base64 key}
       # Passkey (WebAuthn) auth: the RP id must be the web app's domain.
       # SERVICE_FQDN_WEB is the (scheme-less) domain Coolify routes to the
       # web service, so this auto-populates; override AUTH_RP_ID only for

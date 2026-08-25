@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+export { assertStrongEncryptionSecret } from '@plaudern/contracts';
 
 /**
  * Symmetric encryption for secrets stored in the database (the Plaud password,

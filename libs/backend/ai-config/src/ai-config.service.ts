@@ -46,7 +46,9 @@ export class AiConfigService {
     private readonly groups: Repository<AiCapabilityGroupSettingEntity>,
     config: ConfigService,
   ) {
-    this.encryptionSecret = config.get<string>('APP_ENCRYPTION_SECRET', 'change-me');
+    const encryptionSecret = config.get<string>('APP_ENCRYPTION_SECRET');
+    if (!encryptionSecret) throw new Error('APP_ENCRYPTION_SECRET is required');
+    this.encryptionSecret = encryptionSecret;
   }
 
   /** Drop a user's cached config after they edit providers/capabilities. */
