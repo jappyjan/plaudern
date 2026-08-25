@@ -114,6 +114,7 @@ import { IndexOcrFullText1720000000050 } from './migrations/1720000000050-IndexO
 import { HardenTopicProposals1720000000051 } from './migrations/1720000000051-HardenTopicProposals';
 import { DeadMansSwitchArmingSuspension1720000000052 } from './migrations/1720000000052-DeadMansSwitchArmingSuspension';
 import { CreateCorrectionNotes1720000000053 } from './migrations/1720000000053-CreateCorrectionNotes';
+import { AddDocumentDateOverride1720000000054 } from './migrations/1720000000054-AddDocumentDateOverride';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -232,6 +233,7 @@ export const ALL_MIGRATIONS = [
   HardenTopicProposals1720000000051,
   DeadMansSwitchArmingSuspension1720000000052,
   CreateCorrectionNotes1720000000053,
+  AddDocumentDateOverride1720000000054,
 ];
 
 /**

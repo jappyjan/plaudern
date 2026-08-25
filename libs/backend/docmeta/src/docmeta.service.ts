@@ -12,6 +12,7 @@ import type {
   DocumentListResponse,
   ExtractionStatus,
   ItemDocMetaResponse,
+  UpdateDocumentDateOverrideRequest,
 } from '@plaudern/contracts';
 import { AiConfigService } from '@plaudern/ai-config';
 import { InboxService } from '@plaudern/inbox';
@@ -128,6 +129,21 @@ export class DocMetaService {
     return { documents };
   }
 
+  /** Set a user-owned effective date without changing extractor-owned metadata. */
+  async updateDateOverride(
+    userId: string,
+    inboxItemId: string,
+    request: UpdateDocumentDateOverrideRequest,
+  ): Promise<ItemDocMetaResponse> {
+    const row = await this.documents.findOne({ where: { userId, inboxItemId } });
+    if (!row) throw new BadRequestException('item has no extracted document metadata');
+    row.documentDateOverride = request.documentDateOverride
+      ? `${request.documentDateOverride}T00:00:00.000Z`
+      : null;
+    await this.documents.save(row);
+    return this.getItemDocMeta(userId, inboxItemId);
+  }
+
   /** occurredAt (ISO) per inbox item id, for building DTOs. */
   private async occurredByItem(itemIds: string[]): Promise<Map<string, string>> {
     const map = new Map<string, string>();
@@ -155,6 +171,7 @@ export function toDocumentDto(row: DocumentMetadataEntity, occurredAt: string): 
     currency: row.currency,
     iban: row.iban,
     documentDate: row.documentDate,
+    documentDateOverride: row.documentDateOverride ?? null,
     expiryDate: row.expiryDate,
     cancellationDate: row.cancellationDate,
     contact: row.contact,

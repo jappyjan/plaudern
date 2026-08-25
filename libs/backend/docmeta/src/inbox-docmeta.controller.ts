@@ -1,5 +1,8 @@
-import { Controller, Get, Param, Post } from '@nestjs/common';
-import type { ItemDocMetaResponse } from '@plaudern/contracts';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  updateDocumentDateOverrideRequestSchema,
+  type ItemDocMetaResponse,
+} from '@plaudern/contracts';
 import { CurrentUser, type AuthenticatedUser } from '@plaudern/auth';
 import { DocMetaService } from './docmeta.service';
 
@@ -18,6 +21,19 @@ export class InboxDocMetaController {
     @Param('id') id: string,
   ): Promise<ItemDocMetaResponse> {
     return this.docmeta.getItemDocMeta(user.id, id);
+  }
+
+  @Patch(':id/docmeta/date')
+  updateDate(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ): Promise<ItemDocMetaResponse> {
+    const parsed = updateDocumentDateOverrideRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues[0]?.message ?? 'invalid document date');
+    }
+    return this.docmeta.updateDateOverride(user.id, id, parsed.data);
   }
 
   @Post(':id/docmeta/retry')

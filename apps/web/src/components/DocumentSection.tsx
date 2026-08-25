@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Card, CardBody, Chip, Spinner } from '@heroui/react';
+import { Button, Card, CardBody, Chip, Input, Spinner } from '@heroui/react';
 import type { ItemDocMetaResponse, ItemOcrResponse } from '@plaudern/contracts';
 import {
   getItemDocMeta,
   getItemOcr,
   retryItemDocMeta,
   retryItemOcr,
+  updateItemDocumentDate,
 } from '../lib/api';
 import { formatDate } from '../lib/format';
 
@@ -13,6 +14,7 @@ interface DocumentSectionProps {
   itemId: string;
   contentType: string | null | undefined;
   sourceUrl: string | null;
+  onDateUpdated: () => void;
 }
 
 /**
@@ -21,11 +23,19 @@ interface DocumentSectionProps {
  * / Kündigungsfrist), and the recognized OCR text behind a plain toggle
  * (iOS-PWA-safe — no HeroUI overlay). Only rendered for image/PDF items.
  */
-export function DocumentSection({ itemId, contentType, sourceUrl }: DocumentSectionProps) {
+export function DocumentSection({
+  itemId,
+  contentType,
+  sourceUrl,
+  onDateUpdated,
+}: DocumentSectionProps) {
   const [docmeta, setDocmeta] = useState<ItemDocMetaResponse | null>(null);
   const [ocr, setOcr] = useState<ItemOcrResponse | null>(null);
   const [showText, setShowText] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [dateValue, setDateValue] = useState('');
+  const [savingDate, setSavingDate] = useState(false);
+  const [dateError, setDateError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [d, o] = await Promise.all([
@@ -52,8 +62,22 @@ export function DocumentSection({ itemId, contentType, sourceUrl }: DocumentSect
     }
   };
 
+  const saveDate = async (documentDateOverride: string | null) => {
+    setSavingDate(true);
+    setDateError(null);
+    try {
+      setDocmeta(await updateItemDocumentDate(itemId, { documentDateOverride }));
+      onDateUpdated();
+    } catch (cause) {
+      setDateError(cause instanceof Error ? cause.message : 'Could not save document date');
+    } finally {
+      setSavingDate(false);
+    }
+  };
+
   const isImage = (contentType ?? '').startsWith('image/');
   const doc = docmeta?.document ?? null;
+  const effectiveDate = doc?.documentDateOverride ?? doc?.documentDate ?? null;
   const pending =
     docmeta?.status === 'queued' ||
     docmeta?.status === 'processing' ||
@@ -100,9 +124,9 @@ export function DocumentSection({ itemId, contentType, sourceUrl }: DocumentSect
               <Chip size="sm" variant="flat" color="primary">
                 {doc.documentType.replace(/_/g, ' ')}
               </Chip>
-              {doc.documentDate && (
+              {effectiveDate && (
                 <Chip size="sm" variant="flat" color="default">
-                  Dated {formatDate(doc.documentDate)}
+                  Dated {formatDate(effectiveDate)}
                 </Chip>
               )}
               {doc.expiryDate && (
@@ -115,6 +139,40 @@ export function DocumentSection({ itemId, contentType, sourceUrl }: DocumentSect
                   Kündigungsfrist {doc.cancellationDate}
                 </Chip>
               )}
+            </div>
+            <div className="flex flex-col gap-2 rounded-medium bg-default-50 p-3">
+              <Input
+                type="date"
+                size="sm"
+                label="Document date"
+                value={dateValue || dateInputValue(effectiveDate)}
+                onValueChange={setDateValue}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  color="primary"
+                  isLoading={savingDate}
+                  isDisabled={!dateValue && !effectiveDate}
+                  onPress={() => void saveDate(dateValue || dateInputValue(effectiveDate))}
+                >
+                  Save date
+                </Button>
+                {doc.documentDateOverride && (
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    isDisabled={savingDate}
+                    onPress={() => {
+                      setDateValue('');
+                      void saveDate(null);
+                    }}
+                  >
+                    Use extracted date
+                  </Button>
+                )}
+              </div>
+              {dateError && <p className="text-xs text-danger">{dateError}</p>}
             </div>
             <p className="font-medium">{doc.title}</p>
             {doc.issuer && <p className="text-sm text-default-500">{doc.issuer}</p>}
@@ -162,4 +220,8 @@ export function DocumentSection({ itemId, contentType, sourceUrl }: DocumentSect
       </CardBody>
     </Card>
   );
+}
+
+function dateInputValue(value: string | null): string {
+  return value?.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? '';
 }

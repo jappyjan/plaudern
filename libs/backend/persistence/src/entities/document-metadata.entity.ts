@@ -88,6 +88,10 @@ export class DocumentMetadataEntity {
   @Column({ type: 'varchar', nullable: true })
   documentDate!: string | null;
 
+  /** User-owned date override; preserved when the extractor refreshes this row. */
+  @Column({ type: 'varchar', nullable: true })
+  documentDateOverride!: string | null;
+
   /** Resolved absolute ISO date when parseable, else the raw phrase, or null. */
   @Column({ type: 'varchar', nullable: true })
   expiryDate!: string | null;

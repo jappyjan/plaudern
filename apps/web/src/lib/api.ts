@@ -181,6 +181,7 @@ import {
   type DocumentType,
   type ItemDocMetaResponse,
   type ItemOcrResponse,
+  type UpdateDocumentDateOverrideRequest,
   type UpdateEntityRequest,
   searchResponseSchema,
   similarResponseSchema,
@@ -1225,6 +1226,19 @@ export async function listVaultDocuments(
 /** An item's structured document metadata plus the extraction pipeline status. */
 export async function getItemDocMeta(itemId: string): Promise<ItemDocMetaResponse> {
   return itemDocMetaResponseSchema.parse(await requestJson(`/inbox/${itemId}/docmeta`));
+}
+
+/** Sets or clears the date shown for a scanned document. */
+export async function updateItemDocumentDate(
+  itemId: string,
+  request: UpdateDocumentDateOverrideRequest,
+): Promise<ItemDocMetaResponse> {
+  return itemDocMetaResponseSchema.parse(
+    await requestJson(`/inbox/${itemId}/docmeta/date`, {
+      method: 'PATCH',
+      body: JSON.stringify(request),
+    }),
+  );
 }
 
 /** Re-run document-metadata extraction for an item; returns the refreshed read model. */

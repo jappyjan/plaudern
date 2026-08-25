@@ -457,6 +457,7 @@ export function ItemDetailPage() {
           itemId={id}
           contentType={item.source?.contentType}
           sourceUrl={sourceUrl}
+          onDateUpdated={refetch}
         />
       )}
 

@@ -130,4 +130,32 @@ describe('Document date prefers over upload date (e2e, Path A)', () => {
     expect(detail.body.documentDate).toBeNull();
     expect(detail.body.occurredAt).toBe(UPLOAD_AT);
   });
+
+  it('uses a user date override without replacing extracted metadata', async () => {
+    const itemId = await ingestImage('e2e-docdate-override');
+    await persistDocMeta(itemId, { ...baseDoc, documentDate: '14.03.2026' });
+
+    const updated = await request(app.getHttpServer())
+      .patch(`/api/v1/inbox/${itemId}/docmeta/date`)
+      .send({ documentDateOverride: '2026-04-02' })
+      .expect(200);
+    expect(updated.body.document.documentDate).toBe('2026-03-14T00:00:00.000Z');
+    expect(updated.body.document.documentDateOverride).toBe('2026-04-02T00:00:00.000Z');
+
+    const detail = await request(app.getHttpServer()).get(`/api/v1/inbox/${itemId}`).expect(200);
+    expect(detail.body.documentDate).toBe('2026-04-02T00:00:00.000Z');
+    expect(detail.body.occurredAt).toBe(UPLOAD_AT);
+
+    const vault = await request(app.getHttpServer()).get('/api/v1/documents').expect(200);
+    const doc = vault.body.documents.find((d: { inboxItemId: string }) => d.inboxItemId === itemId);
+    expect(doc.documentDate).toBe('2026-03-14T00:00:00.000Z');
+    expect(doc.documentDateOverride).toBe('2026-04-02T00:00:00.000Z');
+
+    const cleared = await request(app.getHttpServer())
+      .patch(`/api/v1/inbox/${itemId}/docmeta/date`)
+      .send({ documentDateOverride: null })
+      .expect(200);
+    expect(cleared.body.document.documentDate).toBe('2026-03-14T00:00:00.000Z');
+    expect(cleared.body.document.documentDateOverride).toBeNull();
+  });
 });
