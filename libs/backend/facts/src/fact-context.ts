@@ -1,4 +1,5 @@
 import { summaryPayloadSchema } from '@plaudern/contracts';
+import { resolveSourceText } from '@plaudern/inbox';
 import type { ExtractedPayloadEntity, InboxItemEntity } from '@plaudern/persistence';
 import type { FactExtractionInput, FactKnownPerson } from './facts.provider';
 
@@ -21,9 +22,8 @@ export function buildFactExtractionInput(
 ): FactExtractionInput | null {
   const extractions = item.extractions ?? [];
 
-  const transcription = latestOfKind(extractions, 'transcription');
-  const transcript =
-    transcription?.status === 'succeeded' ? transcription.content?.trim() ?? '' : '';
+  const source = resolveSourceText(item);
+  const transcript = source?.text.trim() ?? '';
 
   const summary = latestOfKind(extractions, 'summary');
   const summaryProse =
@@ -37,7 +37,7 @@ export function buildFactExtractionInput(
   return {
     text: truncate(combined, maxChars),
     knownPeople,
-    language: transcription?.language ?? undefined,
+    language: source?.language,
     occurredAt: iso(item.occurredAt),
   };
 }

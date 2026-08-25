@@ -1,5 +1,10 @@
 import type { ExtractionKind, ExtractionStatus } from '@plaudern/contracts';
-import type { Extractor, ExtractorDependency } from '@plaudern/inbox';
+import {
+  resolveSourceText,
+  SOURCE_TEXT_GROUP,
+  type Extractor,
+  type ExtractorDependency,
+} from '@plaudern/inbox';
 import type { ExtractedPayloadEntity, InboxItemEntity } from '@plaudern/persistence';
 import type { ExtractorGraph } from './extractor-graph';
 
@@ -112,6 +117,11 @@ async function evaluateGroup(
   graph: ExtractorGraph,
   extractions: ExtractedPayloadEntity[],
 ): Promise<DepOutcome> {
+  if (groupKey === SOURCE_TEXT_GROUP) {
+    const source = resolveSourceText(item);
+    if (source) return { ready: true, generationTs: ts(source.extraction.createdAt) };
+  }
+
   let satisfiedTs = 0;
   let anySatisfied = false;
   let anyPending = false;
@@ -126,7 +136,9 @@ async function evaluateGroup(
       anyPending = true;
       continue;
     }
-    const satisfies = dep.requires === 'succeeded' ? latest.status === 'succeeded' : true;
+    const satisfies =
+      groupKey !== SOURCE_TEXT_GROUP &&
+      (dep.requires === 'succeeded' ? latest.status === 'succeeded' : true);
     if (satisfies) {
       anySatisfied = true;
       satisfiedTs = Math.max(satisfiedTs, ts(latest.createdAt));

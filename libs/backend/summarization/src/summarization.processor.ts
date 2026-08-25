@@ -37,7 +37,7 @@ export class SummarizationProcessor {
 
       const { input } = await this.context.build(item);
       if (!input) {
-        throw new Error('no succeeded transcription to summarize');
+        throw new Error('no succeeded source text to summarize');
       }
 
       // The output language is the owning user's per-account preference; `auto`

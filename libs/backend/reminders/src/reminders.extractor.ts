@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AiConfigService } from '@plaudern/ai-config';
-import type { Extractor, ExtractorDependency } from '@plaudern/inbox';
+import { sourceTextDependencies, type Extractor, type ExtractorDependency } from '@plaudern/inbox';
 import type { InboxItemEntity } from '@plaudern/persistence';
 import { RemindersService, REMINDERS_EXTRACTOR_VERSION } from './reminders.service';
 
@@ -15,9 +15,7 @@ import { RemindersService, REMINDERS_EXTRACTOR_VERSION } from './reminders.servi
 export class RemindersExtractor implements Extractor {
   readonly kind = 'reminders' as const;
   readonly version = REMINDERS_EXTRACTOR_VERSION;
-  readonly dependsOn: ExtractorDependency[] = [
-    { kind: 'transcription', requires: 'succeeded' },
-  ];
+  readonly dependsOn: ExtractorDependency[] = sourceTextDependencies();
 
   constructor(
     private readonly reminders: RemindersService,

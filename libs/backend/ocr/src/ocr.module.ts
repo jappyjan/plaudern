@@ -3,7 +3,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuditModule } from '@plaudern/audit';
 import { InboxModule } from '@plaudern/inbox';
 import { StorageModule } from '@plaudern/storage';
-import { TranscriptionModule } from '@plaudern/transcription';
 import { BullJobQueue, InlineJobQueue, redisConnectionFromConfig } from '@plaudern/queue';
 import { OCR_PROVIDER } from './ocr.provider';
 import { OCR_QUEUE } from './ocr.job';
@@ -15,7 +14,7 @@ import { PdfRasterizer } from './pdf-rasterizer';
 import { InboxOcrController } from './inbox-ocr.controller';
 
 @Module({
-  imports: [ConfigModule, AuditModule, InboxModule, StorageModule, TranscriptionModule],
+  imports: [ConfigModule, AuditModule, InboxModule, StorageModule],
   providers: [
     OpenAiVisionOcrProvider,
     {

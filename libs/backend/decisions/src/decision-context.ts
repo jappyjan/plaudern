@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type { ExtractionSegment } from '@plaudern/contracts';
+import { resolveSourceText } from '@plaudern/inbox';
 import {
   ExtractedPayloadEntity,
   InboxItemEntity,
@@ -37,12 +38,11 @@ export class DecisionContextService {
     item: InboxItemEntity,
     maxChars: number = DEFAULT_MAX_CHARS,
   ): Promise<DecisionExtractionInput | null> {
-    const transcription = latestOfKind(item.extractions ?? [], 'transcription');
+    const source = resolveSourceText(item);
     const diarization = latestOfKind(item.extractions ?? [], 'diarization');
 
-    if (transcription?.status !== 'succeeded' || !transcription.content) {
-      return null;
-    }
+    if (!source) return null;
+    const transcription = source.kind === 'transcription' ? source.extraction : null;
 
     const roster: { label: string; name: string | null }[] = [];
     // Redacted speakers (consent guardian) are kept out of the transcript
@@ -65,9 +65,9 @@ export class DecisionContextService {
 
     const speakerLabels = new Set(roster.map((s) => s.label));
     const transcript = buildTranscriptText(
-      transcription.content,
-      transcription.segments ?? null,
-      diarization?.status === 'succeeded' ? diarization.segments ?? null : null,
+      source.text,
+      transcription?.segments ?? null,
+      transcription && diarization?.status === 'succeeded' ? diarization.segments ?? null : null,
       speakerLabels,
       redactedLabels,
     );
@@ -80,7 +80,7 @@ export class DecisionContextService {
     return {
       transcript: truncate(transcript, maxChars),
       speakers,
-      language: transcription.language ?? undefined,
+      language: source.language,
       occurredAt: iso(item.occurredAt),
     };
   }

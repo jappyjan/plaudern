@@ -1,8 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { runWithAiAudit } from '@plaudern/audit';
-import { InboxService } from '@plaudern/inbox';
+import { InboxService, resolveSourceText } from '@plaudern/inbox';
 import type { ExtractionSegment, FactExtractionPayload } from '@plaudern/contracts';
-import type { ExtractedPayloadEntity, InboxItemEntity } from '@plaudern/persistence';
+import type { InboxItemEntity } from '@plaudern/persistence';
 import {
   FACT_EXTRACTION_PROVIDER,
   type FactExtractionProvider,
@@ -96,11 +96,8 @@ export class FactsProcessor {
 
 /** The latest succeeded transcription's timed segments, if any. */
 function transcriptionSegments(item: InboxItemEntity): ExtractionSegment[] {
-  const transcription = (item.extractions ?? [])
-    .filter((e: ExtractedPayloadEntity) => e.kind === 'transcription' && e.status === 'succeeded')
-    .slice()
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
-  return transcription?.segments ?? [];
+  const source = resolveSourceText(item);
+  return source?.kind === 'transcription' ? source.extraction.segments ?? [] : [];
 }
 
 /**

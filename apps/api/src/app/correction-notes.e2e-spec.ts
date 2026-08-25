@@ -11,7 +11,7 @@ process.env.GEOCODER = 'stub';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { CorrectionNoteMutationResponse, SummaryDto } from '@plaudern/contracts';
-import { TranscriptionService } from '@plaudern/transcription';
+import { InboxService } from '@plaudern/inbox';
 import { InMemoryStorageService, StorageService } from '@plaudern/storage';
 import { SUMMARIZATION_PROVIDER } from '@plaudern/summarization';
 import { createE2eApp } from '../testing/e2e-app';
@@ -22,13 +22,13 @@ import { seedAiCapability } from '../testing/seed-ai-config';
  * User correction notes (document-correction-notes): free-text remarks on an
  * inbox item that are fed into summary regeneration as authoritative
  * corrections — for every source type (audio transcript, typed text, scanned
- * documents via the OCR→transcription bridge) — while the source blob and its
+ * documents via OCR) — while the source blob and its
  * transcription rows stay untouched.
  */
 describe('Correction notes feed summary reprocessing (e2e, Path A)', () => {
   let app: INestApplication;
   let storage: InMemoryStorageService;
-  let transcription: TranscriptionService;
+  let inbox: InboxService;
 
   beforeAll(async () => {
     app = await createE2eApp((builder) =>
@@ -38,7 +38,7 @@ describe('Correction notes feed summary reprocessing (e2e, Path A)', () => {
     );
     await seedAiCapability(app, 'summarization');
     storage = app.get(StorageService) as InMemoryStorageService;
-    transcription = app.get(TranscriptionService);
+    inbox = app.get(InboxService);
   });
 
   afterAll(async () => {
@@ -77,9 +77,8 @@ describe('Correction notes feed summary reprocessing (e2e, Path A)', () => {
   }
 
   /**
-   * A scanned document: OCR itself is disabled in this suite, so replay the
-   * OCR processor's passthrough transcription bridge by hand — the exact row a
-   * real OCR run appends, and what summarization consumes for documents.
+   * A scanned document: OCR itself is disabled in this suite, so record the
+   * completed OCR row directly and let summarization consume it.
    */
   async function ingestDocument(idempotencyKey: string): Promise<string> {
     const bytes = Buffer.from(`fake-scan-${idempotencyKey}`);
@@ -97,7 +96,9 @@ describe('Correction notes feed summary reprocessing (e2e, Path A)', () => {
     await request(app.getHttpServer())
       .post(`/api/v1/ingest/${init.body.inboxItemId}/commit`)
       .expect(201);
-    await transcription.recordExtractedText(init.body.inboxItemId, {
+    const extraction = await inbox.addExtraction(init.body.inboxItemId, 'ocr', 'test-ocr', 1);
+    await inbox.completeExtraction(extraction.id, {
+      status: 'succeeded',
       content: 'Rechnung ACME GmbH, Betrag 42 EUR.',
       language: 'de',
     });
@@ -217,7 +218,7 @@ describe('Correction notes feed summary reprocessing (e2e, Path A)', () => {
     expect(summary.markdown).not.toContain('Corrections:');
   });
 
-  it('corrects a scanned document via its OCR→transcription bridge', async () => {
+  it('corrects a scanned document from its OCR source text', async () => {
     const itemId = await ingestDocument('e2e-notes-document');
     await waitForSummary(itemId);
 

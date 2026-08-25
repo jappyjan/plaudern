@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AiConfigService } from '@plaudern/ai-config';
-import type { Extractor, ExtractorDependency } from '@plaudern/inbox';
+import { sourceTextDependencies, type Extractor, type ExtractorDependency } from '@plaudern/inbox';
 import type { InboxItemEntity } from '@plaudern/persistence';
 import { EmbeddingService, EMBEDDING_EXTRACTOR_VERSION } from './embedding.service';
 
@@ -19,8 +19,7 @@ export class EmbeddingExtractor implements Extractor {
   readonly kind = 'embedding' as const;
   readonly version = EMBEDDING_EXTRACTOR_VERSION;
   readonly dependsOn: ExtractorDependency[] = [
-    { kind: 'transcription', requires: 'succeeded', group: 'sourceText' },
-    { kind: 'ocr', requires: 'succeeded', group: 'sourceText' },
+    ...sourceTextDependencies(),
     { kind: 'summary', requires: 'settled' },
   ];
 

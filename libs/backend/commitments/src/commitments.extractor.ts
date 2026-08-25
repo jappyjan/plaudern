@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Extractor, ExtractorDependency } from '@plaudern/inbox';
+import { sourceTextDependencies, type Extractor, type ExtractorDependency } from '@plaudern/inbox';
 import type { InboxItemEntity } from '@plaudern/persistence';
 import { CommitmentsService, COMMITMENTS_EXTRACTOR_VERSION } from './commitments.service';
 
@@ -18,7 +18,7 @@ export class CommitmentsExtractor implements Extractor {
   readonly kind = 'commitments' as const;
   readonly version = COMMITMENTS_EXTRACTOR_VERSION;
   readonly dependsOn: ExtractorDependency[] = [
-    { kind: 'transcription', requires: 'succeeded' },
+    ...sourceTextDependencies(),
     { kind: 'diarization', requires: 'settled' },
     { kind: 'summary', requires: 'settled' },
     { kind: 'tasks', requires: 'settled' },

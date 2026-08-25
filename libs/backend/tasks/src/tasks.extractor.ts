@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Extractor, ExtractorDependency } from '@plaudern/inbox';
+import { sourceTextDependencies, type Extractor, type ExtractorDependency } from '@plaudern/inbox';
 import type { InboxItemEntity } from '@plaudern/persistence';
 import { TasksService, TASKS_EXTRACTOR_VERSION } from './tasks.service';
 
@@ -15,7 +15,7 @@ export class TasksExtractor implements Extractor {
   readonly kind = 'tasks' as const;
   readonly version = TASKS_EXTRACTOR_VERSION;
   readonly dependsOn: ExtractorDependency[] = [
-    { kind: 'transcription', requires: 'succeeded' },
+    ...sourceTextDependencies(),
     { kind: 'summary', requires: 'settled' },
   ];
 

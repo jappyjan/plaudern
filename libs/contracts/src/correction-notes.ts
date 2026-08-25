@@ -8,9 +8,8 @@ import { z } from 'zod';
  * Notes are user-owned intelligence ABOUT a source, never part of it: the
  * source blob and its transcription/OCR rows stay untouched; only derived
  * read models (the summary, and whatever is computed from the summary)
- * reflect them. Works for every source type because every summarizable item
- * carries a transcription row (speech-to-text, typed-text passthrough, or the
- * OCR→transcription bridge for scanned documents).
+ * reflect them. Works for every source type because summarization resolves
+ * speech-to-text, typed-text passthrough, or OCR text through one source policy.
  */
 export const correctionNoteSchema = z.object({
   id: z.string().uuid(),

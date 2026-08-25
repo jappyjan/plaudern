@@ -103,6 +103,7 @@ describe('EntitiesService', () => {
       version: 1,
       provider: 'test',
       status,
+      content: status === 'succeeded' ? 'source text' : null,
       createdAt,
     });
     return row.id;

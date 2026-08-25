@@ -5,6 +5,7 @@ import {
 } from '@plaudern/contracts';
 import type { ExtractedPayloadEntity, InboxItemEntity } from '@plaudern/persistence';
 import { MARKER_RE, MARKER_RUN_RE } from '@plaudern/citations';
+import { resolveSourceText } from '@plaudern/inbox';
 
 /** Upper bound on source signals fed to one generation (keeps the prompt bounded). */
 export const DEFAULT_MAX_SOURCES = 60;
@@ -75,7 +76,7 @@ export function toJournalCitation(source: JournalSource): JournalCitation {
 
 /**
  * Densest text for an inbox item: its latest succeeded summary (title +
- * markdown) preferred, else the transcript, truncated. Returns null when the
+ * markdown) preferred, else the resolved source text, truncated. Returns null when the
  * item has neither usable extraction yet.
  */
 export function buildItemText(
@@ -88,10 +89,8 @@ export function buildItemText(
     const text = summaryText(summary.content);
     if (text) return truncate(text, maxChars);
   }
-  const transcription = latestOfKind(extractions, 'transcription');
-  if (transcription?.status === 'succeeded' && transcription.content?.trim()) {
-    return truncate(transcription.content.trim(), maxChars);
-  }
+  const source = resolveSourceText(item);
+  if (source) return truncate(source.text.trim(), maxChars);
   return null;
 }
 
