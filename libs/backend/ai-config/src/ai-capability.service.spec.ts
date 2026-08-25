@@ -67,13 +67,18 @@ describe('AiCapabilityService', () => {
       const res = await service.getResponse(USER);
       expect(res.catalog).toHaveLength(ALL_CAPABILITIES.length);
       expect(res.settings).toHaveLength(ALL_CAPABILITIES.length);
-      // Defaults with no rows: enabled true, providerId null, not active.
+      // Defaults with no rows: no override and a clearly explained inactive state.
       const summary = res.settings.find((s) => s.capability === 'summarization');
       expect(summary).toMatchObject({
-        providerId: null,
-        model: null,
-        enabled: true,
+        override: { providerId: null, model: null, enabled: null },
+        effective: {
+          providerId: null,
+          providerSource: null,
+          model: 'deepseek-v4-flash',
+          modelSource: 'registry',
+        },
         active: false,
+        inactiveReason: 'no-provider',
       });
     });
 
@@ -99,8 +104,9 @@ describe('AiCapabilityService', () => {
       await service.upsert(USER, 'summarization', { providerId: provider.id, enabled: false });
       const res = await service.getResponse(USER);
       const summary = res.settings.find((s) => s.capability === 'summarization');
-      expect(summary?.enabled).toBe(false);
+      expect(summary?.override.enabled).toBe(false);
       expect(summary?.active).toBe(false);
+      expect(summary?.inactiveReason).toBe('explicitly-disabled');
     });
   });
 
@@ -113,10 +119,19 @@ describe('AiCapabilityService', () => {
       });
       expect(dto).toMatchObject({
         capability: 'summarization',
-        providerId: provider.id,
-        model: 'deepseek-reasoner',
-        enabled: true,
+        override: {
+          providerId: provider.id,
+          model: 'deepseek-reasoner',
+          enabled: true,
+        },
+        effective: {
+          providerId: provider.id,
+          providerSource: 'capability',
+          model: 'deepseek-reasoner',
+          modelSource: 'capability',
+        },
         active: true,
+        inactiveReason: null,
       });
     });
 
@@ -140,11 +155,11 @@ describe('AiCapabilityService', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
-    it('disables the capability when providerId is null', async () => {
+    it('removes the provider override and is inactive without a group provider', async () => {
       const provider = await createProvider();
       await service.upsert(USER, 'summarization', { providerId: provider.id });
       const dto = await service.upsert(USER, 'summarization', { providerId: null });
-      expect(dto.providerId).toBeNull();
+      expect(dto.override.providerId).toBeNull();
       expect(dto.active).toBe(false);
       expect(await aiConfig.isEnabled(USER, 'summarization')).toBe(false);
     });
@@ -183,6 +198,54 @@ describe('AiCapabilityService', () => {
       expect(await aiConfig.isEnabled(USER, 'topics')).toBe(true);
       // vision is a different kind — untouched.
       expect(await aiConfig.isEnabled(USER, 'ocr')).toBe(false);
+    });
+
+    it('returns inherited effective values without pretending they are overrides', async () => {
+      const provider = await createProvider();
+      await service.updateGroup(USER, 'chat', {
+        providerId: provider.id,
+        model: 'shared-model',
+        params: { temperature: 0.2 },
+      });
+
+      const settings = (await service.getGroups(USER)).settings;
+      const summary = settings.find((setting) => setting.capability === 'summarization');
+      expect(summary).toMatchObject({
+        override: {
+          providerId: null,
+          model: null,
+          timeoutMs: null,
+          enabled: null,
+          params: {},
+        },
+        effective: {
+          providerId: provider.id,
+          providerSource: 'group',
+          model: 'shared-model',
+          modelSource: 'group',
+          params: { temperature: 0.2 },
+        },
+        active: true,
+        inactiveReason: null,
+      });
+    });
+
+    it('keeps a model-only override while inheriting the group provider', async () => {
+      const provider = await createProvider();
+      await service.updateGroup(USER, 'chat', { providerId: provider.id });
+      const dto = await service.upsert(USER, 'topics', {
+        providerId: null,
+        model: 'topics-model',
+      });
+
+      expect(dto.override).toMatchObject({ providerId: null, model: 'topics-model' });
+      expect(dto.effective).toMatchObject({
+        providerId: provider.id,
+        providerSource: 'group',
+        model: 'topics-model',
+        modelSource: 'capability',
+      });
+      expect(dto.active).toBe(true);
     });
 
     it('updateGroup rejects an incompatible provider protocol', async () => {

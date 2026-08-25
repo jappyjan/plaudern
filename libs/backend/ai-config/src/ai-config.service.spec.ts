@@ -168,6 +168,22 @@ describe('AiConfigService', () => {
       expect(chat?.model).toBe('chat-model');
     });
 
+    it('a provider-only override keeps the inherited group model', async () => {
+      const shared = await createProvider({ name: 'Shared' });
+      const special = await createProvider({ name: 'Special' });
+      await setGroup('chat', { providerId: shared.id, model: 'group-model' });
+      await assign('topics', { providerId: special.id, model: null });
+
+      const resolution = await service.resolveDetailed(USER, 'topics');
+      expect(resolution.effective).toMatchObject({
+        providerId: special.id,
+        providerSource: 'capability',
+        model: 'group-model',
+        modelSource: 'group',
+      });
+      expect(resolution.config?.providerId).toBe(special.id);
+    });
+
     it('the group model fills in for members without an override', async () => {
       const provider = await createProvider();
       await setGroup('chat', { providerId: provider.id, model: 'shared-chat-model' });
@@ -197,6 +213,38 @@ describe('AiConfigService', () => {
       await assign('web_research', { providerId: provider.id, enabled: true });
       service.invalidate(USER); // the direct DB write bypasses the service cache
       expect(await service.resolve(USER, 'web_research')).not.toBeNull();
+    });
+
+    it('uses the same policy for runtime config and the effective read model', async () => {
+      const provider = await createProvider();
+      await setGroup('chat', { providerId: provider.id, model: 'shared-model' });
+      await assign('topics', { providerId: null, model: 'topics-model' });
+
+      const resolution = await service.resolveDetailed(USER, 'topics');
+      expect(resolution.effective).toMatchObject({
+        providerId: provider.id,
+        providerSource: 'group',
+        model: 'topics-model',
+        modelSource: 'capability',
+      });
+      expect(resolution.config).toMatchObject({
+        providerId: resolution.effective.providerId,
+        model: resolution.effective.model,
+        timeoutMs: resolution.effective.timeoutMs,
+        params: resolution.effective.params,
+      });
+      expect(resolution.inactiveReason).toBeNull();
+    });
+
+    it('reports why an otherwise configured capability is inactive', async () => {
+      const provider = await createProvider();
+      await setGroup('chat', { providerId: provider.id });
+      await assign('topics', { enabled: false });
+
+      const resolution = await service.resolveDetailed(USER, 'topics');
+      expect(resolution.effective.providerId).toBe(provider.id);
+      expect(resolution.config).toBeNull();
+      expect(resolution.inactiveReason).toBe('explicitly-disabled');
     });
   });
 

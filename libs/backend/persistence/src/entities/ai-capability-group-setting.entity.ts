@@ -15,9 +15,9 @@ import type { AiCapabilityKind } from '@plaudern/contracts';
  * every capability of that kind unless a per-task override
  * (`ai_capability_settings`) says otherwise.
  *
- * At most one row per (user, kind). A missing row, a null `providerId`, or
- * `enabled=false` mean the whole group is off for that user (every member
- * capability no-ops), unless a member carries its own override.
+ * At most one row per (user, kind). A missing or null `providerId` leaves the
+ * shared group unconfigured, while members may still carry their own provider
+ * overrides. `enabled=false` explicitly disables every member.
  */
 @Entity({ name: 'ai_capability_group_settings' })
 @Index(['userId'])

@@ -12,9 +12,8 @@ import type { AiCapability } from '@plaudern/contracts';
  * Per-user assignment of one AI capability (summarization, ocr, transcription,
  * …) to a provider connection (`ai_providers`), plus its model/params. Replaces
  * the old per-capability `<PREFIX>_MODEL`/`_TIMEOUT_MS`/`_ENABLED` env vars. At
- * most one row per (user, capability). A missing row, a null `providerId`, or
- * `enabled=false` all mean the capability is off for that user — the pipeline
- * step becomes a no-op, exactly like an empty API key used to.
+ * most one row per (user, capability). Missing values inherit from the shared
+ * capability group; `enabled=false` is the explicit per-capability off switch.
  */
 @Entity({ name: 'ai_capability_settings' })
 @Index(['userId'])
@@ -29,11 +28,11 @@ export class AiCapabilitySettingEntity {
   @Column({ type: 'varchar' })
   capability!: AiCapability;
 
-  /** Chosen provider connection; null = unconfigured (capability disabled). */
+  /** Chosen provider connection; null inherits the shared group provider. */
   @Column({ type: 'uuid', nullable: true })
   providerId!: string | null;
 
-  /** Model override; null falls back to the capability's registry default. */
+  /** Model override; null inherits the group or registry default. */
   @Column({ type: 'varchar', nullable: true })
   model!: string | null;
 

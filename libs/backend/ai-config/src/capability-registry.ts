@@ -28,13 +28,6 @@ export interface CapabilityMeta {
   defaultTimeoutMs: number;
   /** Off unless the user opts in (only `web_research`). */
   optIn: boolean;
-  /**
-   * When set and this capability has no provider of its own, resolution falls
-   * back to the parent capability's provider connection (baseUrl + key) — while
-   * still using this capability's own model/params. Reproduces the old in-code
-   * env fallbacks (chat→summarization, entity_judge→entity_extraction, …).
-   */
-  inheritsFrom?: AiCapability;
   defaultParams: Record<string, unknown>;
   params: AiCapabilityParamDescriptor[];
   /**
@@ -129,7 +122,6 @@ const REGISTRY: Record<AiCapability, CapabilityMeta> = {
     defaultModel: 'deepseek-v4-flash',
     defaultTimeoutMs: 120_000,
     optIn: false,
-    inheritsFrom: 'entity_extraction',
     defaultParams: {},
     params: NO_PARAMS,
   },
@@ -143,7 +135,6 @@ const REGISTRY: Record<AiCapability, CapabilityMeta> = {
     defaultModel: 'deepseek-v4-flash',
     defaultTimeoutMs: 60_000,
     optIn: false,
-    inheritsFrom: 'entity_extraction',
     defaultParams: {},
     params: NO_PARAMS,
     legacyEnvPrefix: 'ENTITY_JUDGE',
@@ -159,7 +150,6 @@ const REGISTRY: Record<AiCapability, CapabilityMeta> = {
     defaultModel: 'deepseek-v4-flash',
     defaultTimeoutMs: 120_000,
     optIn: false,
-    inheritsFrom: 'entity_extraction',
     defaultParams: {},
     params: NO_PARAMS,
     legacyEnvPrefix: 'CONTACT_RESOLUTION',
@@ -203,7 +193,6 @@ const REGISTRY: Record<AiCapability, CapabilityMeta> = {
     defaultModel: 'deepseek-v4-flash',
     defaultTimeoutMs: 120_000,
     optIn: false,
-    inheritsFrom: 'summarization',
     defaultParams: {},
     params: NO_PARAMS,
     legacyEnvPrefix: 'TOPIC_DOCS',
@@ -317,7 +306,6 @@ const REGISTRY: Record<AiCapability, CapabilityMeta> = {
     defaultModel: 'deepseek-v4-flash',
     defaultTimeoutMs: 120_000,
     optIn: false,
-    inheritsFrom: 'summarization',
     defaultParams: {},
     params: NO_PARAMS,
     legacyEnvPrefix: 'CHAT',
@@ -333,7 +321,6 @@ const REGISTRY: Record<AiCapability, CapabilityMeta> = {
     defaultModel: 'deepseek-v4-flash',
     defaultTimeoutMs: 120_000,
     optIn: false,
-    inheritsFrom: 'summarization',
     defaultParams: {},
     params: NO_PARAMS,
     legacyEnvPrefix: 'VERIFICATION',
@@ -514,9 +501,10 @@ export function capabilityGroupMeta(kind: AiCapabilityKind): CapabilityGroupMeta
   const def = GROUP_DEFS[kind];
   const members = capabilitiesOfKind(kind);
   const primaryMeta = REGISTRY[def.primary];
-  // Protocols any member can speak (deduped, primary's order first).
-  const protocols = new Set<AiProviderProtocol>();
-  for (const c of members) for (const p of REGISTRY[c].compatibleProtocols) protocols.add(p);
+  // A group provider must be valid for every member it can power.
+  const protocols = primaryMeta.compatibleProtocols.filter((protocol) =>
+    members.every((capability) => REGISTRY[capability].compatibleProtocols.includes(protocol)),
+  );
   // Only single-member kinds carry params today; union preserves member order.
   const params = members.flatMap((c) => REGISTRY[c].params);
   return {
@@ -524,7 +512,7 @@ export function capabilityGroupMeta(kind: AiCapabilityKind): CapabilityGroupMeta
     label: def.label,
     description: def.description,
     primary: def.primary,
-    compatibleProtocols: [...protocols],
+    compatibleProtocols: protocols,
     defaultBaseUrl: primaryMeta.defaultBaseUrl,
     defaultModel: primaryMeta.defaultModel,
     defaultTimeoutMs: primaryMeta.defaultTimeoutMs,
