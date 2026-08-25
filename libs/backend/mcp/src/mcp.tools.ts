@@ -13,9 +13,6 @@ import {
   type EntityDossierDto,
   type EntityRelationEdgeDto,
   type EntityType,
-  type JournalCitation,
-  type JournalDocumentResponse,
-  type JournalPeriodType,
   type PersonalFactDto,
   type QuestionDirection,
   type QuestionDto,
@@ -31,7 +28,6 @@ import {
   type TopicItemDto,
 } from '@plaudern/contracts';
 import type { ExtractedPayloadEntity, InboxItemEntity } from '@plaudern/persistence';
-import { analyzeCitationCoverage } from '@plaudern/citations';
 import { InboxService } from '@plaudern/inbox';
 import { SearchService } from '@plaudern/search';
 import { IngestionService } from '@plaudern/ingestion';
@@ -44,7 +40,6 @@ import { QuestionsService } from '@plaudern/questions';
 import { DecisionsService } from '@plaudern/decisions';
 import { RemindersService } from '@plaudern/reminders';
 import { TopicsService } from '@plaudern/topics';
-import { JournalService, childTypeOf } from '@plaudern/journal';
 import { CalendarEventsService } from '@plaudern/calendar';
 
 /** A single hybrid-search hit as returned to an MCP client. */
@@ -124,7 +119,6 @@ export class McpToolsService {
     private readonly decisions: DecisionsService,
     private readonly reminders: RemindersService,
     private readonly topics: TopicsService,
-    private readonly journal: JournalService,
     private readonly calendar: CalendarEventsService,
   ) {}
 
@@ -529,109 +523,6 @@ export class McpToolsService {
   }
 
   /**
-   * list_journal_periods: which day/week/month/year rollups exist. Metadata
-   * only — the item-derived preview text is deliberately NOT returned here; use
-   * get_journal for the gated narrative body.
-   */
-  async listJournalPeriods(
-    userId: string,
-    args: { periodType: JournalPeriodType },
-  ): Promise<{ periods: JournalPeriodEntry[] }> {
-    const { periods } = await this.journal.listPeriods(userId, args.periodType);
-    return {
-      periods: periods.map((p) => ({
-        periodType: p.periodType,
-        periodKey: p.periodKey,
-        version: p.version,
-        sourceItemCount: p.sourceItemCount,
-        generatedAt: p.generatedAt,
-      })),
-    };
-  }
-
-  /**
-   * get_journal: one rollup's composed narrative for a period. A day entry cites
-   * its source items directly (`kind: 'item'`); a week/month rollup composes from
-   * child DAY narratives and a year from child MONTHS, citing them as
-   * `kind: 'journal'` (refId = the child period key) — so its own citations carry
-   * NO item ids. To avoid leaking sensitive content that a rollup transitively
-   * summarizes, child-journal citations are resolved recursively down to their
-   * item citations and ALL are gated. The markdown body is returned only when
-   * every transitively-reachable source item is externally allowed AND every
-   * child journal resolved; otherwise it is withheld (`markdown` null,
-   * `redacted` true) and disallowed direct item citations are dropped.
-   */
-  async getJournal(
-    userId: string,
-    args: { periodType: JournalPeriodType; periodKey: string },
-  ): Promise<JournalDocumentResponse & { redacted: boolean }> {
-    const doc = await this.journal.getJournal(userId, args.periodType, args.periodKey);
-    const { itemRefs, resolvable } = await this.collectJournalItemRefs(
-      userId,
-      args.periodType,
-      doc,
-    );
-    const allowed = await this.allowedItemIds(itemRefs);
-    const citationsAllowed = resolvable && itemRefs.every((r) => allowed.has(r));
-    if (citationsAllowed && !journalBodyUnderCited(doc)) {
-      return { ...doc, redacted: false };
-    }
-    return {
-      ...doc,
-      markdown: null,
-      citations: doc.citations.filter((c) => !(c.kind === 'item' && !allowed.has(c.refId))),
-      redacted: true,
-    };
-  }
-
-  /**
-   * Every source-item id a journal document transitively derives from, following
-   * `kind: 'journal'` citations down into child periods (year → months → days).
-   * `resolvable` is false — forcing get_journal to fail closed — if any child
-   * journal can't be re-derived to a current succeeded version (deleted/failed,
-   * so its embedded narrative can't be re-gated) or the recursion is impossibly
-   * deep. `kind: 'event'` citations are calendar-feed (not item) content and are
-   * ignored, mirroring list_calendar_events.
-   */
-  private async collectJournalItemRefs(
-    userId: string,
-    periodType: JournalPeriodType,
-    doc: { citations: JournalCitation[]; version: number | null },
-    depth = 0,
-  ): Promise<{ itemRefs: string[]; resolvable: boolean }> {
-    if (depth > 4) return { itemRefs: [], resolvable: false };
-    const itemRefs: string[] = [];
-    let resolvable = true;
-    for (const c of doc.citations) {
-      if (c.kind === 'item') {
-        itemRefs.push(c.refId);
-      } else if (c.kind === 'journal') {
-        if (periodType === 'day') {
-          // A day entry citing a journal is unexpected; can't resolve it → fail closed.
-          resolvable = false;
-          continue;
-        }
-        const child = await this.journal.getJournal(userId, childTypeOf(periodType), c.refId);
-        // No current succeeded version ⇒ the parent embedded a narrative we can
-        // no longer re-derive/re-gate. Fail closed.
-        if (child.version === null) {
-          resolvable = false;
-          continue;
-        }
-        const nested = await this.collectJournalItemRefs(
-          userId,
-          childTypeOf(periodType),
-          child,
-          depth + 1,
-        );
-        itemRefs.push(...nested.itemRefs);
-        if (!nested.resolvable) resolvable = false;
-      }
-    }
-    return { itemRefs, resolvable };
-  }
-
-  /**
    * list_calendar_events: events overlapping [from, to]. An event's own text
    * comes from the external calendar feed (not from inbox items), so events are
    * returned as-is; only their `linkedRecordingIds` are filtered to
@@ -841,27 +732,6 @@ function toFactListEntry(f: PersonalFactDto, citationCount: number): FactListEnt
   };
 }
 
-/**
- * Whether a journal body must be WITHHELD over MCP for lack of trustworthy
- * citations (JJ-86 under-citation leak fold-in), independent of the per-item
- * tier gate. A rollup composed from child journals carries no item ids of its
- * own, and get_journal trusts citation completeness to tier-gate — so a body
- * with prose but ZERO traceable (item/journal) citations, or one whose
- * structural citation-coverage confidence is `low` (enough claims lack a `[n]`
- * marker that it can't be verified against sources), is treated as unverifiable
- * and its body is not shown. An empty body has nothing to leak.
- */
-function journalBodyUnderCited(doc: {
-  markdown: string | null;
-  citations: JournalCitation[];
-}): boolean {
-  const markdown = doc.markdown ?? '';
-  if (markdown.trim().length === 0) return false;
-  const traceable = doc.citations.filter((c) => c.kind === 'item' || c.kind === 'journal');
-  if (traceable.length === 0) return true;
-  return analyzeCitationCoverage(markdown).confidence === 'low';
-}
-
 /** The `toEdges` grouping key for one aggregated relation edge (JJ-78 gating). */
 function edgeKey(e: EntityRelationEdgeDto): string {
   return `${e.sourceEntityId}:${e.targetEntityId}:${e.relationType}`;
@@ -881,15 +751,6 @@ export interface TopicListEntry {
   description: string | null;
   archived: boolean;
   itemCount: number;
-}
-
-/** A journal period's existence/metadata for list_journal_periods (no body). */
-export interface JournalPeriodEntry {
-  periodType: JournalPeriodType;
-  periodKey: string;
-  version: number | null;
-  sourceItemCount: number | null;
-  generatedAt: string | null;
 }
 
 /** Narrowing predicate for `.filter()` that also strips the `null` from the type. */

@@ -132,11 +132,6 @@ These are regenerable read models, never the source of truth:
   events) with typed edges ("discussed at", "promised in", "works at",
   "related to"). Enables graph queries the vector search can't answer:
   "everything connecting the landlord, the contract, and the water damage."
-- **The daily journal, written for you.** Every evening the system composes
-  the day from all signals — recordings, calendar events, locations, photos,
-  messages — into a narrative diary entry with links to sources. You get a
-  life journal without ever journaling. Weekly/monthly/yearly rollups
-  ("Your June") compose from the dailies.
 - **Timeline view.** An infinite, zoomable timeline of your life across all
   sources — the calendar month view generalized. "What was I doing in
   March 2026?" gets a real answer.
@@ -178,9 +173,8 @@ push, not just pull:
   happened last time, open commitments in both directions, open questions,
   relevant living-document excerpts. This alone justifies the platform.
 - **Morning briefing / evening review.** Morning: today's events with context,
-  commitments due, things to not forget. Evening: the auto-journal draft,
-  loose ends detected today, one-tap confirmations ("did you actually book
-  the dentist?").
+  commitments due, things to not forget. Evening: loose ends detected today
+  and one-tap confirmations ("did you actually book the dentist?").
 - **Commitment nudges.** "You told Anna you'd send the draft by Friday —
   it's Thursday and no item mentions you did." And the sweeter inverse:
   "Tom promised the landlord's answer two weeks ago — want a nudge text
@@ -312,8 +306,8 @@ legally, financially, emotionally, and from *itself*:
 5. **Person pages / facts extraction** (§3) — the contact book becomes a CRM.
 6. **Consent guardian + sensitivity routing + local-model tier** (§6, §8) —
    before always-on capture scales up, the protective layer must exist.
-7. **Living topic documents + daily auto-journal** (§3) — the
-   "documentation platform" promise, delivered.
+7. **Living topic documents** (§3) — the "documentation platform" promise,
+   delivered.
 8. **Messaging bot + MCP server** (§7) — the surfaces that make it ambient.
 
 The through-line: Plaudern's moat is the **append-only, reprocessable,

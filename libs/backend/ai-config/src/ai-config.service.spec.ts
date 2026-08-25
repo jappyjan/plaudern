@@ -140,7 +140,7 @@ describe('AiConfigService', () => {
       // model that members inherit when they have no override of their own.
       await setGroup('chat', { providerId: provider.id });
 
-      for (const capability of ['summarization', 'chat', 'journal', 'entity_extraction'] as const) {
+      for (const capability of ['summarization', 'chat', 'topics', 'entity_extraction'] as const) {
         const resolved = await service.resolve(USER, capability);
         expect(resolved).not.toBeNull();
         expect(resolved?.providerId).toBe(provider.id);
@@ -157,15 +157,15 @@ describe('AiConfigService', () => {
         baseUrl: 'https://api.openai.com/v1',
       });
       await setGroup('chat', { providerId: shared.id, model: 'group-model' });
-      await assign('journal', { providerId: special.id, model: 'journal-model' });
+      await assign('chat', { providerId: special.id, model: 'chat-model' });
 
       const summary = await service.resolve(USER, 'summarization');
       expect(summary?.providerId).toBe(shared.id);
       expect(summary?.model).toBe('group-model'); // group model wins over registry default
 
-      const journal = await service.resolve(USER, 'journal');
-      expect(journal?.providerId).toBe(special.id); // override wins
-      expect(journal?.model).toBe('journal-model');
+      const chat = await service.resolve(USER, 'chat');
+      expect(chat?.providerId).toBe(special.id); // override wins
+      expect(chat?.model).toBe('chat-model');
     });
 
     it('the group model fills in for members without an override', async () => {

@@ -18,7 +18,6 @@ type Fakes = {
   decisions: { list: jest.Mock };
   reminders: { list: jest.Mock };
   topics: { listTopics: jest.Mock; listItemsByTopic: jest.Mock };
-  journal: { listPeriods: jest.Mock; getJournal: jest.Mock };
   calendar: { eventsInRange: jest.Mock };
 };
 
@@ -42,7 +41,6 @@ function build(): { service: McpToolsService; fakes: Fakes } {
     decisions: { list: jest.fn() },
     reminders: { list: jest.fn() },
     topics: { listTopics: jest.fn(), listItemsByTopic: jest.fn() },
-    journal: { listPeriods: jest.fn(), getJournal: jest.fn() },
     calendar: { eventsInRange: jest.fn() },
   };
   const service = new McpToolsService(
@@ -60,7 +58,6 @@ function build(): { service: McpToolsService; fakes: Fakes } {
     fakes.decisions as never,
     fakes.reminders as never,
     fakes.topics as never,
-    fakes.journal as never,
     fakes.calendar as never,
   );
   return { service, fakes };
@@ -577,50 +574,6 @@ describe('McpToolsService', () => {
     });
   });
 
-  describe('getJournal (sensitivity gate)', () => {
-    it('withholds the body when any direct item citation is sensitive', async () => {
-      const { service, fakes } = build();
-      fakes.journal.getJournal.mockResolvedValue({
-        periodType: 'day',
-        periodKey: '2026-07-01',
-        markdown: 'secret narrative',
-        citations: [
-          { marker: 1, kind: 'item', refId: 'ok' },
-          { marker: 2, kind: 'item', refId: 'secret' },
-          { marker: 3, kind: 'journal', refId: '2026-06-30' },
-        ],
-      });
-      fakes.sensitivity.effectiveTiers = tierMap({ ok: 'normal', secret: 'secret' });
-
-      const result = await service.getJournal('user-1', {
-        periodType: 'day',
-        periodKey: '2026-07-01',
-      });
-      expect(result.redacted).toBe(true);
-      expect(result.markdown).toBeNull();
-      // The sensitive item citation is dropped; the journal-kind citation stays.
-      expect(result.citations.map((c) => c.refId)).toEqual(['ok', '2026-06-30']);
-    });
-
-    it('returns the body when all direct item citations are allowed', async () => {
-      const { service, fakes } = build();
-      fakes.journal.getJournal.mockResolvedValue({
-        periodType: 'day',
-        periodKey: '2026-07-01',
-        markdown: 'fine narrative',
-        citations: [{ marker: 1, kind: 'item', refId: 'ok' }],
-      });
-      fakes.sensitivity.effectiveTiers = tierMap({ ok: 'normal' });
-
-      const result = await service.getJournal('user-1', {
-        periodType: 'day',
-        periodKey: '2026-07-01',
-      });
-      expect(result.redacted).toBe(false);
-      expect(result.markdown).toBe('fine narrative');
-    });
-  });
-
   describe('listCalendarEvents (sensitivity gate)', () => {
     it('strips sensitive/unclassified recordings from linkedRecordingIds but keeps events', async () => {
       const { service, fakes } = build();
@@ -639,122 +592,6 @@ describe('McpToolsService', () => {
         '2026-07-02T00:00:00.000Z',
       );
       expect(result.events[0].linkedRecordingIds).toEqual(['ok']);
-    });
-  });
-
-  describe('getJournal rollups (transitive sensitivity gate)', () => {
-    /** A journal.getJournal fake that dispatches on (periodType, periodKey). */
-    function journalDocs(
-      docs: Record<string, { version: number | null; markdown: string | null; citations: unknown[] }>,
-    ): jest.Mock {
-      return jest.fn(async (_uid: string, periodType: string, periodKey: string) => {
-        const doc = docs[`${periodType}:${periodKey}`];
-        return {
-          periodType,
-          periodKey,
-          version: doc?.version ?? null,
-          markdown: doc?.markdown ?? null,
-          citations: doc?.citations ?? [],
-        };
-      });
-    }
-
-    it('withholds a WEEK body when a transitive child-day item is sensitive', async () => {
-      const { service, fakes } = build();
-      fakes.journal.getJournal = journalDocs({
-        'week:2026-W26': {
-          version: 1,
-          markdown: 'week narrative summarizing both days',
-          citations: [
-            { marker: 1, kind: 'journal', refId: '2026-06-29' },
-            { marker: 2, kind: 'journal', refId: '2026-06-30' },
-          ],
-        },
-        'day:2026-06-29': { version: 1, markdown: 'ok day', citations: [{ kind: 'item', refId: 'ok' }] },
-        'day:2026-06-30': {
-          version: 1,
-          markdown: 'secret day',
-          citations: [{ kind: 'item', refId: 'secret' }],
-        },
-      });
-      fakes.sensitivity.effectiveTiers = tierMap({ ok: 'normal', secret: 'secret' });
-
-      const result = await service.getJournal('user-1', { periodType: 'week', periodKey: '2026-W26' });
-      // The rollup has NO kind:'item' citations of its own, but it transitively
-      // summarizes a secret day → body must be withheld, not leaked.
-      expect(result.redacted).toBe(true);
-      expect(result.markdown).toBeNull();
-    });
-
-    it('returns a WEEK body when every transitive child-day item is allowed', async () => {
-      const { service, fakes } = build();
-      fakes.journal.getJournal = journalDocs({
-        'week:2026-W26': {
-          version: 1,
-          markdown: 'clean week narrative [1]',
-          citations: [{ marker: 1, kind: 'journal', refId: '2026-06-29' }],
-        },
-        'day:2026-06-29': { version: 1, markdown: 'ok day', citations: [{ kind: 'item', refId: 'ok' }] },
-      });
-      fakes.sensitivity.effectiveTiers = tierMap({ ok: 'normal' });
-
-      const result = await service.getJournal('user-1', { periodType: 'week', periodKey: '2026-W26' });
-      expect(result.redacted).toBe(false);
-      expect(result.markdown).toBe('clean week narrative [1]');
-    });
-
-    // JJ-86 under-citation fold-in: get_journal tier-gates via citation
-    // completeness, so a body it CAN'T trace must be withheld even when every
-    // (resolvable) citation is allowed.
-    it('withholds a body that has prose but ZERO item/journal citations', async () => {
-      const { service, fakes } = build();
-      fakes.journal.getJournal = journalDocs({
-        'day:2026-07-02': {
-          version: 1,
-          markdown: 'A vivid narrative of the day with no citation markers at all.',
-          citations: [], // nothing to tier-gate against → unverifiable
-        },
-      });
-      fakes.sensitivity.effectiveTiers = tierMap({});
-
-      const result = await service.getJournal('user-1', { periodType: 'day', periodKey: '2026-07-02' });
-      expect(result.redacted).toBe(true);
-      expect(result.markdown).toBeNull();
-    });
-
-    it('withholds a body whose citation-coverage confidence is low (uncited claims)', async () => {
-      const { service, fakes } = build();
-      fakes.journal.getJournal = journalDocs({
-        'day:2026-07-03': {
-          version: 1,
-          // Two substantive claims, only one cited → coverage 0.5 ≤ threshold → low.
-          markdown: 'We closed the Q3 deal for two million euros. The team celebrated late [1].',
-          citations: [{ marker: 1, kind: 'item', refId: 'ok' }],
-        },
-      });
-      fakes.sensitivity.effectiveTiers = tierMap({ ok: 'normal' });
-
-      const result = await service.getJournal('user-1', { periodType: 'day', periodKey: '2026-07-03' });
-      expect(result.redacted).toBe(true);
-      expect(result.markdown).toBeNull();
-    });
-
-    it('fails closed when a child journal has no current succeeded version', async () => {
-      const { service, fakes } = build();
-      fakes.journal.getJournal = journalDocs({
-        'month:2026-06': {
-          version: 1,
-          markdown: 'month narrative',
-          citations: [{ marker: 1, kind: 'journal', refId: '2026-06-15' }],
-        },
-        // child day resolves to no succeeded version (version null) — unre-derivable.
-        'day:2026-06-15': { version: null, markdown: null, citations: [] },
-      });
-      fakes.sensitivity.effectiveTiers = tierMap({});
-
-      const result = await service.getJournal('user-1', { periodType: 'month', periodKey: '2026-06' });
-      expect(result.redacted).toBe(true);
-      expect(result.markdown).toBeNull();
     });
   });
 

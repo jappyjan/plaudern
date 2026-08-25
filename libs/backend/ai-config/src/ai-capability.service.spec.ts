@@ -171,7 +171,7 @@ describe('AiCapabilityService', () => {
       ]);
       const chat = res.groups.find((g) => g.kind === 'chat');
       expect(chat?.memberCapabilities).toContain('summarization');
-      expect(chat?.memberCapabilities).toContain('journal');
+      expect(chat?.memberCapabilities).toContain('topics');
       expect(chat?.active).toBe(false);
     });
 
@@ -180,7 +180,7 @@ describe('AiCapabilityService', () => {
       const dto = await service.updateGroup(USER, 'chat', { providerId: provider.id });
       expect(dto.active).toBe(true);
       expect(await aiConfig.isEnabled(USER, 'summarization')).toBe(true);
-      expect(await aiConfig.isEnabled(USER, 'journal')).toBe(true);
+      expect(await aiConfig.isEnabled(USER, 'topics')).toBe(true);
       // vision is a different kind — untouched.
       expect(await aiConfig.isEnabled(USER, 'ocr')).toBe(false);
     });
@@ -200,15 +200,15 @@ describe('AiCapabilityService', () => {
       const shared = await createProvider({ name: 'Shared' });
       const special = await createProvider({ name: 'Special' });
       await service.updateGroup(USER, 'chat', { providerId: shared.id });
-      await service.upsert(USER, 'journal', { providerId: special.id, model: 'special-model' });
+      await service.upsert(USER, 'chat', { providerId: special.id, model: 'special-model' });
 
       let groups = (await service.getGroups(USER)).groups;
-      expect(groups.find((g) => g.kind === 'chat')?.overriddenCapabilities).toContain('journal');
+      expect(groups.find((g) => g.kind === 'chat')?.overriddenCapabilities).toContain('chat');
 
       const reset = await service.resetGroupOverrides(USER, 'chat');
       expect(reset.overriddenCapabilities).toEqual([]);
-      // journal now inherits the shared group again.
-      const resolved = await aiConfig.resolve(USER, 'journal');
+      // chat now inherits the shared group again.
+      const resolved = await aiConfig.resolve(USER, 'chat');
       expect(resolved?.providerId).toBe(shared.id);
 
       groups = (await service.getGroups(USER)).groups;

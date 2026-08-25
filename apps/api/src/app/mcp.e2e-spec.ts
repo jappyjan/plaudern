@@ -85,7 +85,6 @@ describe('MCP server (e2e)', () => {
     expect(names).toEqual([
       'get_entity',
       'get_item',
-      'get_journal',
       'get_topic',
       'ingest_text_note',
       'list_calendar_events',
@@ -93,7 +92,6 @@ describe('MCP server (e2e)', () => {
       'list_decisions',
       'list_entities',
       'list_facts',
-      'list_journal_periods',
       'list_questions',
       'list_recent_items',
       'list_relations',

@@ -17,7 +17,7 @@ import { z } from 'zod';
  * adapter. Wired today: transcription (ElevenLabs + self-hosted Whisper),
  * pyannoteAI diarization, the embeddings provider, and the OpenAI-compatible LLM
  * extractors/generators — summary, entities, relations, topics, topic-document,
- * facts, tasks, questions, decisions, commitments, reminders, journal, and
+ * facts, tasks, questions, decisions, commitments, reminders, and
  * memory chat. Also wired (JJ-81): `docmeta` document-metadata extraction, the
  * `ocr` vision OCR call (which auto-enables from the OpenAI embeddings key, so
  * it is a live path), the `sensitivity` sentinel classifier, the `citations`
