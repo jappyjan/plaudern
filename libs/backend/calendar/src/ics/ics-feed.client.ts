@@ -3,6 +3,7 @@ import { outboundFetch } from '@plaudern/outbound-http';
 
 /** DI token so tests can swap in a fake fetch (same pattern as PLAUD_FETCH). */
 export const CALENDAR_FETCH = Symbol('CALENDAR_FETCH');
+export const ICS_FEED_FETCH = Symbol('ICS_FEED_FETCH');
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
 const FETCH_TIMEOUT_MS = 30_000;
@@ -36,7 +37,7 @@ export class IcsFeedClient {
   private readonly logger = new Logger(IcsFeedClient.name);
   private readonly fetchImpl: FetchLike;
 
-  constructor(@Optional() @Inject(CALENDAR_FETCH) fetchImpl?: FetchLike) {
+  constructor(@Optional() @Inject(ICS_FEED_FETCH) fetchImpl?: FetchLike) {
     this.fetchImpl = fetchImpl ?? outboundFetch;
   }
 

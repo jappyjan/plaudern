@@ -17,6 +17,7 @@ interface Route {
 
 function fakeTransport(routes: Record<string, Route>) {
   const requests: Array<{ url: string; options: RequestOptions }> = [];
+  const responses: IncomingMessage[] = [];
   const request = (url: URL, options: RequestOptions, callback: (response: IncomingMessage) => void) => {
     requests.push({ url: url.href, options });
     const req = new EventEmitter() as ClientRequest;
@@ -37,13 +38,14 @@ function fakeTransport(routes: Record<string, Route>) {
         Object.defineProperty(response, 'socket', {
           value: { remoteAddress: route.remoteAddress ?? address },
         });
+        responses.push(response);
         callback(response);
       });
       return req;
     }) as ClientRequest['end'];
     return req;
   };
-  return { request, requests };
+  return { request, requests, responses };
 }
 
 const publicV4: ResolvedAddress = { address: '93.184.216.34', family: 4 };
@@ -183,6 +185,22 @@ describe('createOutboundFetch', () => {
     await expect((await fetch('https://first.example/start')).text()).resolves.toBe('final');
     expect(resolve.mock.calls.map(([hostname]) => hostname)).toEqual(['first.example', 'second.example']);
     expect(transport.requests).toHaveLength(2);
+    expect(transport.responses[0]?.destroyed).toBe(true);
+  });
+
+  it('aborts while DNS resolution is still pending', async () => {
+    const controller = new AbortController();
+    const transport = fakeTransport({});
+    const fetch = createOutboundFetch({
+      resolve: async () => new Promise<ResolvedAddress[]>(() => undefined),
+      request: transport.request,
+    });
+    const result = fetch('https://slow-dns.example/', { signal: controller.signal });
+
+    controller.abort(new Error('timed out'));
+
+    await expect(result).rejects.toThrow('timed out');
+    expect(transport.requests).toHaveLength(0);
   });
 
   it.each(['file:///etc/passwd', 'ftp://public.example/file', 'https://user:pass@public.example/'])(

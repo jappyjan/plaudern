@@ -4,7 +4,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { PersistenceModule } from '@plaudern/persistence';
 import { outboundFetch } from '@plaudern/outbound-http';
 import { CALENDAR_PROVIDERS } from './provider';
-import { CALENDAR_FETCH, IcsFeedClient, type FetchLike } from './ics/ics-feed.client';
+import { CALENDAR_FETCH, ICS_FEED_FETCH, IcsFeedClient, type FetchLike } from './ics/ics-feed.client';
 import { IcsCalendarProvider } from './ics/ics-calendar.provider';
 import { GoogleCalendarClient, GOOGLE_OAUTH_CONFIG } from './google/google-calendar.client';
 import { GoogleCalendarProvider } from './google/google-calendar.provider';
@@ -22,6 +22,10 @@ import { CalendarController } from './calendar.controller';
     {
       // Registered explicitly so tests can overrideProvider() with a fake.
       provide: CALENDAR_FETCH,
+      useValue: globalThis.fetch satisfies FetchLike,
+    },
+    {
+      provide: ICS_FEED_FETCH,
       useValue: outboundFetch satisfies FetchLike,
     },
     IcsFeedClient,

@@ -97,6 +97,26 @@ async function resolvePublic(url: URL, resolve: Resolve): Promise<ResolvedAddres
   return addresses;
 }
 
+async function abortable<T>(promise: Promise<T>, signal?: AbortSignal | null): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) throw signal.reason;
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
 function pinnedLookup(addresses: ResolvedAddress[]): NonNullable<RequestOptions['lookup']> {
   return (_hostname, options, callback) => {
     const family = typeof options === 'object' ? options.family : undefined;
@@ -162,7 +182,7 @@ export function createOutboundFetch(dependencies: { resolve?: Resolve; request?:
     }
 
     for (let redirects = 0; ; redirects += 1) {
-      const addresses = await resolvePublic(url, resolve);
+      const addresses = await abortable(resolvePublic(url, resolve), init.signal);
       const response = await new Promise<import('node:http').IncomingMessage>((resolveResponse, reject) => {
         const req = request(
           url,
@@ -183,7 +203,7 @@ export function createOutboundFetch(dependencies: { resolve?: Resolve; request?:
       const status = response.statusCode ?? 0;
       const location = response.headers.location;
       if (REDIRECT_STATUSES.has(status) && location) {
-        response.resume();
+        response.destroy();
         if (redirects >= MAX_REDIRECTS) throw new OutboundUrlError('too many redirects');
         try {
           url = new URL(location, url);
