@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import type {
   AccountExport,
   AccountExportItem,
@@ -196,7 +196,7 @@ export class DataSovereigntyService {
     return this.dataSource.transaction(async (em) => {
       const switches = em.getRepository(DeadMansSwitchEntity);
       const releases = em.getRepository(DeadMansSwitchReleaseEntity);
-      let row = await switches.findOne({ where: { userId } });
+      let row = await this.findSwitchForUpdate(em, userId);
       if (!row) row = switches.create({ userId, lastCheckInAt: null });
       const contactChanged = row.contactEmail !== req.contactEmail;
       row.enabled = req.enabled;
@@ -281,7 +281,7 @@ export class DataSovereigntyService {
   async checkInDeadMansSwitch(userId: string): Promise<DeadMansSwitchDto> {
     return this.dataSource.transaction(async (em) => {
       const switches = em.getRepository(DeadMansSwitchEntity);
-      let row = await switches.findOne({ where: { userId } });
+      let row = await this.findSwitchForUpdate(em, userId);
       if (!row) row = switches.create({ userId });
       const checkedInAt = new Date().toISOString();
       row.lastCheckInAt = checkedInAt;
@@ -300,6 +300,18 @@ export class DataSovereigntyService {
         .where('userId = :userId AND status = :status', { userId, status: 'pending' })
         .execute();
       return toDeadMansSwitchDto(row);
+    });
+  }
+
+  private findSwitchForUpdate(
+    em: EntityManager,
+    userId: string,
+  ): Promise<DeadMansSwitchEntity | null> {
+    return em.getRepository(DeadMansSwitchEntity).findOne({
+      where: { userId },
+      ...(this.dataSource.options.type === 'postgres'
+        ? { lock: { mode: 'pessimistic_write' as const } }
+        : {}),
     });
   }
 

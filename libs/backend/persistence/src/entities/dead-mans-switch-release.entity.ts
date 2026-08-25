@@ -51,8 +51,8 @@ export class DeadMansSwitchReleaseEntity {
   status!: 'pending' | 'active' | 'cancelled' | 'revoked';
 
   /**
-   * SHA-256 of the emergency-access token; null until granted and again after a
-   * revoke. The raw token is emailed to the contact once and never persisted.
+   * SHA-256 of the emergency-access token; null until delivery begins and again
+   * after cancellation or revoke. Plaintext is never persisted.
    */
   @Column({ type: 'varchar', nullable: true })
   tokenHash!: string | null;
