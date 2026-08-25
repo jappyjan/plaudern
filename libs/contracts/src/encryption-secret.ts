@@ -7,16 +7,21 @@ const INSECURE_ENCODED_SECRETS = new Set([
 const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 export function assertStrongEncryptionSecret(secret: unknown): asserts secret is string {
-  const decodedBytes =
-    typeof secret === 'string'
-      ? (secret.length / 4) * 3 - (secret.endsWith('==') ? 2 : secret.endsWith('=') ? 1 : 0)
-      : 0;
   if (
     typeof secret !== 'string' ||
     secret !== secret.trim() ||
-    !BASE64_PATTERN.test(secret) ||
-    INSECURE_ENCODED_SECRETS.has(secret) ||
-    decodedBytes < MIN_SECRET_BYTES
+    !BASE64_PATTERN.test(secret)
+  ) {
+    throw new Error(
+      `APP_ENCRYPTION_SECRET must be base64 encoding of at least ${MIN_SECRET_BYTES} bytes`,
+    );
+  }
+  const decodedSecret = Buffer.from(secret, 'base64');
+  const canonicalSecret = decodedSecret.toString('base64');
+  if (
+    canonicalSecret !== secret ||
+    INSECURE_ENCODED_SECRETS.has(canonicalSecret) ||
+    decodedSecret.length < MIN_SECRET_BYTES
   ) {
     throw new Error(
       `APP_ENCRYPTION_SECRET must be base64 encoding of at least ${MIN_SECRET_BYTES} bytes`,
