@@ -35,7 +35,7 @@ export async function seedAiCapability(
   const userId = opts.userId ?? DEFAULT_USER_ID;
   const meta = capabilityMeta(capability);
   const protocol = opts.protocol ?? meta.compatibleProtocols[0];
-  const providerName = opts.providerName ?? `test-${protocol}-provider`;
+  const providerName = opts.providerName ?? `test-${capability}-${protocol}-provider`;
   const encryptionSecret = process.env.APP_ENCRYPTION_SECRET ?? 'change-me';
 
   const providerRepo = app.get<Repository<AiProviderEntity>>(
