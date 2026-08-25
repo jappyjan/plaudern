@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import {
   AiProviderEntity,
@@ -10,9 +10,7 @@ import { decryptSecret, encryptSecret } from './secret-crypto';
 import { rotateEncryptionSecret } from './rotate-encryption-secret';
 
 const OLD_SECRET = 'old-secret-that-may-have-been-weak';
-const NEW_SECRET = Buffer.from('plaudern explicit test-only encryption key material').toString(
-  'base64',
-);
+const NEW_SECRET = randomBytes(32).toString('base64');
 
 describe('rotateEncryptionSecret', () => {
   let dataSource: DataSource;

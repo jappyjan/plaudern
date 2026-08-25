@@ -1,3 +1,3 @@
-process.env.APP_ENCRYPTION_SECRET = Buffer.from(
-  'plaudern explicit test-only encryption key material',
-).toString('base64');
+const { randomBytes } = require('node:crypto');
+
+process.env.APP_ENCRYPTION_SECRET = randomBytes(32).toString('base64');

@@ -1,6 +1,9 @@
 const MIN_SECRET_BYTES = 32;
 const MIN_DISTINCT_CHARACTERS = 12;
 const INSECURE_SECRETS = new Set(['change-me', 'test-secret', 'secret', 'password']);
+const INSECURE_ENCODED_SECRETS = new Set([
+  ['AAECAwQF', 'BgcICQoL', 'DA0ODxAR', 'EhMUFRYX', 'GBkaGxwd', 'Hh8='].join(''),
+]);
 const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 export function assertStrongEncryptionSecret(secret: unknown): asserts secret is string {
@@ -12,6 +15,7 @@ export function assertStrongEncryptionSecret(secret: unknown): asserts secret is
     typeof secret !== 'string' ||
     secret !== secret.trim() ||
     !BASE64_PATTERN.test(secret) ||
+    INSECURE_ENCODED_SECRETS.has(secret) ||
     decodedBytes < MIN_SECRET_BYTES
   ) {
     throw new Error(

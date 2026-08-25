@@ -1,9 +1,8 @@
+import { randomBytes } from 'node:crypto';
 import { validateEnvironment } from './environment';
 
 describe('validateEnvironment', () => {
-  const strongSecret = Buffer.from('plaudern explicit test-only encryption key material').toString(
-    'base64',
-  );
+  const strongSecret = randomBytes(32).toString('base64');
 
   it.each([
     undefined,
@@ -15,6 +14,7 @@ describe('validateEnvironment', () => {
     'change-me'.repeat(4),
     'abcdefghijklmnopqrstuvwx12345678',
     'A'.repeat(44),
+    Buffer.from(Array.from({ length: 32 }, (_, index) => index)).toString('base64'),
   ])(
     'rejects a missing, default, or weak encryption secret (%p)',
     (secret) => {
