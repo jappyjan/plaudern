@@ -6,6 +6,7 @@ import {
   AiProviderCallEntity,
   ALL_ENTITIES,
   DeadMansSwitchEntity,
+  DeadMansSwitchReleaseEntity,
   EntitySuppressionEntity,
 } from '@plaudern/persistence';
 import { DataSovereigntyService } from './data-sovereignty.service';
@@ -180,4 +181,65 @@ describe('DataSovereigntyService', () => {
       .findOne({ where: { userId: 'suppressed-user' } });
     expect(row!.armingSuspendedForCheckInAt).toBeNull();
   });
+
+  it.each(['check-in', 'disable'] as const)(
+    'rolls back the switch write when the related release write fails during %s',
+    async (operation) => {
+      const userId = `atomic-${operation}`;
+      const lastCheckInAt = '2026-01-01T00:00:00.000Z';
+      await dataSource.getRepository(DeadMansSwitchEntity).save({
+        userId,
+        enabled: true,
+        contactEmail: 'trustee@example.com',
+        checkInIntervalDays: 30,
+        lastCheckInAt,
+      });
+      await dataSource.getRepository(DeadMansSwitchReleaseEntity).save({
+        userId,
+        contactEmail: 'trustee@example.com',
+        status: 'pending',
+        tokenHash: 'reserved-hash',
+        tokenEncrypted: 'reserved-ciphertext',
+        firedAt: '2026-02-01T00:00:00.000Z',
+        graceUntil: '2026-02-08T00:00:00.000Z',
+        grantedAt: null,
+        closedAt: null,
+      });
+      await dataSource.query(`
+        CREATE TRIGGER fail_release_cancel
+        BEFORE UPDATE OF status ON dead_mans_switch_release
+        WHEN NEW.status = 'cancelled'
+        BEGIN
+          SELECT RAISE(ABORT, 'release update failed');
+        END
+      `);
+      const service = new DataSovereigntyService(
+        {} as InboxService,
+        {} as StorageService,
+        dataSource,
+      );
+
+      const request =
+        operation === 'check-in'
+          ? service.checkInDeadMansSwitch(userId)
+          : service.updateDeadMansSwitch(userId, {
+              enabled: false,
+              contactEmail: 'trustee@example.com',
+              checkInIntervalDays: 30,
+            });
+      await expect(request).rejects.toThrow('release update failed');
+
+      const sw = await dataSource
+        .getRepository(DeadMansSwitchEntity)
+        .findOneOrFail({ where: { userId } });
+      const release = await dataSource
+        .getRepository(DeadMansSwitchReleaseEntity)
+        .findOneOrFail({ where: { userId } });
+      expect(sw.enabled).toBe(true);
+      expect(sw.lastCheckInAt).toBe(lastCheckInAt);
+      expect(release.status).toBe('pending');
+      expect(release.tokenHash).toBe('reserved-hash');
+      expect(release.tokenEncrypted).toBe('reserved-ciphertext');
+    },
+  );
 });

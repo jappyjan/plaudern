@@ -24,9 +24,10 @@ import {
  *  - `revoked`   — the owner revoked a grant that had already gone `active`.
  *
  * Auth/consent scope: the grant is a SINGLE, read-only credential to the owner's
- * export bundle and nothing else — no write, no delete, no login. The raw token
- * is emailed to the contact ONCE and never stored; only its SHA-256 hash lives
- * here, so a DB read cannot impersonate the contact. Owner-revocable at any time.
+ * export bundle and nothing else — no write, no delete, no login. While delivery
+ * is pending, the token is encrypted at rest so a failed send can safely retry
+ * the same credential. It is discarded after confirmed delivery; the SHA-256
+ * hash remains for access checks. Owner-revocable at any time.
  *
  * Privacy-relevant: wiped by JJ-42 panic-delete.
  */
@@ -55,6 +56,10 @@ export class DeadMansSwitchReleaseEntity {
    */
   @Column({ type: 'varchar', nullable: true })
   tokenHash!: string | null;
+
+  /** Retryable token, AES-encrypted at rest and cleared after confirmed delivery. */
+  @Column({ type: 'text', nullable: true })
+  tokenEncrypted!: string | null;
 
   /** When the check-in lapsed and the grace window opened (ISO in a varchar). */
   @Column({ type: 'varchar' })

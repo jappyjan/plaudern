@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource, In, Not } from 'typeorm';
+import { DataSource, EntityManager, In, Not } from 'typeorm';
 import type {
   AccountExport,
   DeadMansSwitchReleaseDto,
@@ -12,6 +12,8 @@ import { NotificationsService } from '@plaudern/notifications';
 import {
   DeadMansSwitchEntity,
   DeadMansSwitchReleaseEntity,
+  decryptSecret,
+  encryptSecret,
 } from '@plaudern/persistence';
 import { DataSovereigntyService } from './data-sovereignty.service';
 
@@ -33,18 +35,17 @@ const TERMINAL: DeadMansSwitchReleaseStatus[] = ['cancelled', 'revoked'];
  *  1. ARM — a sweep finds a lapsed check-in (now > triggersAt) on an enabled,
  *     configured switch with no live release, so it writes a `pending` release,
  *     opens a grace/confirmation window, and notifies the OWNER (audited/gated
- *     notification engine). A re-check-in during the window cancels it
- *     (`cancelPendingReleases`, called on check-in).
+ *     notification engine). A re-check-in during the window cancels it in the
+ *     same transaction as the new check-in timestamp.
  *  2. GRANT — a later sweep finds the grace window elapsed with the release still
- *     `pending`, so it mints a single scoped token, flips the release to
- *     `active`, and emails the trusted CONTACT the access link.
+ *     `pending`, so it reserves a single scoped token encrypted at rest, emails
+ *     the trusted CONTACT, and flips the release to `active` only after delivery.
  *
  * Auth/consent scope of the grant: a SINGLE, read-only credential to the owner's
  * export bundle (`exportEverything`) and nothing else — no write, no delete, no
- * login. Only the SHA-256 of the token is stored, so the raw credential exists
- * only in the contact's inbox. The owner can `revoke` an active grant at any
- * time. Firing is idempotent: once a release exists for a lapse it never
- * re-arms and the contact is emailed exactly once.
+ * login. A retryable credential is encrypted with APP_ENCRYPTION_SECRET only
+ * until confirmed delivery, then discarded; its SHA-256 hash remains. A crash
+ * after send can repeat the same link, but can never mint a second active token.
  *
  * A revoke (F1, JJ-80 review) durably disarms the switch for the lapse that
  * produced it: `revokeRelease` also marks the switch (`armingSuspendedForCheckInAt`)
@@ -52,16 +53,13 @@ const TERMINAL: DeadMansSwitchReleaseStatus[] = ['cancelled', 'revoked'];
  * on the next sweep. Only a genuine check-in — which changes `lastCheckInAt` —
  * lifts the suppression and lets a later lapse arm normally.
  *
- * Editing the switch's contact (F4) refreshes any still-`pending` release's
- * snapshot (`syncPendingContactSnapshot`) so a grace-window grant always goes
- * to the CURRENT contact, never a stale one. Disabling the switch (F7) fully
- * stands it down (`disarmForDisable`): cancels any pending release and revokes
- * any active grant, rather than merely pausing new firings.
+ * Editing the switch's contact refreshes any pending target and invalidates its
+ * reserved credential. Disabling fully stands it down: pending releases are
+ * cancelled and active grants revoked in the same transaction as the switch.
  *
- * No construction cycle: this service depends on `DataSovereigntyService` (for
- * the export) one-directionally; the reverse coupling (cancel-on-check-in,
- * contact-sync-on-edit, disarm-on-disable) is composed at the controller, so
- * neither service injects the other's owner.
+ * No construction cycle: this service depends on `DataSovereigntyService` only
+ * for export. Switch lifecycle invariants live transactionally in that service,
+ * behind the audit module seam rather than in the HTTP controller.
  */
 @Injectable()
 export class DeadMansSwitchReleaseService {
@@ -93,113 +91,60 @@ export class DeadMansSwitchReleaseService {
    * thereafter. `now` is injectable for tests.
    */
   async sweepUser(userId: string, now = new Date()): Promise<number> {
-    const sw = await this.dataSource
-      .getRepository(DeadMansSwitchEntity)
-      .findOne({ where: { userId } });
-    // Disabling the switch only stops NEW firings HERE — it does not itself
-    // revoke a grant that already went `active`. That side effect is handled
-    // explicitly (F7, `disarmForDisable`), called by the controller the
-    // moment the owner flips the switch off, so an already-disabled switch
-    // never has a live grant to revoke by the time we get here.
-    if (!sw || !sw.enabled || !sw.contactEmail || !sw.lastCheckInAt) return 0;
-
-    const triggersAt = Date.parse(sw.lastCheckInAt) + sw.checkInIntervalDays * DAY_MS;
+    const prepared = await this.prepareSweep(userId, now);
+    if (!prepared) return 0;
+    const { release } = prepared;
     const releases = this.dataSource.getRepository(DeadMansSwitchReleaseEntity);
-    // Only a non-terminal (pending/active) release blocks re-firing. F1: a
-    // `revoked` release also sets `armingSuspendedForCheckInAt` (below), so a
-    // still-lapsed switch does NOT arm a fresh release until a real check-in
-    // moves `lastCheckInAt` forward. A plain `cancelled` (re-check-in) release
-    // does not set the marker — the switch is no longer lapsed at that point.
-    let release = await releases.findOne({
-      where: { userId, status: Not(In(TERMINAL)) },
-    });
 
-    // Not yet lapsed: if a grace-window release is open the owner has effectively
-    // returned (check-in moved triggersAt into the future) — cancel it so nothing
-    // fires. Nothing else to do.
-    if (now.getTime() < triggersAt) {
-      if (release && release.status === 'pending') {
-        release.status = 'cancelled';
-        release.closedAt = now.toISOString();
-        await releases.save(release);
-        this.logger.log(`dms: cancelled pending release for ${userId} (re-check-in)`);
-      }
-      return 0;
-    }
-
-    // Lapsed. ARM: create the pending release + open the grace window + tell owner.
-    if (!release) {
-      // F1: a revoke suppresses re-arming for THIS lapse — `lastCheckInAt`
-      // hasn't moved since the revoke, so do not create a new pending release
-      // (and re-warn the owner) until a fresh check-in advances it.
-      if (
-        sw.armingSuspendedForCheckInAt !== null &&
-        sw.armingSuspendedForCheckInAt === sw.lastCheckInAt
-      ) {
-        return 0;
-      }
-      const graceMs = this.graceDays() * DAY_MS;
-      release = releases.create({
-        userId,
-        contactEmail: sw.contactEmail,
-        status: 'pending',
-        tokenHash: null,
-        firedAt: now.toISOString(),
-        graceUntil: new Date(now.getTime() + graceMs).toISOString(),
-        grantedAt: null,
-        closedAt: null,
-      });
-      release = await releases.save(release);
+    if (prepared.armed) {
       await this.notifyOwnerArmed(userId, release);
       this.logger.warn(
         `dms: armed release ${release.id} for ${userId}; grace until ${release.graceUntil}`,
       );
     }
 
-    // GRANT: grace elapsed and still pending → hand the contact scoped access.
+    // GRANT: reserve exactly one retryable credential while still pending, then
+    // activate only after the notification adapter confirms delivery.
     if (release.status === 'pending' && now.getTime() >= Date.parse(release.graceUntil)) {
-      const token = randomBytes(32).toString('hex');
-      // CONDITIONAL flip: the advisory lock serializes sweeps but NOT the owner's
-      // check-in write, so between our read and this write a `cancelPendingReleases`
-      // may have flipped the row to `cancelled`. Guard the transition on
-      // `status = 'pending'` so a lost update can't resurrect a cancelled release
-      // into an active grant — the "re-check-in cancels" invariant must hold no
-      // matter who raced. Only mint/email when we actually won the row.
-      const result = await releases
-        .createQueryBuilder()
-        .update()
-        .set({ status: 'active', tokenHash: hashToken(token), grantedAt: now.toISOString() })
-        .where('id = :id AND status = :status', { id: release.id, status: 'pending' })
-        .execute();
-      if (result.affected !== 1) {
+      const credential = await this.reserveCredential(userId, release.id, now);
+      if (!credential) {
         this.logger.log(`dms: release ${release.id} no longer pending — grant skipped (raced)`);
         return 0;
       }
+
+      const delivery = await this.notifyContactGranted(credential.release, credential.token);
+      if (!delivery.sent) {
+        this.logger.warn(
+          `dms: contact delivery for release ${release.id} failed; credential retained for retry`,
+        );
+        return 0;
+      }
+
+      // Check-in, disable, or a contact edit may have landed while email was in
+      // flight. All invalidate this reservation, so activation is conditional on
+      // the exact pending credential and target that were just delivered.
+      const activated = await this.activateDeliveredCredential(
+        userId,
+        credential.release,
+        now,
+      );
+      if (!activated) {
+        this.logger.log(`dms: release ${release.id} changed during delivery — grant discarded`);
+        return 0;
+      }
       release.status = 'active';
-      release.tokenHash = hashToken(token);
+      release.tokenHash = credential.release.tokenHash;
+      release.tokenEncrypted = null;
       release.grantedAt = now.toISOString();
-      await this.notifyContactGranted(release, token);
-      await this.notifyOwnerReleased(userId, release);
+      try {
+        await this.notifyOwnerReleased(userId, release);
+      } catch (err) {
+        this.logger.error(`dms: owner release notice failed: ${(err as Error).message}`);
+      }
       this.logger.warn(`dms: granted release ${release.id} to ${release.contactEmail}`);
       return 1;
     }
     return 0;
-  }
-
-  /**
-   * Cancel any grace-window (`pending`) release for the owner. Called when the
-   * owner checks in: a return before the grant fires must stop the release. An
-   * already-`active` grant is untouched — that requires an explicit `revoke`.
-   */
-  async cancelPendingReleases(userId: string, now = new Date()): Promise<number> {
-    const releases = this.dataSource.getRepository(DeadMansSwitchReleaseEntity);
-    const pending = await releases.find({ where: { userId, status: 'pending' } });
-    for (const r of pending) {
-      r.status = 'cancelled';
-      r.closedAt = now.toISOString();
-    }
-    if (pending.length > 0) await releases.save(pending);
-    return pending.length;
   }
 
   /**
@@ -214,105 +159,26 @@ export class DeadMansSwitchReleaseService {
     releaseId: string,
     now = new Date(),
   ): Promise<DeadMansSwitchReleaseDto> {
-    const releases = this.dataSource.getRepository(DeadMansSwitchReleaseEntity);
-    const release = await releases.findOne({ where: { id: releaseId } });
-    if (!release) throw new NotFoundException('release not found');
-    if (release.userId !== userId) throw new ForbiddenException('not your release');
-    if (release.status === 'active' || release.status === 'pending') {
-      release.status = 'revoked';
-      release.tokenHash = null; // the credential can no longer resolve.
-      release.closedAt = now.toISOString();
-      await releases.save(release);
-      await this.suppressArmingForCurrentLapse(userId);
-      this.logger.warn(`dms: owner ${userId} revoked release ${releaseId}`);
-    }
-    return toReleaseDto(release);
-  }
-
-  /**
-   * F4: refresh the fire-time contact snapshot on any still-open (`pending`)
-   * release when the owner edits the switch's contact. Without this, editing
-   * the contact mid-grace-window keeps the STALE snapshot, so the OLD contact
-   * — not the one the owner just configured — would be the one granted access
-   * when the window elapses. An already-`active` grant already went out to the
-   * contact it named, so it is intentionally left alone.
-   */
-  async syncPendingContactSnapshot(userId: string, contactEmail: string | null): Promise<void> {
-    if (!contactEmail) return; // the release's contactEmail column is non-nullable.
-    const releases = this.dataSource.getRepository(DeadMansSwitchReleaseEntity);
-    const result = await releases
-      .createQueryBuilder()
-      .update()
-      .set({ contactEmail })
-      .where('userId = :userId AND status = :status', { userId, status: 'pending' })
-      .execute();
-    if ((result.affected ?? 0) > 0) {
-      this.logger.log(`dms: refreshed pending release contact snapshot for ${userId}`);
-    }
-  }
-
-  /**
-   * F7: disabling the switch must fully stand it down — not just stop new
-   * firings. Cancels any grace-window release and revokes any already-active
-   * grant (mirroring the owner's explicit `revokeRelease`, including the F1
-   * arm-suppression so re-enabling later does not immediately re-arm off a
-   * stale, already-handled lapse).
-   */
-  async disarmForDisable(userId: string, now = new Date()): Promise<void> {
-    const releases = this.dataSource.getRepository(DeadMansSwitchReleaseEntity);
-
-    // CONDITIONAL flip, not save()-by-PK: a concurrent sweep may promote this
-    // release pending→active at grace expiry between our read and our write —
-    // a blind save would clobber that ACTIVE grant back to 'cancelled' with
-    // stale fields (and leave a minted token at large while the row claims
-    // cancelled). Guarding on status='pending' means a lost race is simply a
-    // miss here, and the active-revoke pass below (a FRESH query, so it sees
-    // the just-promoted row) revokes the grant properly instead.
-    const cancelResult = await releases
-      .createQueryBuilder()
-      .update()
-      .set({ status: 'cancelled', closedAt: now.toISOString() })
-      .where('userId = :userId AND status = :status', { userId, status: 'pending' })
-      .execute();
-    const cancelledCount = cancelResult.affected ?? 0;
-
-    const active = await releases.find({ where: { userId, status: 'active' } });
-    let revokedCount = 0;
-    for (const r of active) {
-      // Conditional flip, same guard as the sweep's grant transition: only
-      // count/act on rows we actually won.
-      const result = await releases
-        .createQueryBuilder()
-        .update()
-        .set({ status: 'revoked', tokenHash: null, closedAt: now.toISOString() })
-        .where('id = :id AND status = :status', { id: r.id, status: 'active' })
-        .execute();
-      if (result.affected === 1) revokedCount += 1;
-    }
-
-    // F1 suppression whenever ANYTHING was stood down — a disable that only
-    // cancelled a pending release must not re-arm + re-warn immediately on
-    // re-enable while the same stale lapse persists, exactly like a revoke.
-    if (cancelledCount + revokedCount > 0) {
-      await this.suppressArmingForCurrentLapse(userId);
-      this.logger.warn(
-        `dms: disable disarmed switch for ${userId} (${cancelledCount} cancelled, ${revokedCount} revoked)`,
-      );
-    }
-  }
-
-  /**
-   * F1: mark the switch so the CURRENT lapse cannot arm a new release. Stores
-   * `lastCheckInAt` as of the revoke; `sweepUser` skips arming while this
-   * still matches `lastCheckInAt` (no check-in since). A real check-in
-   * changes (and clears) `lastCheckInAt`, so the marker goes stale on its own
-   * and the next lapse arms normally.
-   */
-  private async suppressArmingForCurrentLapse(userId: string): Promise<void> {
-    const switches = this.dataSource.getRepository(DeadMansSwitchEntity);
-    const sw = await switches.findOne({ where: { userId } });
-    if (!sw) return;
-    await switches.update({ userId }, { armingSuspendedForCheckInAt: sw.lastCheckInAt });
+    return this.dataSource.transaction(async (em) => {
+      const sw = await this.findSwitchForUpdate(em, userId);
+      const releases = em.getRepository(DeadMansSwitchReleaseEntity);
+      const release = await releases.findOne({ where: { id: releaseId } });
+      if (!release) throw new NotFoundException('release not found');
+      if (release.userId !== userId) throw new ForbiddenException('not your release');
+      if (release.status === 'active' || release.status === 'pending') {
+        release.status = 'revoked';
+        release.tokenHash = null;
+        release.tokenEncrypted = null;
+        release.closedAt = now.toISOString();
+        await releases.save(release);
+        if (sw) {
+          sw.armingSuspendedForCheckInAt = sw.lastCheckInAt;
+          await em.getRepository(DeadMansSwitchEntity).save(sw);
+        }
+        this.logger.warn(`dms: owner ${userId} revoked release ${releaseId}`);
+      }
+      return toReleaseDto(release);
+    });
   }
 
   /** The owner's release history (newest first) for the sovereignty surface. */
@@ -343,6 +209,137 @@ export class DeadMansSwitchReleaseService {
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_GRACE_DAYS;
   }
 
+  /** Serialize arming/cancellation with check-in, disable, and contact updates. */
+  private async prepareSweep(
+    userId: string,
+    now: Date,
+  ): Promise<{ release: DeadMansSwitchReleaseEntity; armed: boolean } | null> {
+    return this.dataSource.transaction(async (em) => {
+      const sw = await this.findSwitchForUpdate(em, userId);
+      if (!sw?.enabled || !sw.contactEmail || !sw.lastCheckInAt) return null;
+      const releases = em.getRepository(DeadMansSwitchReleaseEntity);
+      let release = await releases.findOne({
+        where: { userId, status: Not(In(TERMINAL)) },
+      });
+      const triggersAt = Date.parse(sw.lastCheckInAt) + sw.checkInIntervalDays * DAY_MS;
+
+      if (now.getTime() < triggersAt) {
+        if (release?.status === 'pending') {
+          release.status = 'cancelled';
+          release.tokenHash = null;
+          release.tokenEncrypted = null;
+          release.closedAt = now.toISOString();
+          await releases.save(release);
+          this.logger.log(`dms: cancelled pending release for ${userId} (re-check-in)`);
+        }
+        return null;
+      }
+
+      if (release) return { release, armed: false };
+      if (sw.armingSuspendedForCheckInAt === sw.lastCheckInAt) return null;
+      const graceMs = this.graceDays() * DAY_MS;
+      release = await releases.save(
+        releases.create({
+          userId,
+          contactEmail: sw.contactEmail,
+          status: 'pending',
+          tokenHash: null,
+          tokenEncrypted: null,
+          firedAt: now.toISOString(),
+          graceUntil: new Date(now.getTime() + graceMs).toISOString(),
+          grantedAt: null,
+          closedAt: null,
+        }),
+      );
+      return { release, armed: true };
+    });
+  }
+
+  /** Atomically mint once, or recover the credential reserved by an earlier attempt. */
+  private async reserveCredential(
+    userId: string,
+    releaseId: string,
+    now: Date,
+  ): Promise<{ release: DeadMansSwitchReleaseEntity; token: string } | null> {
+    return this.dataSource.transaction(async (em) => {
+      const sw = await this.findSwitchForUpdate(em, userId);
+      if (!this.canGrant(sw, now)) return null;
+
+      const releases = em.getRepository(DeadMansSwitchReleaseEntity);
+      let release = await releases.findOne({ where: { id: releaseId, status: 'pending' } });
+      if (!release || release.contactEmail !== sw!.contactEmail) return null;
+
+      if (!release.tokenEncrypted) {
+        const token = randomBytes(32).toString('hex');
+        const tokenHash = hashToken(token);
+        const tokenEncrypted = encryptSecret(token, this.encryptionSecret());
+        const result = await releases
+          .createQueryBuilder()
+          .update()
+          .set({ tokenHash, tokenEncrypted })
+          .where('id = :id AND status = :status', { id: releaseId, status: 'pending' })
+          .andWhere('tokenEncrypted IS NULL')
+          .execute();
+        if (result.affected === 1) {
+          release.tokenHash = tokenHash;
+          release.tokenEncrypted = tokenEncrypted;
+          return { release, token };
+        }
+        release = await releases.findOne({ where: { id: releaseId, status: 'pending' } });
+        if (!release) return null;
+      }
+
+      if (!release.tokenEncrypted || !release.tokenHash) return null;
+      return {
+        release,
+        token: decryptSecret(release.tokenEncrypted, this.encryptionSecret()),
+      };
+    });
+  }
+
+  private async activateDeliveredCredential(
+    userId: string,
+    release: DeadMansSwitchReleaseEntity,
+    now: Date,
+  ): Promise<boolean> {
+    return this.dataSource.transaction(async (em) => {
+      const sw = await this.findSwitchForUpdate(em, userId);
+      if (!this.canGrant(sw, now) || sw!.contactEmail !== release.contactEmail) return false;
+      const result = await em
+        .getRepository(DeadMansSwitchReleaseEntity)
+        .createQueryBuilder()
+        .update()
+        .set({ status: 'active', tokenEncrypted: null, grantedAt: now.toISOString() })
+        .where('id = :id AND status = :status', { id: release.id, status: 'pending' })
+        .andWhere('tokenHash = :tokenHash', { tokenHash: release.tokenHash })
+        .andWhere('contactEmail = :contactEmail', { contactEmail: release.contactEmail })
+        .execute();
+      return result.affected === 1;
+    });
+  }
+
+  private findSwitchForUpdate(
+    em: EntityManager,
+    userId: string,
+  ): Promise<DeadMansSwitchEntity | null> {
+    return em.getRepository(DeadMansSwitchEntity).findOne({
+      where: { userId },
+      ...(this.dataSource.options.type === 'postgres'
+        ? { lock: { mode: 'pessimistic_write' as const } }
+        : {}),
+    });
+  }
+
+  private canGrant(sw: DeadMansSwitchEntity | null, now: Date): boolean {
+    if (!sw?.enabled || !sw.contactEmail || !sw.lastCheckInAt) return false;
+    const triggersAt = Date.parse(sw.lastCheckInAt) + sw.checkInIntervalDays * DAY_MS;
+    return now.getTime() >= triggersAt;
+  }
+
+  private encryptionSecret(): string {
+    return this.config.get<string>('APP_ENCRYPTION_SECRET', 'change-me');
+  }
+
   /** Owner: the switch tripped; here is the grace window to cancel it. */
   private async notifyOwnerArmed(userId: string, r: DeadMansSwitchReleaseEntity): Promise<void> {
     const when = new Date(r.graceUntil).toUTCString();
@@ -366,11 +363,14 @@ export class DeadMansSwitchReleaseService {
     });
   }
 
-  /** Contact: the scoped access link (raw token, sent exactly once). */
-  private async notifyContactGranted(r: DeadMansSwitchReleaseEntity, token: string): Promise<void> {
+  /** Contact: the scoped link; retries may repeat the same credential. */
+  private notifyContactGranted(
+    r: DeadMansSwitchReleaseEntity,
+    token: string,
+  ): Promise<{ sent: boolean; detail: string | null }> {
     const base = (this.config.get<string>('PUBLIC_APP_URL') ?? '').replace(/\/+$/, '');
     const link = `${base}/api/v1/account/emergency-access/${token}`;
-    await this.notifications.notifyEmailAddress(r.contactEmail, {
+    return this.notifications.notifyEmailAddress(r.contactEmail, {
       title: 'Emergency access to a Plaudern archive',
       body: `You were named as a trusted contact for a Plaudern archive. Its owner has not checked in, so you have been granted read-only emergency access. This link is a private credential — do not share it.`,
       url: link,
@@ -378,7 +378,7 @@ export class DeadMansSwitchReleaseService {
   }
 }
 
-/** SHA-256 hex of a token; the raw token is never persisted. */
+/** SHA-256 hex used to resolve a delivered token without decrypting storage. */
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
