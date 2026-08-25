@@ -7,6 +7,7 @@ export * from './speakers';
 export * from './summary';
 export * from './embedding';
 export * from './entities';
+export * from './encryption-secret';
 export * from './alias-hygiene';
 export * from './topics';
 export * from './tasks';

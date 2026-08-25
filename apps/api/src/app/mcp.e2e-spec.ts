@@ -7,7 +7,6 @@ process.env.DATABASE_URL = ':memory:';
 process.env.STORAGE_DRIVER = 'memory';
 process.env.QUEUE_DRIVER = 'inline';
 process.env.AUTH_DISABLED = 'true'; // single-user mode — MCP does its own token auth
-process.env.APP_ENCRYPTION_SECRET = 'test-secret';
 process.env.PLAUD_POLL_INTERVAL_MS = '0';
 
 import { INestApplication } from '@nestjs/common';

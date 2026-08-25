@@ -15,6 +15,7 @@
     "test": "nx run-many -t test",
     "eval": "nx run-many -t eval",
     "migration:smoke": "nx run persistence:migration-smoke",
+    "rotate:encryption-secret": "nx run persistence:rotate-encryption-secret",
     "typecheck": "nx run-many -t typecheck",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down"

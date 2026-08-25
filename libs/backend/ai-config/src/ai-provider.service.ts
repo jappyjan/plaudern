@@ -31,7 +31,9 @@ export class AiProviderService {
     private readonly aiConfig: AiConfigService,
     config: ConfigService,
   ) {
-    this.encryptionSecret = config.get<string>('APP_ENCRYPTION_SECRET', 'change-me');
+    const encryptionSecret = config.get<string>('APP_ENCRYPTION_SECRET');
+    if (!encryptionSecret) throw new Error('APP_ENCRYPTION_SECRET is required');
+    this.encryptionSecret = encryptionSecret;
   }
 
   async list(userId: string): Promise<AiProviderDto[]> {

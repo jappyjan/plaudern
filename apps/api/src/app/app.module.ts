@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PersistenceModule } from '@plaudern/persistence';
 import { AiConfigModule } from '@plaudern/ai-config';
 import { StorageModule } from '@plaudern/storage';
@@ -33,10 +33,15 @@ import { SearchModule } from '@plaudern/search';
 import { ChatModule } from '@plaudern/chat';
 import { AuditModule } from '@plaudern/audit';
 import { HealthController } from './health.controller';
+import { validateEnvironment } from '../config/environment';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', 'apps/api/.env'] }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: ['.env', 'apps/api/.env'],
+      validate: process.env.NODE_ENV === 'production' ? validateEnvironment : undefined,
+    }),
     PersistenceModule,
     // Global: exposes AiConfigService + shared AI clients to every feature
     // module, and runs the one-time env→DB import for AI config.
@@ -76,4 +81,8 @@ import { HealthController } from './health.controller';
   ],
   controllers: [HealthController],
 })
-export class AppModule {}
+export class AppModule {
+  constructor(config: ConfigService) {
+    validateEnvironment({ APP_ENCRYPTION_SECRET: config.get('APP_ENCRYPTION_SECRET') });
+  }
+}
