@@ -135,12 +135,15 @@ export class DocMetaService {
     inboxItemId: string,
     request: UpdateDocumentDateOverrideRequest,
   ): Promise<ItemDocMetaResponse> {
-    const row = await this.documents.findOne({ where: { userId, inboxItemId } });
-    if (!row) throw new BadRequestException('item has no extracted document metadata');
-    row.documentDateOverride = request.documentDateOverride
-      ? `${request.documentDateOverride}T00:00:00.000Z`
-      : null;
-    await this.documents.save(row);
+    const result = await this.documents.update(
+      { userId, inboxItemId },
+      {
+        documentDateOverride: request.documentDateOverride
+          ? `${request.documentDateOverride}T00:00:00.000Z`
+          : null,
+      },
+    );
+    if (result.affected !== 1) throw new BadRequestException('item has no extracted document metadata');
     return this.getItemDocMeta(userId, inboxItemId);
   }
 

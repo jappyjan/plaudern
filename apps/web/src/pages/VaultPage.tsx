@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import type { DocumentDto, DocumentType } from '@plaudern/contracts';
 import { listVaultDocuments } from '../lib/api';
 import { VaultIcon } from '../components/icons';
+import { formatDocumentDate } from '../lib/format';
 
 /** Display labels + ordering for document types (grouped sections). */
 const TYPE_LABELS: Record<DocumentType, string> = {
@@ -204,7 +205,11 @@ function DocumentCard({ doc }: { doc: DocumentDto }) {
 
         {doc.iban && <p className="text-xs text-default-400">IBAN {doc.iban}</p>}
 
-        <p className="text-xs text-default-400">{formatDate(doc.documentDate ?? doc.occurredAt)}</p>
+        <p className="text-xs text-default-400">
+          {doc.documentDateOverride || doc.documentDate
+            ? formatDocumentDate(doc.documentDateOverride ?? doc.documentDate ?? doc.occurredAt)
+            : formatDate(doc.occurredAt)}
+        </p>
       </CardBody>
     </Card>
   );

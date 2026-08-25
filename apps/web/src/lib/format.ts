@@ -52,6 +52,18 @@ export function formatDate(iso: string): string {
   return date.toLocaleDateString(undefined, { dateStyle: 'medium' });
 }
 
+/** Formats a date-only document value in UTC so its calendar day never shifts. */
+export function formatDocumentDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleDateString(undefined, { dateStyle: 'medium', timeZone: 'UTC' });
+}
+
+/** Formats an item's effective date, preserving document-date calendar semantics. */
+export function formatItemDate(item: { documentDate?: string | null; occurredAt: string }): string {
+  return item.documentDate ? formatDocumentDate(item.documentDate) : formatDateTime(item.occurredAt);
+}
+
 export function formatTime(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;

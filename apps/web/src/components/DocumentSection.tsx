@@ -8,7 +8,7 @@ import {
   retryItemOcr,
   updateItemDocumentDate,
 } from '../lib/api';
-import { formatDate } from '../lib/format';
+import { formatDocumentDate } from '../lib/format';
 
 interface DocumentSectionProps {
   itemId: string;
@@ -49,6 +49,11 @@ export function DocumentSection({
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    setDateValue('');
+    setDateError(null);
+  }, [itemId]);
 
   const retry = async () => {
     setBusy(true);
@@ -126,7 +131,7 @@ export function DocumentSection({
               </Chip>
               {effectiveDate && (
                 <Chip size="sm" variant="flat" color="default">
-                  Dated {formatDate(effectiveDate)}
+                  Dated {formatDocumentDate(effectiveDate)}
                 </Chip>
               )}
               {doc.expiryDate && (

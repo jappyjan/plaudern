@@ -17,7 +17,7 @@ import {
   getCalendarEvent,
   listCalendarRecordings,
 } from '../../lib/api';
-import { formatDate, formatDateTime, formatTime, itemDate } from '../../lib/format';
+import { formatDate, formatDateTime, formatItemDate, formatTime } from '../../lib/format';
 import { AudioIcon, LinkIcon, UnlinkIcon } from '../icons';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -165,7 +165,7 @@ export function EventDetailModal({ eventId, onClose, onLinksChanged }: EventDeta
                   >
                     <span className="block truncate">{recordingLabel(recording)}</span>
                     <span className="block text-xs text-default-500">
-                      {formatDateTime(itemDate(recording))}
+                      {formatItemDate(recording)}
                     </span>
                   </Link>
                   <Button
@@ -203,7 +203,7 @@ export function EventDetailModal({ eventId, onClose, onLinksChanged }: EventDeta
                       onPress={() => void link(candidate.id)}
                       isDisabled={busy}
                     >
-                      {recordingLabel(candidate)} · {formatDateTime(itemDate(candidate))}
+                      {recordingLabel(candidate)} · {formatItemDate(candidate)}
                     </Button>
                   ))}
                 </div>
