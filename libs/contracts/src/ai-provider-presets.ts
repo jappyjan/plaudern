@@ -53,10 +53,11 @@ export const PROVIDER_PRESETS: AiProviderPreset[] = [
     id: 'deepseek',
     label: 'DeepSeek',
     protocol: 'openai-compatible',
-    defaultBaseUrl: 'https://api.deepseek.com/v1',
+    defaultBaseUrl: 'https://api.deepseek.com',
     keyless: false,
     models: {
-      chat: ['deepseek-chat', 'deepseek-reasoner'],
+      chat: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+      vision: ['deepseek-v4-flash-vision-exp'],
     },
   },
   {

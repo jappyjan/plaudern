@@ -16,6 +16,8 @@ import {
   SelectItem,
   Spinner,
   Switch,
+  Tab,
+  Tabs,
 } from '@heroui/react';
 import { Link } from 'react-router-dom';
 import {
@@ -218,154 +220,169 @@ export function SettingsPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <AccountSection />
-
-      <div className="flex flex-col gap-4 border-t border-default-200 pt-6">
-        <div>
-          <h2 className="text-lg font-semibold">Appearance</h2>
-          <p className="text-sm text-default-500">Switch between light and dark mode.</p>
-        </div>
-        <Switch
-          isSelected={theme === 'dark'}
-          onValueChange={onToggleTheme}
-          thumbIcon={({ isSelected, className }) =>
-            isSelected ? <MoonIcon className={className} /> : <SunIcon className={className} />
-          }
-        >
-          Dark mode
-        </Switch>
+      <div>
+        <h1 className="text-xl font-bold">Settings</h1>
+        <p className="text-sm text-default-500">Manage your account, connections, AI, and privacy.</p>
       </div>
 
-      <div className="border-t border-default-200 pt-6">
-        <h2 className="text-lg font-semibold">Plaud sync</h2>
-        <p className="text-sm text-default-500">
-          Connect your Plaud account to automatically pull recordings into the inbox. Your Plaud
-          account must have a password set — the Plaud app defaults to code-based login.
-        </p>
-      </div>
+      <Tabs
+        aria-label="Settings sections"
+        variant="underlined"
+        className="w-full"
+        classNames={{ tabList: 'w-full flex-nowrap overflow-x-auto' }}
+      >
+        <Tab key="general" title="General">
+          <div className="flex flex-col gap-6 pt-4">
+            <AccountSection />
 
-      {loadError && (
-        <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">
-          Failed to load settings: {loadError}
-        </div>
-      )}
+            <div className="flex flex-col gap-4 border-t border-default-200 pt-6">
+              <div>
+                <h2 className="text-lg font-semibold">Appearance</h2>
+                <p className="text-sm text-default-500">Switch between light and dark mode.</p>
+              </div>
+              <Switch
+                isSelected={theme === 'dark'}
+                onValueChange={onToggleTheme}
+                thumbIcon={({ isSelected, className }) =>
+                  isSelected ? <MoonIcon className={className} /> : <SunIcon className={className} />
+                }
+              >
+                Dark mode
+              </Switch>
+            </div>
 
-      <div className="flex flex-col gap-4">
-        <Input
-          label="Email"
-          type="email"
-          value={email}
-          onValueChange={setEmail}
-          autoComplete="off"
-        />
-        <Input
-          label="Password"
-          type="password"
-          value={password}
-          onValueChange={setPassword}
-          placeholder={settings?.hasPassword ? '••••••••  (unchanged)' : ''}
-          description={
-            settings?.hasPassword ? 'Leave empty to keep the stored password.' : undefined
-          }
-          autoComplete="new-password"
-        />
-        <Select
-          label="Region"
-          selectedKeys={[region]}
-          onSelectionChange={(keys) => {
-            const key = Array.from(keys)[0];
-            if (key === 'us' || key === 'eu') setRegion(key);
-          }}
-          disallowEmptySelection
-        >
-          {REGIONS.map((r) => (
-            <SelectItem key={r.key}>{r.label}</SelectItem>
-          ))}
-        </Select>
-        <Switch isSelected={enabled} onValueChange={setEnabled}>
-          Automatically sync new recordings
-        </Switch>
-      </div>
+            <div className="border-t border-default-200 pt-6">
+              <h2 className="text-lg font-semibold">Plaud sync</h2>
+              <p className="text-sm text-default-500">
+                Connect your Plaud account to automatically pull recordings into the inbox. Your Plaud
+                account must have a password set — the Plaud app defaults to code-based login.
+              </p>
+            </div>
 
-      {saveError && (
-        <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">{saveError}</div>
-      )}
-      {testResult && (
-        <div
-          className={
-            testResult.ok
-              ? 'rounded-medium bg-success-50 p-3 text-sm text-success'
-              : 'rounded-medium bg-danger-50 p-3 text-sm text-danger'
-          }
-        >
-          {testResult.ok ? 'Connection to Plaud succeeded.' : `Connection failed: ${testResult.error}`}
-        </div>
-      )}
+            {loadError && (
+              <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">
+                Failed to load settings: {loadError}
+              </div>
+            )}
 
-      <div className="flex gap-3">
-        <Button variant="flat" isLoading={testing} isDisabled={!email} onPress={test}>
-          Test connection
-        </Button>
-        <Button color="primary" className="flex-1" isLoading={saving} isDisabled={!email} onPress={save}>
-          Save
-        </Button>
-      </div>
+            <div className="flex flex-col gap-4">
+              <Input label="Email" type="email" value={email} onValueChange={setEmail} autoComplete="off" />
+              <Input
+                label="Password"
+                type="password"
+                value={password}
+                onValueChange={setPassword}
+                placeholder={settings?.hasPassword ? '••••••••  (unchanged)' : ''}
+                description={settings?.hasPassword ? 'Leave empty to keep the stored password.' : undefined}
+                autoComplete="new-password"
+              />
+              <Select
+                label="Region"
+                selectedKeys={[region]}
+                onSelectionChange={(keys) => {
+                  const key = Array.from(keys)[0];
+                  if (key === 'us' || key === 'eu') setRegion(key);
+                }}
+                disallowEmptySelection
+              >
+                {REGIONS.map((r) => (
+                  <SelectItem key={r.key}>{r.label}</SelectItem>
+                ))}
+              </Select>
+              <Switch isSelected={enabled} onValueChange={setEnabled}>
+                Automatically sync new recordings
+              </Switch>
+            </div>
 
-      {settings?.configured && (
-        <div className="flex flex-col gap-2 rounded-medium bg-default-50 p-4 text-sm">
-          <div className="flex items-center justify-between">
-            <span className="font-medium">Sync status</span>
-            <Button
-              size="sm"
-              variant="flat"
-              isDisabled={!settings.enabled}
-              isLoading={settings.syncRunning}
-              onPress={syncNow}
-            >
-              {settings.syncRunning ? 'Syncing…' : 'Sync now'}
-            </Button>
-          </div>
-          {settings.lastSyncAt ? (
-            <>
-              <span className="text-default-500">
-                Last sync {formatDateTime(settings.lastSyncAt)}
-                {settings.lastSyncImportedCount !== null &&
-                  ` — ${settings.lastSyncImportedCount} recording${settings.lastSyncImportedCount === 1 ? '' : 's'} imported`}
-              </span>
-              {settings.lastSyncStatus === 'error' && settings.lastSyncError && (
-                <div className="rounded-medium bg-danger-50 p-3 text-danger">
-                  {settings.lastSyncError}
+            {saveError && (
+              <div className="rounded-medium bg-danger-50 p-3 text-sm text-danger">{saveError}</div>
+            )}
+            {testResult && (
+              <div
+                className={
+                  testResult.ok
+                    ? 'rounded-medium bg-success-50 p-3 text-sm text-success'
+                    : 'rounded-medium bg-danger-50 p-3 text-sm text-danger'
+                }
+              >
+                {testResult.ok ? 'Connection to Plaud succeeded.' : `Connection failed: ${testResult.error}`}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <Button variant="flat" isLoading={testing} isDisabled={!email} onPress={test}>
+                Test connection
+              </Button>
+              <Button color="primary" className="flex-1" isLoading={saving} isDisabled={!email} onPress={save}>
+                Save
+              </Button>
+            </div>
+
+            {settings?.configured && (
+              <div className="flex flex-col gap-2 rounded-medium bg-default-50 p-4 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">Sync status</span>
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    isDisabled={!settings.enabled}
+                    isLoading={settings.syncRunning}
+                    onPress={syncNow}
+                  >
+                    {settings.syncRunning ? 'Syncing…' : 'Sync now'}
+                  </Button>
                 </div>
-              )}
-            </>
-          ) : (
-            <span className="text-default-500">No sync has run yet.</span>
-          )}
-        </div>
-      )}
+                {settings.lastSyncAt ? (
+                  <>
+                    <span className="text-default-500">
+                      Last sync {formatDateTime(settings.lastSyncAt)}
+                      {settings.lastSyncImportedCount !== null &&
+                        ` — ${settings.lastSyncImportedCount} recording${settings.lastSyncImportedCount === 1 ? '' : 's'} imported`}
+                    </span>
+                    {settings.lastSyncStatus === 'error' && settings.lastSyncError && (
+                      <div className="rounded-medium bg-danger-50 p-3 text-danger">
+                        {settings.lastSyncError}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-default-500">No sync has run yet.</span>
+                )}
+              </div>
+            )}
 
-      <EmailSettingsSection />
-
-      <SummarizationSection />
-
-      <AiProvidersSection />
-
-      <AiCapabilityGroupsSection />
-
-      <ConsentSection />
-
-      <NotificationsSection />
-
-      <CalendarFeedsSection />
-
-      <McpAccessSection />
-
-      <DataSovereigntySection />
-
-      <DangerZoneSection
-        plaudEnabled={settings?.enabled ?? false}
-        onPurged={() => void refresh()}
-      />
+            <EmailSettingsSection />
+          </div>
+        </Tab>
+        <Tab key="ai" title="AI">
+          <div className="flex flex-col gap-6 pt-4">
+            <SummarizationSection />
+            <AiProvidersSection />
+            <AiCapabilityGroupsSection />
+          </div>
+        </Tab>
+        <Tab key="notifications" title="Notifications">
+          <div className="pt-4">
+            <NotificationsSection />
+          </div>
+        </Tab>
+        <Tab key="integrations" title="Integrations">
+          <div className="flex flex-col gap-6 pt-4">
+            <CalendarFeedsSection />
+            <McpAccessSection />
+          </div>
+        </Tab>
+        <Tab key="privacy" title="Privacy & data">
+          <div className="flex flex-col gap-6 pt-4">
+            <ConsentSection />
+            <DataSovereigntySection />
+            <DangerZoneSection
+              plaudEnabled={settings?.enabled ?? false}
+              onPurged={() => void refresh()}
+            />
+          </div>
+        </Tab>
+      </Tabs>
     </div>
   );
 }

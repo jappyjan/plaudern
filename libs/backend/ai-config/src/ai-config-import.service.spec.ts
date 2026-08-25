@@ -97,7 +97,7 @@ describe('AiConfigImportService.onModuleInit', () => {
     expect(providerRows.every((p) => p.userId === DEFAULT_USER_ID)).toBe(true);
 
     // Exactly one DeepSeek connection, shared by the three deepseek capabilities.
-    const deepseek = providerRows.filter((p) => p.baseUrl === 'https://api.deepseek.com/v1');
+    const deepseek = providerRows.filter((p) => p.baseUrl === 'https://api.deepseek.com');
     expect(deepseek).toHaveLength(1);
     expect(decryptSecret(deepseek[0].apiKeyEncrypted as string, SECRET)).toBe('deepseek-key');
 

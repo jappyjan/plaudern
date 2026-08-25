@@ -116,7 +116,7 @@ docker-compose.yml   Postgres (pgvector) + MinIO + Redis + api + web for local d
   (Settings → AI summaries): `Automatic` follows each recording's spoken
   language, or pick a fixed language applied to every future summary. Any
   **OpenAI-compatible** `/chat/completions` endpoint works — the default
-  targets **DeepSeek** (`deepseek-chat`), the cheapest capable option; leave
+  targets **DeepSeek** (`deepseek-v4-flash`), the cheapest capable option; leave
   `SUMMARIZATION_API_KEY` empty to disable the step (the UI then just shows the
   transcript). A **local Ollama** server works the same way — Ollama needs no
   API key, so set `SUMMARIZATION_ENABLED=true` instead and point
