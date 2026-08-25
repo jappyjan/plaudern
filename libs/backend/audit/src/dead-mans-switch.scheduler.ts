@@ -22,8 +22,8 @@ const DEFAULT_DELAY_MS = 30_000;
  * (hourly by default) it sweeps every user with an armed switch and advances it:
  * arming a grace-window release when a check-in has lapsed, then granting the
  * trusted contact scoped emergency access once the window elapses. Firing is
- * idempotent (`dead_mans_switch_release` state), so the contact is emailed
- * exactly once; the sweep is a no-op when nothing is due.
+ * idempotent (`dead_mans_switch_release` state); failed contact delivery retries
+ * the same encrypted credential and successful grants become a no-op.
  *
  * Mirrors the JJ-26 nudge scheduler's guarantees: feature-gated
  * (DEAD_MANS_SWITCH_SCHEDULER_ENABLED, default on in prod), non-blocking (arms

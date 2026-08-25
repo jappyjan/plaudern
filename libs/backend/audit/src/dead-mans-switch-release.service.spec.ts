@@ -8,7 +8,7 @@ import {
   DeadMansSwitchEntity,
   DeadMansSwitchReleaseEntity,
 } from '@plaudern/persistence';
-import type { DataSovereigntyService } from './data-sovereignty.service';
+import { DataSovereigntyService } from './data-sovereignty.service';
 import { DeadMansSwitchReleaseService } from './dead-mans-switch-release.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -24,6 +24,7 @@ function makeConfig(graceDays: string): ConfigService {
     get: (key: string, def?: string) => {
       if (key === 'DEAD_MANS_SWITCH_GRACE_DAYS') return graceDays;
       if (key === 'PUBLIC_APP_URL') return 'https://app.test';
+      if (key === 'APP_ENCRYPTION_SECRET') return 'test-emergency-access-secret';
       return def;
     },
   } as unknown as ConfigService;
@@ -136,15 +137,12 @@ describe('DeadMansSwitchReleaseService', () => {
     let releases = await dataSource.getRepository(DeadMansSwitchReleaseEntity).find();
     expect(releases[0].status).toBe('pending');
 
-    // Owner re-checks in (controller resets lastCheckInAt + cancels pending).
-    await dataSource
-      .getRepository(DeadMansSwitchEntity)
-      .update({ userId: USER }, { lastCheckInAt: NOW.toISOString() });
-    const cancelled = await service.cancelPendingReleases(USER, NOW);
-    expect(cancelled).toBe(1);
+    // Owner re-checks in: heartbeat and cancellation commit atomically.
+    const checkIns = new DataSovereigntyService({} as never, {} as never, dataSource);
+    await checkIns.checkInDeadMansSwitch(USER);
 
     // A later sweep (still within the would-be window) does NOT grant.
-    const grantedAfter = await service.sweepUser(USER, new Date(NOW.getTime() + 20 * DAY_MS));
+    const grantedAfter = await service.sweepUser(USER, new Date());
     expect(grantedAfter).toBe(0);
     expect(notifications.notifyEmailAddress).not.toHaveBeenCalled();
     releases = await dataSource.getRepository(DeadMansSwitchReleaseEntity).find();
@@ -211,6 +209,60 @@ describe('DeadMansSwitchReleaseService', () => {
     const row = (await dataSource.getRepository(DeadMansSwitchReleaseEntity).find())[0];
     expect(row.status).toBe('cancelled');
     expect(row.tokenHash).toBeNull();
+  });
+
+  it('does not activate after a check-in commits while contact delivery is in flight', async () => {
+    await seedSwitch({});
+    const service = makeService('0');
+    let deliveryStarted!: () => void;
+    let finishDelivery!: () => void;
+    const started = new Promise<void>((resolve) => (deliveryStarted = resolve));
+    const finish = new Promise<void>((resolve) => (finishDelivery = resolve));
+    notifications.notifyEmailAddress.mockImplementationOnce(async () => {
+      deliveryStarted();
+      await finish;
+      return { sent: true, detail: CONTACT };
+    });
+
+    const sweep = service.sweepUser(USER, NOW);
+    await started;
+
+    const checkIns = new DataSovereigntyService({} as never, {} as never, dataSource);
+    await checkIns.checkInDeadMansSwitch(USER);
+    finishDelivery();
+
+    expect(await sweep).toBe(0);
+    const release = (await dataSource.getRepository(DeadMansSwitchReleaseEntity).find())[0];
+    expect(release.status).toBe('cancelled');
+    expect(release.tokenHash).toBeNull();
+    expect(release.tokenEncrypted).toBeNull();
+    expect(await service.resolveEmergencyAccess(tokenFromEmail(notifications.notifyEmailAddress))).toBeNull();
+  });
+
+  it('retains an encrypted credential after notification failure and redelivers it on retry', async () => {
+    await seedSwitch({});
+    const service = makeService('0');
+    notifications.notifyEmailAddress.mockResolvedValueOnce({ sent: false, detail: 'smtp unavailable' });
+
+    expect(await service.sweepUser(USER, NOW)).toBe(0);
+    const releaseRepo = dataSource.getRepository(DeadMansSwitchReleaseEntity);
+    let release = (await releaseRepo.find())[0];
+    const firstToken = tokenFromEmail(notifications.notifyEmailAddress);
+    expect(release.status).toBe('pending');
+    expect(release.tokenHash).toBeNull();
+    expect(release.tokenEncrypted).toBeTruthy();
+    expect(release.tokenEncrypted).not.toContain(firstToken);
+
+    notifications.notifyEmailAddress.mockResolvedValueOnce({ sent: true, detail: CONTACT });
+    expect(await service.sweepUser(USER, NOW)).toBe(1);
+    const secondUrl = notifications.notifyEmailAddress.mock.calls[1][1].url as string;
+    expect(secondUrl.endsWith(`/${firstToken}`)).toBe(true);
+
+    release = (await releaseRepo.find())[0];
+    expect(release.status).toBe('active');
+    expect(release.tokenHash).toBeTruthy();
+    expect(release.tokenEncrypted).toBeNull();
+    expect(await service.resolveEmergencyAccess(firstToken)).toBe(FAKE_EXPORT);
   });
 
   it(

@@ -116,6 +116,7 @@ import { CreateCorrectionNotes1720000000053 } from './migrations/1720000000053-C
 import { AddDocumentDateOverride1720000000054 } from './migrations/1720000000054-AddDocumentDateOverride';
 import { DropJournalDocuments1720000000055 } from './migrations/1720000000055-DropJournalDocuments';
 import { OwnTopicProposalRuns1720000000056 } from './migrations/1720000000056-OwnTopicProposalRuns';
+import { AddDeadMansSwitchDeliveryToken1720000000057 } from './migrations/1720000000057-AddDeadMansSwitchDeliveryToken';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -236,6 +237,7 @@ export const ALL_MIGRATIONS = [
   AddDocumentDateOverride1720000000054,
   DropJournalDocuments1720000000055,
   OwnTopicProposalRuns1720000000056,
+  AddDeadMansSwitchDeliveryToken1720000000057,
 ];
 
 /**

@@ -95,16 +95,13 @@ export class DataSovereigntyController {
   }
 
   /**
-   * Record that the owner is present. This also CANCELS any grace-window release
-   * (JJ-80): a re-check-in before the grant fires must stop it. Composed here
-   * rather than inside the service so neither service injects the other — the
-   * check-in write and the release cancel stay one-directional and cycle-free.
+   * Record that the owner is present. The sovereignty service records the
+   * heartbeat and cancels pending releases in one locked transaction, so a
+   * concurrent sweep cannot activate from stale state.
    */
   @Post('dead-mans-switch/check-in')
   async checkIn(@CurrentUser() user: AuthenticatedUser): Promise<DeadMansSwitchDto> {
-    const dto = await this.sovereignty.checkInDeadMansSwitch(user.id);
-    await this.releases.cancelPendingReleases(user.id);
-    return dto;
+    return this.sovereignty.checkInDeadMansSwitch(user.id);
   }
 
   /** The owner's release history, so they can see and revoke granted access. */

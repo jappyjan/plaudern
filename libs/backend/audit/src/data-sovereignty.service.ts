@@ -41,6 +41,7 @@ import {
   TopicProposalEntity,
   type InboxItemEntity,
 } from '@plaudern/persistence';
+import { withDeadMansSwitchLock } from './dead-mans-switch-lock';
 
 /**
  * Data-sovereignty controls (JJ-42): export-everything, panic-delete, and the
@@ -212,12 +213,28 @@ export class DataSovereigntyService {
    * arms normally again.
    */
   async checkInDeadMansSwitch(userId: string): Promise<DeadMansSwitchDto> {
-    const repo = this.dataSource.getRepository(DeadMansSwitchEntity);
-    let row = await repo.findOne({ where: { userId } });
-    if (!row) row = repo.create({ userId });
-    row.lastCheckInAt = new Date().toISOString();
-    row.armingSuspendedForCheckInAt = null;
-    return toDeadMansSwitchDto(await repo.save(row));
+    const now = new Date().toISOString();
+    return withDeadMansSwitchLock(this.dataSource, userId, async (manager, existing) => {
+      const switches = manager.getRepository(DeadMansSwitchEntity);
+      const row = existing ?? switches.create({ userId });
+      row.lastCheckInAt = now;
+      row.armingSuspendedForCheckInAt = null;
+      const saved = await switches.save(row);
+
+      await manager
+        .getRepository(DeadMansSwitchReleaseEntity)
+        .createQueryBuilder()
+        .update()
+        .set({
+          status: 'cancelled',
+          tokenEncrypted: null,
+          tokenHash: null,
+          closedAt: now,
+        })
+        .where('userId = :userId AND status = :status', { userId, status: 'pending' })
+        .execute();
+      return toDeadMansSwitchDto(saved);
+    });
   }
 
   /** Page through every (non-merged) item for the user with its relations. */
