@@ -39,6 +39,10 @@ export class TopicProposalEntity {
   @Column({ type: 'uuid' })
   userId!: string;
 
+  /** Generation that created this row; null only for proposals predating run ownership. */
+  @Column({ type: 'uuid', nullable: true })
+  generationId!: string | null;
+
   /** Stable hash of the sorted member item ids — identifies "this cluster". */
   @Column({ type: 'varchar' })
   fingerprint!: string;

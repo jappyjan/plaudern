@@ -25,6 +25,7 @@ import type {
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
 const OTHER_USER = '00000000-0000-0000-0000-0000000000bb';
+const OLD_GENERATION = '00000000-0000-0000-0000-000000000011';
 
 function makeConfig(overrides: Record<string, unknown> = {}): ConfigService {
   const base: Record<string, unknown> = {
@@ -105,12 +106,18 @@ describe('TopicProposalsService (JJ-64/JJ-69)', () => {
     throwOnCentroids?: boolean;
     labelerThrows?: boolean;
     config?: Record<string, unknown>;
+    embeddings?: EmbeddingSearchService;
+    labeler?: TopicProposalLabelProvider;
   } = {}): TopicProposalGenerationProcessor {
     return new TopicProposalGenerationProcessor(
       makeConfig(opts.config),
       fakeInbox(),
-      fakeEmbeddings({ enabled: opts.embeddingsEnabled ?? true, throwOnCentroids: opts.throwOnCentroids }),
-      fakeLabeler({ throws: opts.labelerThrows }),
+      opts.embeddings ??
+        fakeEmbeddings({
+          enabled: opts.embeddingsEnabled ?? true,
+          throwOnCentroids: opts.throwOnCentroids,
+        }),
+      opts.labeler ?? fakeLabeler({ throws: opts.labelerThrows }),
       dataSource.getRepository(TopicProposalEntity),
       dataSource.getRepository(TopicProposalRunEntity),
       dataSource.getRepository(InboxItemEntity),
@@ -557,7 +564,13 @@ describe('TopicProposalsService (JJ-64/JJ-69)', () => {
     // A run stranded at 'processing': the worker was SIGKILLed after the claim
     // and never wrote a terminal status. Backdate updatedAt beyond the stale
     // threshold (raw SQL so the @UpdateDateColumn hook can't refresh it).
-    const stranded = await runs.save({ userId: USER, status: 'processing', error: null, proposalsCreated: 0 });
+    const stranded = await runs.save({
+      userId: USER,
+      generationId: OLD_GENERATION,
+      status: 'processing',
+      error: null,
+      proposalsCreated: 0,
+    });
     await dataSource.query(
       `UPDATE "topic_proposal_runs" SET "updatedAt" = '2020-01-01 00:00:00' WHERE "id" = ?`,
       [stranded.id],
@@ -581,7 +594,13 @@ describe('TopicProposalsService (JJ-64/JJ-69)', () => {
     await seedCluster([1, 0], 4);
     const runs = dataSource.getRepository(TopicProposalRunEntity);
     // A run legitimately processing right now — updatedAt is current.
-    await runs.save({ userId: USER, status: 'processing', error: null, proposalsCreated: 0 });
+    await runs.save({
+      userId: USER,
+      generationId: OLD_GENERATION,
+      status: 'processing',
+      error: null,
+      proposalsCreated: 0,
+    });
 
     const queue = deferredQueue();
     const service = buildService({}, queue);
@@ -591,28 +610,107 @@ describe('TopicProposalsService (JJ-64/JJ-69)', () => {
     expect(res.generation?.status).toBe('processing');
   });
 
-  it('a zombie run finishing after a stale takeover cannot clobber the fresh run status', async () => {
+  it('a stale worker cannot persist proposals or success after the fresh run is claimed', async () => {
     await seedCluster([1, 0], 4);
     const runs = dataSource.getRepository(TopicProposalRunEntity);
-    const stranded = await runs.save({ userId: USER, status: 'processing', error: null, proposalsCreated: 0 });
+    const queue = deferredQueue();
+    const service = buildService({}, queue);
+    await service.generate(USER);
+    const oldJob = queue.jobs[0];
+
+    let releaseLabel!: () => void;
+    let signalLabelStarted!: () => void;
+    const labelStarted = new Promise<void>((resolve) => (signalLabelStarted = resolve));
+    const labelReleased = new Promise<void>((resolve) => (releaseLabel = resolve));
+    const oldProcessor = buildProcessor({
+      labeler: {
+        id: 'test:blocked-labeler',
+        async label() {
+          signalLabelStarted();
+          await labelReleased;
+          return { label: 'Zombie', description: null, model: 'test' };
+        },
+      },
+    });
+    const oldProcessing = oldProcessor.process(oldJob);
+    await labelStarted;
+
+    const stranded = await runs.findOneByOrFail({ userId: USER });
     await dataSource.query(
       `UPDATE "topic_proposal_runs" SET "updatedAt" = '2020-01-01 00:00:00' WHERE "id" = ?`,
       [stranded.id],
     );
 
+    await service.generate(USER);
+    const freshJob = queue.jobs[1];
+    expect(freshJob.generationId).not.toBe(oldJob.generationId);
+    await buildProcessor().process(freshJob);
+
+    releaseLabel();
+    await expect(oldProcessing).resolves.toBeUndefined();
+
+    const run = await runs.findOneByOrFail({ userId: USER });
+    const proposals = await dataSource
+      .getRepository(TopicProposalEntity)
+      .find({ where: { userId: USER } });
+    expect(run).toMatchObject({
+      generationId: freshJob.generationId,
+      status: 'succeeded',
+      proposalsCreated: 1,
+      error: null,
+    });
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0].generationId).toBe(freshJob.generationId);
+  });
+
+  it('a stale worker cannot report failure after the fresh run is claimed', async () => {
+    await seedCluster([1, 0], 4);
+    const runs = dataSource.getRepository(TopicProposalRunEntity);
     const queue = deferredQueue();
     const service = buildService({}, queue);
-    await service.generate(USER); // takeover: row is 'queued' again
+    await service.generate(USER);
+    const oldJob = queue.jobs[0];
 
-    // The zombie worker (slow, not dead) now writes its terminal status: the
-    // conditional `WHERE status='processing'` write must no-op — the row is
-    // owned by the fresh run.
-    const zombieWrite = await runs.update(
-      { userId: USER, status: 'processing' },
-      { status: 'succeeded', proposalsCreated: 99, error: null },
+    let releaseCentroids!: () => void;
+    let signalCentroidsStarted!: () => void;
+    const centroidsStarted = new Promise<void>((resolve) => (signalCentroidsStarted = resolve));
+    const centroidsReleased = new Promise<void>((resolve) => (releaseCentroids = resolve));
+    const oldProcessor = buildProcessor({
+      embeddings: {
+        async itemCentroids() {
+          signalCentroidsStarted();
+          await centroidsReleased;
+          throw new Error('zombie failure');
+        },
+      } as unknown as EmbeddingSearchService,
+    });
+    const oldProcessing = oldProcessor.process(oldJob);
+    await centroidsStarted;
+
+    const stranded = await runs.findOneByOrFail({ userId: USER });
+    await dataSource.query(
+      `UPDATE "topic_proposal_runs" SET "updatedAt" = '2020-01-01 00:00:00' WHERE "id" = ?`,
+      [stranded.id],
     );
-    expect(zombieWrite.affected ?? 0).toBe(0);
-    expect((await service.listProposals(USER)).generation?.status).toBe('queued');
+    await service.generate(USER);
+    const freshJob = queue.jobs[1];
+    await buildProcessor().process(freshJob);
+
+    releaseCentroids();
+    await expect(oldProcessing).resolves.toBeUndefined();
+
+    const run = await runs.findOneByOrFail({ userId: USER });
+    const proposals = await dataSource
+      .getRepository(TopicProposalEntity)
+      .find({ where: { userId: USER } });
+    expect(run).toMatchObject({
+      generationId: freshJob.generationId,
+      status: 'succeeded',
+      proposalsCreated: 1,
+      error: null,
+    });
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0].generationId).toBe(freshJob.generationId);
   });
 
   it('a fresh generate after a run finishes starts a new run (terminal -> queued flip)', async () => {

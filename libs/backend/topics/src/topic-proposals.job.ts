@@ -1,12 +1,13 @@
 import type { JobQueue } from '@plaudern/queue';
 
 /**
- * One taxonomy-proposal generation run (JJ-69). Carries only the `userId`: the
- * run row is keyed one-per-user and already claimed (`queued`) by the service
- * before enqueue, so the processor loads and flips it by `userId`.
+ * One taxonomy-proposal generation run (JJ-69). `generationId` is renewed on
+ * every admission so delayed jobs and stale workers cannot claim or write for a
+ * newer run belonging to the same user.
  */
 export interface TopicProposalGenerationJob {
   userId: string;
+  generationId: string;
 }
 
 export const TOPIC_PROPOSAL_GENERATION_QUEUE = Symbol('TOPIC_PROPOSAL_GENERATION_QUEUE');
