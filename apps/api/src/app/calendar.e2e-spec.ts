@@ -13,7 +13,7 @@ process.env.CALENDAR_POLL_INTERVAL_MS = '0';
 
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { CALENDAR_FETCH } from '@plaudern/calendar';
+import { ICS_FEED_FETCH } from '@plaudern/calendar';
 import { createE2eApp } from '../testing/e2e-app';
 
 const FEED_URL = 'https://calendar.example.com/private-token-123/basic.ics';
@@ -65,7 +65,7 @@ describe('Calendar feeds + linking (e2e)', () => {
     nextResponse = okResponse;
     app = await createE2eApp((builder) =>
       builder
-        .overrideProvider(CALENDAR_FETCH)
+        .overrideProvider(ICS_FEED_FETCH)
         .useValue(fakeFetch),
     );
   });

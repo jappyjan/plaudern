@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { runWithAiAudit } from '@plaudern/audit';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, LessThan, Repository } from 'typeorm';
+import { EntityManager, In, LessThan, Repository } from 'typeorm';
 import { AiConfigService } from '@plaudern/ai-config';
 import { InboxService } from '@plaudern/inbox';
 import { EmbeddingSearchService } from '@plaudern/embeddings';
@@ -111,35 +111,53 @@ export class TopicProposalGenerationProcessor {
    */
   async process(job: TopicProposalGenerationJob): Promise<void> {
     const { userId } = job;
+    // Migration 0056 initializes generationId from the stable row id. This lets
+    // already-durable pre-deployment jobs claim only that migrated generation;
+    // once takeover renews generationId, a delayed legacy job cannot claim it.
+    const generationId =
+      job.generationId ??
+      (
+        await this.runs.findOne({
+          where: { userId },
+          select: { id: true },
+        })
+      )?.id;
+    if (!generationId) return;
     const claimed = await this.runs
       .createQueryBuilder()
       .update()
       .set({ status: 'processing' })
-      .where('userId = :userId AND status = :queued', { userId, queued: 'queued' })
+      .where(
+        'userId = :userId AND generationId = :generationId AND status = :queued',
+        { userId, generationId, queued: 'queued' },
+      )
       .execute();
     if (claimed.affected !== 1) return; // not queued (already handled) — nothing to do.
 
     try {
-      const created = await this.generate(userId);
-      // Terminal writes are conditional on still owning the row (`processing`):
-      // if this run went stale and a fresh generate took the row over (flipped
-      // it back to `queued` — see TopicProposalsService.startRun), a zombie
-      // slow-but-alive run must not clobber the fresh run's status.
-      await this.runs.update(
-        { userId, status: 'processing' },
+      const created = await this.generate(userId, generationId);
+      const completed = await this.runs.update(
+        { userId, generationId, status: 'processing' },
         { status: 'succeeded', proposalsCreated: created, error: null },
       );
-      this.logger.log(`generated ${created} proposal(s) for user ${userId}`);
+      if (completed.affected === 1) {
+        this.logger.log(`generated ${created} proposal(s) for user ${userId}`);
+      }
     } catch (err) {
       const message = (err as Error).message;
-      this.logger.error(`proposal generation failed for user ${userId}: ${message}`);
-      await this.runs.update({ userId, status: 'processing' }, { status: 'failed', error: message });
-      throw err;
+      const failed = await this.runs.update(
+        { userId, generationId, status: 'processing' },
+        { status: 'failed', error: message },
+      );
+      if (failed.affected === 1) {
+        this.logger.error(`proposal generation failed for user ${userId}: ${message}`);
+        throw err;
+      }
     }
   }
 
   /** Cluster recent uncovered items, suppress, label survivors, persist. */
-  private async generate(userId: string): Promise<number> {
+  private async generate(userId: string, generationId: string): Promise<number> {
     const candidateIds = await this.recentUncoveredItemIds(userId);
     if (candidateIds.length < this.minClusterSize) return 0;
 
@@ -195,20 +213,26 @@ export class TopicProposalGenerationProcessor {
 
       const sampleItemIds = cluster.memberItemIds.slice(0, SAMPLE_ITEMS);
       try {
-        await this.proposals.save(
-          this.proposals.create({
-            userId,
-            fingerprint: clusterFingerprint(cluster.memberItemIds),
-            label: labeled.label,
-            description: labeled.description,
-            itemCount: cluster.memberItemIds.length,
-            memberItemIds: cluster.memberItemIds,
-            sampleItemIds,
-            centroid: cluster.centroid,
-            status: 'pending',
-            acceptedTopicId: null,
-          }),
-        );
+        const persisted = await this.withOwnership(userId, generationId, async (manager) => {
+          const proposals = manager.getRepository(TopicProposalEntity);
+          await proposals.save(
+            proposals.create({
+              userId,
+              generationId,
+              fingerprint: clusterFingerprint(cluster.memberItemIds),
+              label: labeled.label,
+              description: labeled.description,
+              itemCount: cluster.memberItemIds.length,
+              memberItemIds: cluster.memberItemIds,
+              sampleItemIds,
+              centroid: cluster.centroid,
+              status: 'pending',
+              acceptedTopicId: null,
+            }),
+          );
+          return true;
+        });
+        if (!persisted) return created;
       } catch (err) {
         // Lost a race on the (userId, fingerprint) unique index — a concurrent
         // generate already stored this exact cluster; skip it.
@@ -221,7 +245,7 @@ export class TopicProposalGenerationProcessor {
       budget -= 1;
     }
 
-    await this.pruneResolved(userId);
+    await this.pruneResolved(userId, generationId);
     return created;
   }
 
@@ -254,29 +278,47 @@ export class TopicProposalGenerationProcessor {
    * until there are more than `retention` resolved rows. Best-effort — a prune
    * hiccup must not fail an otherwise-successful generation.
    */
-  private async pruneResolved(userId: string): Promise<void> {
+  private async pruneResolved(userId: string, generationId: string): Promise<void> {
     try {
-      const keep = await this.proposals.find({
-        where: { userId, status: In(['dismissed', 'accepted']) },
-        order: { createdAt: 'DESC' },
-        take: this.retention,
-        select: { id: true, createdAt: true },
+      await this.withOwnership(userId, generationId, async (manager) => {
+        const proposals = manager.getRepository(TopicProposalEntity);
+        const keep = await proposals.find({
+          where: { userId, status: In(['dismissed', 'accepted']) },
+          order: { createdAt: 'DESC' },
+          take: this.retention,
+          select: { id: true, createdAt: true },
+        });
+        if (keep.length < this.retention) return;
+        const cutoff = keep[keep.length - 1].createdAt;
+        const res = await proposals.delete({
+          userId,
+          status: In(['dismissed', 'accepted']),
+          createdAt: LessThan(cutoff),
+        });
+        if (res.affected) {
+          this.logger.log(`pruned ${res.affected} old resolved proposal(s) for user ${userId}`);
+        }
       });
-      if (keep.length < this.retention) return;
-      const cutoff = keep[keep.length - 1].createdAt;
-      const res = await this.proposals.delete({
-        userId,
-        status: In(['dismissed', 'accepted']),
-        createdAt: LessThan(cutoff),
-      });
-      if (res.affected) {
-        this.logger.log(`pruned ${res.affected} old resolved proposal(s) for user ${userId}`);
-      }
     } catch (err) {
       this.logger.warn(
         `failed to prune resolved proposals for user ${userId}: ${(err as Error).message}`,
       );
     }
+  }
+
+  /** Lock and re-check ownership in the same transaction as a proposal mutation. */
+  private async withOwnership<T>(
+    userId: string,
+    generationId: string,
+    operation: (manager: EntityManager) => Promise<T>,
+  ): Promise<T | null> {
+    return this.runs.manager.transaction(async (manager) => {
+      const owned = await manager
+        .getRepository(TopicProposalRunEntity)
+        .update({ userId, generationId, status: 'processing' }, { status: 'processing' });
+      if (owned.affected !== 1) return null;
+      return operation(manager);
+    });
   }
 
   /**

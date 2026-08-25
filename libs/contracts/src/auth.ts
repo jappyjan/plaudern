@@ -28,6 +28,13 @@ export const authUserSchema = z.object({
 });
 export type AuthUserDto = z.infer<typeof authUserSchema>;
 
+/** The non-account identity used only by AUTH_DISABLED single-user mode. */
+export const AUTH_DISABLED_USER_ID = '00000000-0000-0000-0000-000000000001';
+export const authDisabledUserSchema = z.object({
+  id: z.literal(AUTH_DISABLED_USER_ID),
+  username: z.string(),
+});
+
 /** Pre-login probe the web app uses to decide which screen to show. */
 export const authStatusSchema = z.object({
   /** False on a fresh install — the login page offers "create account" first. */
@@ -40,6 +47,7 @@ export type AuthStatusDto = z.infer<typeof authStatusSchema>;
 
 export const meResponseSchema = z.object({ user: authUserSchema });
 export type MeResponse = z.infer<typeof meResponseSchema>;
+export const authDisabledMeResponseSchema = z.object({ user: authDisabledUserSchema });
 
 export const registerOptionsRequestSchema = z.object({ username: usernameSchema });
 

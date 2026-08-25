@@ -10,6 +10,7 @@
     "@plaudern/contracts": "workspace:*",
     "@plaudern/extraction": "workspace:*",
     "@plaudern/inbox": "workspace:*",
+    "@plaudern/outbound-http": "workspace:*",
     "@plaudern/persistence": "workspace:*",
     "@plaudern/queue": "workspace:*",
     "@plaudern/speaker-id": "workspace:*",

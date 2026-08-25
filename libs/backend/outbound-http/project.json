@@ -1,0 +1,21 @@
+{
+  "name": "outbound-http",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/backend/outbound-http/src",
+  "projectType": "library",
+  "tags": ["scope:backend", "type:util"],
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc -p libs/backend/outbound-http/tsconfig.json --noEmit"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "jest --config libs/backend/outbound-http/jest.config.js"
+      }
+    }
+  }
+}
