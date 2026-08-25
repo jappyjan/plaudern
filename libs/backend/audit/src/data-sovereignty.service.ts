@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource, EntityManager } from 'typeorm';
+import { DataSource } from 'typeorm';
 import type {
   AccountExport,
   AccountExportItem,
@@ -41,6 +41,7 @@ import {
   TopicProposalEntity,
   type InboxItemEntity,
 } from '@plaudern/persistence';
+import { findDeadMansSwitchForUpdate } from './dead-mans-switch-lifecycle';
 
 /**
  * Data-sovereignty controls (JJ-42): export-everything, panic-delete, and the
@@ -196,7 +197,11 @@ export class DataSovereigntyService {
     return this.dataSource.transaction(async (em) => {
       const switches = em.getRepository(DeadMansSwitchEntity);
       const releases = em.getRepository(DeadMansSwitchReleaseEntity);
-      let row = await this.findSwitchForUpdate(em, userId);
+      let row = await findDeadMansSwitchForUpdate(
+        em,
+        userId,
+        this.dataSource.options.type === 'postgres',
+      );
       if (!row) row = switches.create({ userId, lastCheckInAt: null });
       const contactChanged = row.contactEmail !== req.contactEmail;
       row.enabled = req.enabled;
@@ -281,7 +286,11 @@ export class DataSovereigntyService {
   async checkInDeadMansSwitch(userId: string): Promise<DeadMansSwitchDto> {
     return this.dataSource.transaction(async (em) => {
       const switches = em.getRepository(DeadMansSwitchEntity);
-      let row = await this.findSwitchForUpdate(em, userId);
+      let row = await findDeadMansSwitchForUpdate(
+        em,
+        userId,
+        this.dataSource.options.type === 'postgres',
+      );
       if (!row) row = switches.create({ userId });
       const checkedInAt = new Date().toISOString();
       row.lastCheckInAt = checkedInAt;
@@ -300,18 +309,6 @@ export class DataSovereigntyService {
         .where('userId = :userId AND status = :status', { userId, status: 'pending' })
         .execute();
       return toDeadMansSwitchDto(row);
-    });
-  }
-
-  private findSwitchForUpdate(
-    em: EntityManager,
-    userId: string,
-  ): Promise<DeadMansSwitchEntity | null> {
-    return em.getRepository(DeadMansSwitchEntity).findOne({
-      where: { userId },
-      ...(this.dataSource.options.type === 'postgres'
-        ? { lock: { mode: 'pessimistic_write' as const } }
-        : {}),
     });
   }
 

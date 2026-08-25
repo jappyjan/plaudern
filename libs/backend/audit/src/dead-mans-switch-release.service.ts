@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource, EntityManager, In, Not } from 'typeorm';
+import { DataSource, In, Not } from 'typeorm';
 import type {
   AccountExport,
   DeadMansSwitchReleaseDto,
@@ -16,6 +16,7 @@ import {
   encryptSecret,
 } from '@plaudern/persistence';
 import { DataSovereigntyService } from './data-sovereignty.service';
+import { findDeadMansSwitchForUpdate } from './dead-mans-switch-lifecycle';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Default grace/confirmation window before a tripped switch grants access. */
@@ -160,7 +161,11 @@ export class DeadMansSwitchReleaseService {
     now = new Date(),
   ): Promise<DeadMansSwitchReleaseDto> {
     return this.dataSource.transaction(async (em) => {
-      const sw = await this.findSwitchForUpdate(em, userId);
+      const sw = await findDeadMansSwitchForUpdate(
+        em,
+        userId,
+        this.dataSource.options.type === 'postgres',
+      );
       const releases = em.getRepository(DeadMansSwitchReleaseEntity);
       const release = await releases.findOne({ where: { id: releaseId } });
       if (!release) throw new NotFoundException('release not found');
@@ -215,7 +220,11 @@ export class DeadMansSwitchReleaseService {
     now: Date,
   ): Promise<{ release: DeadMansSwitchReleaseEntity; armed: boolean } | null> {
     return this.dataSource.transaction(async (em) => {
-      const sw = await this.findSwitchForUpdate(em, userId);
+      const sw = await findDeadMansSwitchForUpdate(
+        em,
+        userId,
+        this.dataSource.options.type === 'postgres',
+      );
       if (!sw?.enabled || !sw.contactEmail || !sw.lastCheckInAt) return null;
       const releases = em.getRepository(DeadMansSwitchReleaseEntity);
       let release = await releases.findOne({
@@ -262,7 +271,11 @@ export class DeadMansSwitchReleaseService {
     now: Date,
   ): Promise<{ release: DeadMansSwitchReleaseEntity; token: string } | null> {
     return this.dataSource.transaction(async (em) => {
-      const sw = await this.findSwitchForUpdate(em, userId);
+      const sw = await findDeadMansSwitchForUpdate(
+        em,
+        userId,
+        this.dataSource.options.type === 'postgres',
+      );
       if (!this.canGrant(sw, now)) return null;
 
       const releases = em.getRepository(DeadMansSwitchReleaseEntity);
@@ -303,7 +316,11 @@ export class DeadMansSwitchReleaseService {
     now: Date,
   ): Promise<boolean> {
     return this.dataSource.transaction(async (em) => {
-      const sw = await this.findSwitchForUpdate(em, userId);
+      const sw = await findDeadMansSwitchForUpdate(
+        em,
+        userId,
+        this.dataSource.options.type === 'postgres',
+      );
       if (!this.canGrant(sw, now) || sw!.contactEmail !== release.contactEmail) return false;
       const result = await em
         .getRepository(DeadMansSwitchReleaseEntity)
@@ -318,18 +335,6 @@ export class DeadMansSwitchReleaseService {
     });
   }
 
-  private findSwitchForUpdate(
-    em: EntityManager,
-    userId: string,
-  ): Promise<DeadMansSwitchEntity | null> {
-    return em.getRepository(DeadMansSwitchEntity).findOne({
-      where: { userId },
-      ...(this.dataSource.options.type === 'postgres'
-        ? { lock: { mode: 'pessimistic_write' as const } }
-        : {}),
-    });
-  }
-
   private canGrant(sw: DeadMansSwitchEntity | null, now: Date): boolean {
     if (!sw?.enabled || !sw.contactEmail || !sw.lastCheckInAt) return false;
     const triggersAt = Date.parse(sw.lastCheckInAt) + sw.checkInIntervalDays * DAY_MS;
@@ -337,7 +342,13 @@ export class DeadMansSwitchReleaseService {
   }
 
   private encryptionSecret(): string {
-    return this.config.get<string>('APP_ENCRYPTION_SECRET', 'change-me');
+    const secret = this.config.get<string>('APP_ENCRYPTION_SECRET', '');
+    if (!secret) {
+      throw new Error(
+        'APP_ENCRYPTION_SECRET is not configured - set it to enable emergency-access delivery',
+      );
+    }
+    return secret;
   }
 
   /** Owner: the switch tripped; here is the grace window to cancel it. */

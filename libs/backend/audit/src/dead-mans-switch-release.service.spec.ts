@@ -21,12 +21,12 @@ const CONTACT = 'trusted@example.com';
 /** A fake export so `resolveEmergencyAccess` has something to return. */
 const FAKE_EXPORT = { schemaVersion: 1, userId: USER, itemCount: 0, items: [] } as unknown as AccountExport;
 
-function makeConfig(graceDays: string): ConfigService {
+function makeConfig(graceDays: string, encryptionSecret = 'test-secret'): ConfigService {
   return {
     get: (key: string, def?: string) => {
       if (key === 'DEAD_MANS_SWITCH_GRACE_DAYS') return graceDays;
       if (key === 'PUBLIC_APP_URL') return 'https://app.test';
-      if (key === 'APP_ENCRYPTION_SECRET') return 'test-secret';
+      if (key === 'APP_ENCRYPTION_SECRET') return encryptionSecret;
       return def;
     },
   } as unknown as ConfigService;
@@ -60,10 +60,13 @@ describe('DeadMansSwitchReleaseService', () => {
     );
   }
 
-  function makeService(graceDays = '0'): DeadMansSwitchReleaseService {
+  function makeService(
+    graceDays = '0',
+    encryptionSecret = 'test-secret',
+  ): DeadMansSwitchReleaseService {
     return new DeadMansSwitchReleaseService(
       dataSource,
-      makeConfig(graceDays),
+      makeConfig(graceDays, encryptionSecret),
       notifications as unknown as NotificationsService,
       sovereignty as unknown as DataSovereigntyService,
     );
@@ -165,6 +168,20 @@ describe('DeadMansSwitchReleaseService', () => {
     const secondUrl = notifications.notifyEmailAddress.mock.calls[1][1].url as string;
     expect(secondUrl.endsWith(`/${firstToken}`)).toBe(true);
     expect(await dataSource.getRepository(DeadMansSwitchReleaseEntity).count()).toBe(1);
+  });
+
+  it('does not reserve a credential without an encryption secret', async () => {
+    await seedSwitch({});
+    const service = makeService('0', '');
+
+    await expect(service.sweepUser(USER, NOW)).rejects.toThrow(
+      'APP_ENCRYPTION_SECRET is not configured',
+    );
+    const release = (await dataSource.getRepository(DeadMansSwitchReleaseEntity).find())[0];
+    expect(release.status).toBe('pending');
+    expect(release.tokenHash).toBeNull();
+    expect(release.tokenEncrypted).toBeNull();
+    expect(notifications.notifyEmailAddress).not.toHaveBeenCalled();
   });
 
   it.each(['check-in', 'disable'] as const)(
