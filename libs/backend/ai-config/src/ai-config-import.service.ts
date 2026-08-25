@@ -60,7 +60,9 @@ export class AiConfigImportService implements OnModuleInit {
     private readonly groups: Repository<AiCapabilityGroupSettingEntity>,
     private readonly config: ConfigService,
   ) {
-    this.encryptionSecret = config.get<string>('APP_ENCRYPTION_SECRET', 'change-me');
+    const encryptionSecret = config.get<string>('APP_ENCRYPTION_SECRET');
+    if (!encryptionSecret) throw new Error('APP_ENCRYPTION_SECRET is required');
+    this.encryptionSecret = encryptionSecret;
   }
 
   async onModuleInit(): Promise<void> {

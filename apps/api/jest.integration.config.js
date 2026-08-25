@@ -8,6 +8,7 @@ module.exports = {
   testEnvironment: 'node',
   rootDir: '.',
   testMatch: ['**/*.integration-spec.ts'],
+  setupFiles: ['<rootDir>/jest.setup.js'],
   moduleFileExtensions: ['ts', 'js', 'json'],
   moduleNameMapper: {
     // Order matters: the specific contracts mapping must precede the generic
