@@ -113,6 +113,7 @@ describe('Migrations & app boot (integration, real Postgres)', () => {
         url: dbUrl,
         entities: ALL_ENTITIES,
         migrations: ALL_MIGRATIONS.filter((m) => m.name !== DE_SENTINELIZE),
+        migrationsTransactionMode: 'each',
       });
       await pre.initialize();
       await pre.runMigrations();
@@ -147,6 +148,7 @@ describe('Migrations & app boot (integration, real Postgres)', () => {
         url: dbUrl,
         entities: ALL_ENTITIES,
         migrations: ALL_MIGRATIONS,
+        migrationsTransactionMode: 'each',
       });
       await post.initialize();
       const applied = await post.runMigrations();

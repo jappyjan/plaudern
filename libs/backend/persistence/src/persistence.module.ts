@@ -268,6 +268,7 @@ export const ALL_MIGRATIONS = [
           entities: ALL_ENTITIES,
           synchronize: config.get<string>('DATABASE_SYNCHRONIZE') === 'true',
           migrationsRun: config.get<string>('DATABASE_SYNCHRONIZE') !== 'true',
+          migrationsTransactionMode: 'each' as const,
           migrations: ALL_MIGRATIONS,
         };
       },

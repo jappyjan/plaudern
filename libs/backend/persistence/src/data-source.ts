@@ -11,4 +11,5 @@ export default new DataSource({
   url: process.env.DATABASE_URL ?? 'postgres://plaudern:plaudern@localhost:5432/plaudern',
   entities: ALL_ENTITIES,
   migrations: ALL_MIGRATIONS,
+  migrationsTransactionMode: 'each',
 });
