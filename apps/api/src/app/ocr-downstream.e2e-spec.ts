@@ -160,6 +160,16 @@ describe('OCR is the single document source-text generation (e2e, Path A)', () =
           (kind) => item.extractions.filter((row) => row.kind === kind).length === 2,
         )
       ) {
+        for (const kind of ['ocr', 'sentinel', 'summary', 'entities', 'embedding', 'topics']) {
+          const generations = item.extractions
+            .filter((row) => row.kind === kind)
+            .map((row) => row.generation)
+            .sort((a, b) => a - b);
+          expect(generations[1]).toBeGreaterThan(generations[0]);
+        }
+        const allGenerations = item.extractions.map((row) => row.generation);
+        expect(new Set(allGenerations).size).toBe(allGenerations.length);
+        expect(item.extractionGeneration).toBe(allGenerations.length);
         expect(item.extractions.filter((row) => row.kind === 'transcription')).toHaveLength(0);
         return;
       }
@@ -178,6 +188,22 @@ describe('OCR is the single document source-text generation (e2e, Path A)', () =
     expect(item.extractions.filter((row) => row.kind === 'transcription')).toHaveLength(0);
     for (const kind of ['sentinel', 'summary', 'entities', 'embedding', 'topics']) {
       expect(item.extractions.filter((row) => row.kind === kind)).toHaveLength(0);
+    }
+  });
+
+  it('blocks a blank OCR replacement without reusing or duplicating the previous generation', async () => {
+    const itemId = await ingestImage('e2e-blank-ocr-replacement');
+    await waitForRows(itemId, ['ocr', 'sentinel', 'summary', 'entities', 'embedding', 'topics']);
+
+    recognize.mockResolvedValueOnce({ text: '  \n', language: 'de' });
+    await ocr.retry('00000000-0000-0000-0000-000000000001', itemId);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const item = (await inbox.getItemById(itemId))!;
+    expect(item.extractions.filter((row) => row.kind === 'ocr')).toHaveLength(2);
+    expect(item.extractions.filter((row) => row.kind === 'transcription')).toHaveLength(0);
+    for (const kind of ['sentinel', 'summary', 'entities', 'embedding', 'topics']) {
+      expect(item.extractions.filter((row) => row.kind === kind)).toHaveLength(1);
     }
   });
 });

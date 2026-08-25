@@ -17,6 +17,10 @@ import { InboxItemEntity } from './inbox-item.entity';
  */
 @Entity({ name: 'extracted_payloads' })
 @Index(['inboxItemId', 'kind'])
+@Index('UQ_extracted_payloads_item_generation', ['inboxItemId', 'generation'], {
+  unique: true,
+  where: '"generation" > 0',
+})
 export class ExtractedPayloadEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -44,6 +48,10 @@ export class ExtractedPayloadEntity {
 
   @Column({ type: 'varchar', default: 'queued' })
   status!: ExtractionStatus;
+
+  /** Collision-free append order within the owning inbox item. */
+  @Column({ type: 'int', default: 0 })
+  generation!: number;
 
   @Column({ type: 'text', nullable: true })
   content!: string | null;

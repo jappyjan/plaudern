@@ -99,7 +99,7 @@ export class ExtractionPipelineService implements OnModuleInit, OnModuleDestroy 
 
       const readiness = await evaluateReadiness(extractor, item, this.graph);
       if (!readiness.ready) return;
-      if (isGenerationCovered(item.extractions ?? [], extractor.kind, readiness.generationTs)) {
+      if (isGenerationCovered(item.extractions ?? [], extractor.kind, readiness.generation)) {
         return; // this generation is already extracted or in progress
       }
 

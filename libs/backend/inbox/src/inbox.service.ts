@@ -59,6 +59,7 @@ export interface CreateCommittedItemParams extends CreatePendingItemParams {}
 @Injectable()
 export class InboxService {
   private readonly logger = new Logger(InboxService.name);
+  private sqliteExtractionQueue: Promise<unknown> = Promise.resolve();
 
   constructor(
     @InjectRepository(InboxItemEntity)
@@ -164,28 +165,49 @@ export class InboxService {
     provider: string,
     version = 1,
   ): Promise<ExtractedPayloadEntity> {
-    const row = this.extractions.create({
-      inboxItemId,
-      kind,
-      version,
-      provider,
-      status: 'queued',
-      // SQLite's CreateDateColumn default is second-precision. Persist the
-      // application timestamp so rapid retries remain distinct generations.
-      createdAt: new Date(),
-    });
-    const saved = await this.extractions.save(row);
-    const ownerId = await this.ownerOf(inboxItemId);
-    if (ownerId) {
-      this.events.emit(ownerId, {
-        type: 'extraction.updated',
-        itemId: saved.inboxItemId,
-        extractionId: saved.id,
-        kind: saved.kind,
-        status: saved.status,
+    const driver = this.items.manager.connection.options.type;
+    const persist = () =>
+      this.items.manager.transaction(async (manager) => {
+        await manager.increment(
+          InboxItemEntity,
+          { id: inboxItemId },
+          'extractionGeneration',
+          1,
+        );
+        const item = await manager.findOneByOrFail(InboxItemEntity, { id: inboxItemId });
+        const row = manager.create(ExtractedPayloadEntity, {
+          inboxItemId,
+          kind,
+          version,
+          provider,
+          status: 'queued',
+          generation: item.extractionGeneration,
+        });
+        return {
+          saved: await manager.save(row),
+          ownerId: item.userId,
+        };
       });
+
+    let result: Awaited<ReturnType<typeof persist>>;
+    if (driver === 'better-sqlite3') {
+      // TypeORM uses one SQLite connection. Serialize these transactions so
+      // concurrent DAG branches cannot open overlapping transactions on it.
+      const operation = this.sqliteExtractionQueue.then(persist);
+      this.sqliteExtractionQueue = operation.catch(() => undefined);
+      result = await operation;
+    } else {
+      result = await persist();
     }
-    return saved;
+
+    this.events.emit(result.ownerId, {
+      type: 'extraction.updated',
+      itemId: result.saved.inboxItemId,
+      extractionId: result.saved.id,
+      kind: result.saved.kind,
+      status: result.saved.status,
+    });
+    return result.saved;
   }
 
   async setExtractionStatus(id: string, status: ExtractionStatus): Promise<void> {

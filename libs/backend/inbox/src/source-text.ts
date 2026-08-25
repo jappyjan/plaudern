@@ -75,5 +75,9 @@ function latestOfKind(
   return extractions
     .filter((e) => e.kind === kind)
     .slice()
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+    .sort((a, b) => {
+      const generationOrder = (b.generation ?? 0) - (a.generation ?? 0);
+      if (generationOrder !== 0) return generationOrder;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    })[0];
 }

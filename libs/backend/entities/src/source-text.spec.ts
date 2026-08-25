@@ -11,8 +11,16 @@ function row(
   createdAt: string,
   content: string | null,
   language: string | null = null,
+  generation = 0,
 ): ExtractedPayloadEntity {
-  return { kind, status, createdAt: new Date(createdAt), content, language } as ExtractedPayloadEntity;
+  return {
+    kind,
+    status,
+    createdAt: new Date(createdAt),
+    content,
+    language,
+    generation,
+  } as ExtractedPayloadEntity;
 }
 
 function item(extractions: ExtractedPayloadEntity[], contentType?: string): InboxItemEntity {
@@ -71,6 +79,35 @@ describe('resolveSourceText (JJ-83 transcription→OCR fallback)', () => {
       ]),
     );
     expect(resolved?.text).toBe('new scan');
+  });
+
+  it('uses generation order when OCR attempts have identical timestamps', () => {
+    const timestamp = '2026-07-01T10:00:00Z';
+    const resolved = resolveSourceText(
+      item(
+        [
+          row('ocr', 'succeeded', timestamp, 'old scan', null, 4),
+          row('ocr', 'succeeded', timestamp, 'replacement scan', null, 5),
+        ],
+        'image/png',
+      ),
+    );
+    expect(resolved?.text).toBe('replacement scan');
+  });
+
+  it('does not fall back to an older OCR generation when a blank replacement is current', () => {
+    const timestamp = '2026-07-01T10:00:00Z';
+    expect(
+      resolveSourceText(
+        item(
+          [
+            row('ocr', 'succeeded', timestamp, 'old scan', null, 4),
+            row('ocr', 'succeeded', timestamp, '  \n', null, 5),
+          ],
+          'image/png',
+        ),
+      ),
+    ).toBeNull();
   });
 
   it('uses current OCR for documents and ignores a legacy passthrough transcription', () => {
