@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { RecordingMergeEntity, SpeakerOccurrenceEntity } from '@plaudern/persistence';
+import { outboundFetch } from '@plaudern/outbound-http';
 import { InboxModule } from '@plaudern/inbox';
 import { BullJobQueue, InlineJobQueue, redisConnectionFromConfig } from '@plaudern/queue';
 import { TranscriptionModule } from '@plaudern/transcription';
@@ -64,8 +65,8 @@ import { RecordingMergeController } from './merge/recording-merge.controller';
         email: EmailAdapter,
       ) => [audio, plaud, text, file, image, web, email],
     },
-    // Plain global fetch behind a DI token so tests can fake the network.
-    { provide: WEB_SNAPSHOT_FETCH, useValue: globalThis.fetch },
+    // Shared SSRF-safe fetch behind a DI token so tests can fake the network.
+    { provide: WEB_SNAPSHOT_FETCH, useValue: outboundFetch },
     WebPageSnapshotService,
     IngestionService,
     { provide: AUDIO_CONCATENATOR, useClass: FfmpegAudioConcatenator },
