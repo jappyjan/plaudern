@@ -146,7 +146,7 @@ describe('AiConfigService', () => {
         expect(resolved?.providerId).toBe(provider.id);
         expect(resolved?.providerName).toBe('Shared DeepSeek');
         expect(resolved?.apiKey).toBe('sk-secret-key');
-        expect(resolved?.model).toBe('deepseek-chat'); // each capability's registry default
+        expect(resolved?.model).toBe('deepseek-v4-flash'); // each capability's registry default
       }
     });
 
