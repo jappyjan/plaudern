@@ -1,6 +1,7 @@
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import {
   authStatusSchema,
+  authDisabledMeResponseSchema,
   meResponseSchema,
   passkeyListResponseSchema,
   passkeySchema,
@@ -23,9 +24,10 @@ export async function getAuthStatus(): Promise<AuthStatusDto> {
 }
 
 /** The signed-in user, or null when there is no (valid) session. */
-export async function getMe(): Promise<AuthUserDto | null> {
+export async function getMe(authDisabled = false): Promise<AuthUserDto | null> {
   try {
-    return meResponseSchema.parse(await requestJson('/auth/me')).user;
+    const response = await requestJson('/auth/me');
+    return (authDisabled ? authDisabledMeResponseSchema : meResponseSchema).parse(response).user;
   } catch (cause) {
     if (cause instanceof ApiError && cause.status === 401) return null;
     throw cause;
