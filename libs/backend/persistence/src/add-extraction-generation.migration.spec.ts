@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 import { AddExtractionGeneration1720000000057 } from './migrations/1720000000057-AddExtractionGeneration';
+import { IndexExtractionGeneration1720000000058 } from './migrations/1720000000058-IndexExtractionGeneration';
 
 describe('AddExtractionGeneration1720000000057', () => {
   let dataSource: DataSource;
@@ -59,6 +60,9 @@ describe('AddExtractionGeneration1720000000057', () => {
       { id: 'item-a', extractionGeneration: 3 },
       { id: 'item-b', extractionGeneration: 1 },
     ]);
+
+    const indexMigration = new IndexExtractionGeneration1720000000058();
+    await indexMigration.up(runner);
     await expect(
       dataSource.query(`
         INSERT INTO "extracted_payloads" ("id", "inboxItemId", "createdAt", "generation")
@@ -66,6 +70,7 @@ describe('AddExtractionGeneration1720000000057', () => {
       `),
     ).rejects.toThrow();
 
+    await indexMigration.down(runner);
     await migration.down(runner);
     const payloadColumns = (await dataSource.query(
       `SELECT "name" FROM pragma_table_info('extracted_payloads')`,
@@ -77,6 +82,8 @@ describe('AddExtractionGeneration1720000000057', () => {
     expect(itemColumns.map(({ name }) => name)).not.toContain('extractionGeneration');
 
     await migration.up(runner);
+    await indexMigration.up(runner);
+    await indexMigration.down(runner);
     await runner.release();
   });
 });

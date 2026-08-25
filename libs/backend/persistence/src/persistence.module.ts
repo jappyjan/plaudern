@@ -117,6 +117,7 @@ import { AddDocumentDateOverride1720000000054 } from './migrations/1720000000054
 import { DropJournalDocuments1720000000055 } from './migrations/1720000000055-DropJournalDocuments';
 import { OwnTopicProposalRuns1720000000056 } from './migrations/1720000000056-OwnTopicProposalRuns';
 import { AddExtractionGeneration1720000000057 } from './migrations/1720000000057-AddExtractionGeneration';
+import { IndexExtractionGeneration1720000000058 } from './migrations/1720000000058-IndexExtractionGeneration';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -238,6 +239,7 @@ export const ALL_MIGRATIONS = [
   DropJournalDocuments1720000000055,
   OwnTopicProposalRuns1720000000056,
   AddExtractionGeneration1720000000057,
+  IndexExtractionGeneration1720000000058,
 ];
 
 /**

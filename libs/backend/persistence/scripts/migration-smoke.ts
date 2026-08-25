@@ -50,6 +50,10 @@ const DATABASE_URL =
  */
 const IRREVERSIBLE = new Set<string>(['DropAuthTables1720000000001']);
 const EXTRACTION_GENERATION_MIGRATION = 'AddExtractionGeneration1720000000057';
+const NON_TRANSACTIONAL = new Set<string>([
+  EXTRACTION_GENERATION_MIGRATION,
+  'IndexExtractionGeneration1720000000058',
+]);
 
 function assert(condition: boolean, message: string): void {
   if (!condition) throw new Error(message);
@@ -103,6 +107,29 @@ async function seedLegacyExtractions(ds: DataSource): Promise<void> {
       ('00000000-0000-0000-0000-0000000000a3', '00000000-0000-0000-0000-0000000000a1', 'entities', 'legacy', 'succeeded', '2026-08-25 10:00:01'),
       ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000b1', 'transcription', 'legacy', 'succeeded', '2026-08-25 10:00:00')
   `);
+  await ds.query(`
+    INSERT INTO "inbox_items"
+      ("id", "userId", "sourceType", "occurredAt", "idempotencyKey")
+    SELECT
+      ('10000000-0000-0000-0000-' || lpad(to_hex(i), 12, '0'))::uuid,
+      '00000000-0000-0000-0000-000000000001',
+      'text',
+      '2026-08-25T10:00:00Z',
+      'migration-batch-' || i
+    FROM generate_series(1, 1001) AS i
+  `);
+  await ds.query(`
+    INSERT INTO "extracted_payloads"
+      ("id", "inboxItemId", "kind", "provider", "status", "createdAt")
+    SELECT
+      ('20000000-0000-0000-0000-' || lpad(to_hex(i), 12, '0'))::uuid,
+      ('10000000-0000-0000-0000-' || lpad(to_hex(i), 12, '0'))::uuid,
+      'transcription',
+      'legacy-batch',
+      'succeeded',
+      '2026-08-25 10:00:00'
+    FROM generate_series(1, 1001) AS i
+  `);
 }
 
 async function assertExtractionGenerationBackfill(ds: DataSource): Promise<void> {
@@ -126,6 +153,20 @@ async function assertExtractionGenerationBackfill(ds: DataSource): Promise<void>
     JSON.stringify(items.map(({ extractionGeneration }) => extractionGeneration)) ===
       JSON.stringify([3, 1]),
     `unexpected item generation counters: ${JSON.stringify(items)}`,
+  );
+  const batch: Array<{ count: number; generation: number; itemGeneration: number }> =
+    await ds.query(`
+      SELECT
+        count(*)::int AS "count",
+        min("payload"."generation")::int AS "generation",
+        min("item"."extractionGeneration")::int AS "itemGeneration"
+      FROM "extracted_payloads" AS "payload"
+      JOIN "inbox_items" AS "item" ON "item"."id" = "payload"."inboxItemId"
+      WHERE "payload"."provider" = 'legacy-batch'
+    `);
+  assert(
+    batch[0]?.count === 1001 && batch[0]?.generation === 1 && batch[0]?.itemGeneration === 1,
+    `batched extraction generation backfill failed: ${JSON.stringify(batch)}`,
   );
 
   let duplicateRejected = false;
@@ -200,7 +241,9 @@ async function main(): Promise<void> {
         break;
       }
       try {
-        await ds.undoLastMigration({ transaction: 'each' });
+        await ds.undoLastMigration({
+          transaction: NON_TRANSACTIONAL.has(next) ? 'none' : 'each',
+        });
       } catch (err) {
         throw new Error(
           `down() failed reverting ${next} (not on the irreversible allowlist): ` +
