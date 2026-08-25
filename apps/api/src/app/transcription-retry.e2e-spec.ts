@@ -92,7 +92,10 @@ describe('Transcription retry (e2e, Path A)', () => {
     const item = await request(app.getHttpServer())
       .get(`/api/v1/inbox/${itemId}`)
       .expect(200);
-    await inbox.setExtractionStatus(item.body.extractions[0].id, 'processing');
+    const transcription = item.body.extractions.find(
+      (extraction: { kind: string }) => extraction.kind === 'transcription',
+    );
+    await inbox.setExtractionStatus(transcription.id, 'processing');
 
     await request(app.getHttpServer())
       .post(`/api/v1/inbox/${itemId}/transcription/retry`)

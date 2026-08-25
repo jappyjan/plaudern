@@ -8,7 +8,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { AiConfigService } from '@plaudern/ai-config';
-import { InboxService } from '@plaudern/inbox';
+import { hasSucceededSourceExtraction, InboxService } from '@plaudern/inbox';
 import type {
   DecisionDto,
   DecisionListQuery,
@@ -83,9 +83,8 @@ export class DecisionsService {
     }
     const item = await this.inbox.getItem(userId, inboxItemId);
     const extractions = item.extractions ?? [];
-    const transcription = latestOfKind(extractions, 'transcription');
-    if (transcription?.status !== 'succeeded') {
-      throw new BadRequestException('item has no completed transcription to extract decisions from');
+    if (!hasSucceededSourceExtraction(item)) {
+      throw new BadRequestException('item has no completed source text to extract decisions from');
     }
     const decisions = latestOfKind(extractions, 'decisions');
     if (decisions && ACTIVE_STATUSES.includes(decisions.status)) {

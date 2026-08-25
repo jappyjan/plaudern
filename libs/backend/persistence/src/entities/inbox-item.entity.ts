@@ -51,6 +51,10 @@ export class InboxItemEntity {
   @Column({ type: 'simple-json', nullable: true })
   metadata!: Record<string, unknown> | null;
 
+  /** Monotonic order allocated transactionally to this item's extractions. */
+  @Column({ type: 'int', default: 0 })
+  extractionGeneration!: number;
+
   @OneToOne(() => SourcePayloadEntity, (payload) => payload.inboxItem, {
     cascade: true,
   })

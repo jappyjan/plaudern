@@ -128,6 +128,7 @@ describe('Extraction DAG & backfill runs (e2e, Path A)', () => {
       enabled: true,
       dependsOn: [
         { kind: 'transcription', requires: 'succeeded' },
+        { kind: 'ocr', requires: 'succeeded' },
         { kind: 'diarization', requires: 'settled' },
       ],
     });

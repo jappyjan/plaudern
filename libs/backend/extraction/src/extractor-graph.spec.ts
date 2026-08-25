@@ -24,8 +24,15 @@ function row(
   kind: ExtractionKind,
   status: ExtractedPayloadEntity['status'],
   createdAt: string,
+  generation = 0,
 ): ExtractedPayloadEntity {
-  return { kind, status, createdAt: new Date(createdAt) } as ExtractedPayloadEntity;
+  return {
+    kind,
+    status,
+    createdAt: new Date(createdAt),
+    generation,
+    content: status === 'succeeded' ? 'source text' : null,
+  } as ExtractedPayloadEntity;
 }
 
 function item(extractions: ExtractedPayloadEntity[]): InboxItemEntity {
@@ -126,14 +133,14 @@ describe('evaluateReadiness (the generic dependency gate)', () => {
     const readiness = await evaluateReadiness(
       summary,
       item([
-        row('transcription', 'succeeded', '2026-07-01T10:00:00Z'),
-        row('diarization', 'failed', '2026-07-01T10:05:00Z'),
+        row('transcription', 'succeeded', '2026-07-01T10:00:00Z', 3),
+        row('diarization', 'failed', '2026-07-01T10:05:00Z', 4),
       ]),
       graph,
     );
     expect(readiness).toEqual({
       ready: true,
-      generationTs: new Date('2026-07-01T10:05:00Z').getTime(),
+      generation: 4,
     });
   });
 
@@ -217,24 +224,35 @@ describe('evaluateReadiness (the generic dependency gate)', () => {
 });
 
 describe('isGenerationCovered (event-pipeline dedupe)', () => {
-  const generationTs = new Date('2026-07-01T10:05:00Z').getTime();
+  const generation = 5;
 
   it('is covered while a newer attempt is succeeded or in flight', () => {
     for (const status of ['succeeded', 'queued', 'processing'] as const) {
       expect(
-        isGenerationCovered([row('summary', status, '2026-07-01T10:06:00Z')], 'summary', generationTs),
+        isGenerationCovered([row('summary', status, '2026-07-01T10:06:00Z', 6)], 'summary', generation),
       ).toBe(true);
     }
   });
 
   it('is not covered by an older attempt, a failed attempt, or no attempt', () => {
-    expect(isGenerationCovered([], 'summary', generationTs)).toBe(false);
+    expect(isGenerationCovered([], 'summary', generation)).toBe(false);
     expect(
-      isGenerationCovered([row('summary', 'succeeded', '2026-07-01T10:00:00Z')], 'summary', generationTs),
+      isGenerationCovered([row('summary', 'succeeded', '2026-07-01T10:00:00Z', 4)], 'summary', generation),
     ).toBe(false);
     expect(
-      isGenerationCovered([row('summary', 'failed', '2026-07-01T10:06:00Z')], 'summary', generationTs),
+      isGenerationCovered([row('summary', 'failed', '2026-07-01T10:06:00Z', 6)], 'summary', generation),
     ).toBe(false);
+  });
+
+  it('uses generation order when attempts have identical timestamps', () => {
+    const timestamp = '2026-07-01T10:00:00Z';
+    expect(
+      isGenerationCovered(
+        [row('summary', 'failed', timestamp, 4), row('summary', 'succeeded', timestamp, 6)],
+        'summary',
+        generation,
+      ),
+    ).toBe(true);
   });
 });
 
@@ -263,24 +281,24 @@ describe('evaluateReadiness with a source-text OR-group (JJ-83)', () => {
   it('runs an OCR-only document once OCR succeeds (no transcription)', async () => {
     const readiness = await evaluateReadiness(
       docLike.get('entities')!,
-      item([row('ocr', 'succeeded', '2026-07-01T10:00:00Z')]),
+      item([row('ocr', 'succeeded', '2026-07-01T10:00:00Z', 7)]),
       docLike,
     );
     expect(readiness).toEqual({
       ready: true,
-      generationTs: new Date('2026-07-01T10:00:00Z').getTime(),
+      generation: 7,
     });
   });
 
   it('audio is unchanged: ready when the transcription succeeds', async () => {
     const readiness = await evaluateReadiness(
       audioLike.get('entities')!,
-      item([row('transcription', 'succeeded', '2026-07-01T10:00:00Z')]),
+      item([row('transcription', 'succeeded', '2026-07-01T10:00:00Z', 8)]),
       audioLike,
     );
     expect(readiness).toEqual({
       ready: true,
-      generationTs: new Date('2026-07-01T10:00:00Z').getTime(),
+      generation: 8,
     });
   });
 
@@ -312,16 +330,26 @@ describe('evaluateReadiness with a source-text OR-group (JJ-83)', () => {
     const readiness = await evaluateReadiness(
       bothGraph.get('entities')!,
       item([
-        row('transcription', 'succeeded', '2026-07-01T10:00:00Z'),
-        row('ocr', 'succeeded', '2026-07-01T10:05:00Z'),
+        row('transcription', 'succeeded', '2026-07-01T10:00:00Z', 3),
+        row('ocr', 'succeeded', '2026-07-01T10:05:00Z', 5),
       ]),
       bothGraph,
     );
-    // The newest satisfying member drives the generation (dedup key); either
-    // source succeeding is enough to run.
+    // Readiness uses the same transcription-first fallback as the resolver.
     expect(readiness).toEqual({
       ready: true,
-      generationTs: new Date('2026-07-01T10:05:00Z').getTime(),
+      generation: 3,
     });
+  });
+
+  it('does not become ready for blank OCR', async () => {
+    const blank = row('ocr', 'succeeded', '2026-07-01T10:00:00Z');
+    blank.content = '  \n';
+    const readiness = await evaluateReadiness(
+      docLike.get('entities')!,
+      item([blank]),
+      docLike,
+    );
+    expect(readiness.ready).toBe(false);
   });
 });

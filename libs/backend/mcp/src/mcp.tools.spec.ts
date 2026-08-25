@@ -88,6 +88,7 @@ function item(over: Partial<InboxItemEntity> = {}): InboxItemEntity {
     occurredAt: over.occurredAt ?? '2026-07-01T09:00:00.000Z',
     ingestedAt: over.ingestedAt ?? '2026-07-01T09:05:00.000Z',
     metadata: over.metadata ?? null,
+    source: over.source ?? null,
     extractions: over.extractions ?? [],
   } as unknown as InboxItemEntity;
 }
@@ -238,6 +239,25 @@ describe('McpToolsService', () => {
       });
       expect(result.title).toBe('Standup notes');
       expect(result.metadata).toEqual({ location: 'Berlin' });
+    });
+
+    it('returns OCR text for a document without using a legacy transcription bridge', async () => {
+      const { service, fakes } = build();
+      fakes.inbox.getItem.mockResolvedValue(
+        item({
+          sourceType: 'image',
+          source: { contentType: 'image/png' } as never,
+          extractions: [
+            extraction({ kind: 'transcription', content: 'stale bridge text' }),
+            extraction({ kind: 'ocr', content: 'current OCR text' }),
+          ] as never,
+        }),
+      );
+      fakes.sensitivity.effectiveTiers = tierMap({ 'item-1': 'normal' });
+
+      const result = await service.getItem('user-1', { itemId: 'item-1' });
+
+      expect(result.transcript).toBe('current OCR text');
     });
 
     it('prefers a metadata tag title over the summary title', async () => {

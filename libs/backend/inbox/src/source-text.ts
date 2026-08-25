@@ -1,4 +1,15 @@
+import { hasDocumentPayload } from '@plaudern/contracts';
 import type { ExtractedPayloadEntity, InboxItemEntity } from '@plaudern/persistence';
+import type { ExtractorDependency } from './extractor';
+
+export const SOURCE_TEXT_GROUP = 'sourceText';
+
+export function sourceTextDependencies(): ExtractorDependency[] {
+  return [
+    { kind: 'transcription', requires: 'succeeded', group: SOURCE_TEXT_GROUP },
+    { kind: 'ocr', requires: 'succeeded', group: SOURCE_TEXT_GROUP },
+  ];
+}
 
 /**
  * The text an item's downstream text extractors (entities, embeddings, topics,
@@ -20,57 +31,41 @@ export interface ResolvedSourceText {
 }
 
 /**
- * Resolve an item's extractable text: the latest succeeded `transcription` if
- * present, else the latest succeeded `ocr` text (JJ-83). This is the ONE place
- * entities/embeddings/topics agree on "what text do I run over", mirroring the
- * sentinel's transcription→OCR fallback (JJ-85) so a scanned document is
- * entity-linked and searchable like transcribed audio.
- *
- * Transcription is preferred, so audio items (and the OCR→transcription
- * passthrough bridge) resolve to exactly the same text as before — this only
- * adds the OCR fallback for items that carry no transcription at all. Returns
- * null when neither a succeeded transcription nor a succeeded OCR row with text
- * exists (a blank scan yields empty content and therefore nothing to run on).
+ * Resolve the one current text generation for an item. Document payloads use
+ * OCR; every other committed payload uses transcription. The source-aware rule
+ * keeps legacy OCR passthrough transcriptions from competing with OCR retries.
+ * Source-less fixtures retain transcription-then-OCR fallback behavior.
  */
-export function resolveSourceText(item: InboxItemEntity): ResolvedSourceText | null {
+export function resolveSourceText(
+  item: InboxItemEntity,
+): ResolvedSourceText | null {
   const extractions = item.extractions ?? [];
-
-  const transcription = latestOfKind(extractions, 'transcription');
-  if (transcription?.status === 'succeeded' && transcription.content) {
+  for (const kind of sourceTextKinds(item)) {
+    const extraction = latestOfKind(extractions, kind);
+    if (extraction?.status !== 'succeeded') continue;
+    const text = extraction.content ?? '';
+    if (text.trim().length === 0) continue;
     return {
-      text: transcription.content,
-      language: transcription.language ?? undefined,
-      kind: 'transcription',
-      extraction: transcription,
+      text,
+      language: extraction.language ?? undefined,
+      kind,
+      extraction,
     };
   }
-
-  const ocr = latestOfKind(extractions, 'ocr');
-  if (ocr?.status === 'succeeded' && ocr.content) {
-    return {
-      text: ocr.content,
-      language: ocr.language ?? undefined,
-      kind: 'ocr',
-      extraction: ocr,
-    };
-  }
-
   return null;
 }
 
 /**
- * Whether the item has a succeeded source-text extraction (transcription OR ocr)
- * to (re)run a downstream text extractor on. Status-only, mirroring the prior
- * transcription-only retry guards — the extractor's own processor still fails
- * cleanly if the succeeded row turns out to carry no text. Extends those guards
- * to accept a scanned document's OCR row (JJ-83).
+ * Whether the item has a nonblank current source-text generation to process.
  */
 export function hasSucceededSourceExtraction(item: InboxItemEntity): boolean {
-  const extractions = item.extractions ?? [];
-  return (
-    latestOfKind(extractions, 'transcription')?.status === 'succeeded' ||
-    latestOfKind(extractions, 'ocr')?.status === 'succeeded'
-  );
+  return resolveSourceText(item) !== null;
+}
+
+export function sourceTextKinds(item: InboxItemEntity): Array<'transcription' | 'ocr'> {
+  const contentType = item.source?.contentType;
+  if (!contentType) return ['transcription', 'ocr'];
+  return hasDocumentPayload(contentType) ? ['ocr'] : ['transcription'];
 }
 
 function latestOfKind(
@@ -80,5 +75,9 @@ function latestOfKind(
   return extractions
     .filter((e) => e.kind === kind)
     .slice()
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+    .sort((a, b) => {
+      const generationOrder = (b.generation ?? 0) - (a.generation ?? 0);
+      if (generationOrder !== 0) return generationOrder;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    })[0];
 }

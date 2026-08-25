@@ -1,8 +1,5 @@
-import type {
-  EntityRegistryEntity,
-  ExtractedPayloadEntity,
-  InboxItemEntity,
-} from '@plaudern/persistence';
+import { resolveSourceText } from '@plaudern/inbox';
+import type { EntityRegistryEntity, InboxItemEntity } from '@plaudern/persistence';
 import type { RelationExtractionInput } from './relations.provider';
 
 /**
@@ -17,14 +14,12 @@ export function buildRelationExtractionInput(
   item: InboxItemEntity,
   entities: EntityRegistryEntity[],
 ): RelationExtractionInput | null {
-  const transcription = latestOfKind(item.extractions ?? [], 'transcription');
-  if (transcription?.status !== 'succeeded' || !transcription.content) {
-    return null;
-  }
+  const source = resolveSourceText(item);
+  if (!source) return null;
   return {
-    text: transcription.content,
+    text: source.text,
     entities: entities.map((entity) => ({ name: entity.canonicalName, type: entity.type })),
-    language: transcription.language ?? undefined,
+    language: source.language,
     occurredAt: iso(item.occurredAt),
   };
 }
@@ -32,14 +27,4 @@ export function buildRelationExtractionInput(
 function iso(value: Date | string | null | undefined): string | undefined {
   if (!value) return undefined;
   return value instanceof Date ? value.toISOString() : value;
-}
-
-function latestOfKind(
-  extractions: ExtractedPayloadEntity[],
-  kind: ExtractedPayloadEntity['kind'],
-): ExtractedPayloadEntity | undefined {
-  return extractions
-    .filter((e) => e.kind === kind)
-    .slice()
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
 }

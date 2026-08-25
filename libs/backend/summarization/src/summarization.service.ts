@@ -5,7 +5,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { AiConfigService } from '@plaudern/ai-config';
-import { InboxService } from '@plaudern/inbox';
+import { hasSucceededSourceExtraction, InboxService } from '@plaudern/inbox';
 import {
   summaryPayloadSchema,
   type ExtractionStatus,
@@ -64,9 +64,8 @@ export class SummarizationService {
     }
     const item = await this.inbox.getItem(userId, inboxItemId);
     const extractions = item.extractions ?? [];
-    const transcription = latestOfKind(extractions, 'transcription');
-    if (transcription?.status !== 'succeeded') {
-      throw new BadRequestException('item has no completed transcription to summarize');
+    if (!hasSucceededSourceExtraction(item)) {
+      throw new BadRequestException('item has no completed source text to summarize');
     }
     const summary = latestOfKind(extractions, 'summary');
     if (summary && ACTIVE_STATUSES.includes(summary.status)) {
@@ -126,8 +125,7 @@ export class SummarizationService {
         const item = await this.inbox.getItemById(inboxItemId);
         if (!item) continue;
         if (!(await this.aiConfig.isEnabled(item.userId, 'summarization'))) continue;
-        const transcription = latestOfKind(item.extractions ?? [], 'transcription');
-        if (transcription?.status !== 'succeeded') continue;
+        if (!hasSucceededSourceExtraction(item)) continue;
         const summary = latestOfKind(item.extractions ?? [], 'summary');
         if (summary && ACTIVE_STATUSES.includes(summary.status)) continue;
         await this.enqueueSummary(inboxItemId);

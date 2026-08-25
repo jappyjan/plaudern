@@ -11,12 +11,25 @@ function row(
   createdAt: string,
   content: string | null,
   language: string | null = null,
+  generation = 0,
 ): ExtractedPayloadEntity {
-  return { kind, status, createdAt: new Date(createdAt), content, language } as ExtractedPayloadEntity;
+  return {
+    kind,
+    status,
+    createdAt: new Date(createdAt),
+    content,
+    language,
+    generation,
+  } as ExtractedPayloadEntity;
 }
 
-function item(extractions: ExtractedPayloadEntity[]): InboxItemEntity {
-  return { id: 'item-1', userId: 'user-1', extractions } as InboxItemEntity;
+function item(extractions: ExtractedPayloadEntity[], contentType?: string): InboxItemEntity {
+  return {
+    id: 'item-1',
+    userId: 'user-1',
+    extractions,
+    source: contentType ? { contentType } : undefined,
+  } as InboxItemEntity;
 }
 
 describe('resolveSourceText (JJ-83 transcription→OCR fallback)', () => {
@@ -68,16 +81,62 @@ describe('resolveSourceText (JJ-83 transcription→OCR fallback)', () => {
     expect(resolved?.text).toBe('new scan');
   });
 
+  it('uses generation order when OCR attempts have identical timestamps', () => {
+    const timestamp = '2026-07-01T10:00:00Z';
+    const resolved = resolveSourceText(
+      item(
+        [
+          row('ocr', 'succeeded', timestamp, 'old scan', null, 4),
+          row('ocr', 'succeeded', timestamp, 'replacement scan', null, 5),
+        ],
+        'image/png',
+      ),
+    );
+    expect(resolved?.text).toBe('replacement scan');
+  });
+
+  it('does not fall back to an older OCR generation when a blank replacement is current', () => {
+    const timestamp = '2026-07-01T10:00:00Z';
+    expect(
+      resolveSourceText(
+        item(
+          [
+            row('ocr', 'succeeded', timestamp, 'old scan', null, 4),
+            row('ocr', 'succeeded', timestamp, '  \n', null, 5),
+          ],
+          'image/png',
+        ),
+      ),
+    ).toBeNull();
+  });
+
+  it('uses current OCR for documents and ignores a legacy passthrough transcription', () => {
+    const resolved = resolveSourceText(
+      item(
+        [
+          row('transcription', 'succeeded', '2026-07-01T10:00:00Z', 'old OCR bridge'),
+          row('ocr', 'succeeded', '2026-07-01T11:00:00Z', 'replacement scan'),
+        ],
+        'image/png',
+      ),
+    );
+    expect(resolved?.kind).toBe('ocr');
+    expect(resolved?.text).toBe('replacement scan');
+  });
+
   it('returns null when there is neither a transcription nor an OCR row', () => {
     expect(resolveSourceText(item([]))).toBeNull();
   });
 });
 
-describe('hasSucceededSourceExtraction (retry guard — status only)', () => {
-  it('accepts a succeeded transcription even without content (fixture-friendly)', () => {
+describe('hasSucceededSourceExtraction', () => {
+  it('rejects a succeeded source row without nonblank content', () => {
     expect(
       hasSucceededSourceExtraction(item([row('transcription', 'succeeded', '2026-07-01T10:00:00Z', null)])),
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      hasSucceededSourceExtraction(item([row('ocr', 'succeeded', '2026-07-01T10:00:00Z', '  \n')])),
+    ).toBe(false);
   });
 
   it('accepts a succeeded OCR row (scanned document)', () => {

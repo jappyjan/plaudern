@@ -8,7 +8,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, In, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import { AiConfigService } from '@plaudern/ai-config';
-import { InboxService } from '@plaudern/inbox';
+import { hasSucceededSourceExtraction, InboxService } from '@plaudern/inbox';
 import type {
   ExtractionStatus,
   ItemRemindersResponse,
@@ -83,9 +83,8 @@ export class RemindersService {
     }
     const item = await this.inbox.getItem(userId, inboxItemId);
     const extractions = item.extractions ?? [];
-    const transcription = latestOfKind(extractions, 'transcription');
-    if (transcription?.status !== 'succeeded') {
-      throw new BadRequestException('item has no completed transcription to extract reminders from');
+    if (!hasSucceededSourceExtraction(item)) {
+      throw new BadRequestException('item has no completed source text to extract reminders from');
     }
     const reminders = latestOfKind(extractions, 'reminders');
     if (reminders && ACTIVE_STATUSES.includes(reminders.status)) {

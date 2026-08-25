@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import { summaryPayloadSchema } from '@plaudern/contracts';
 import type { ExtractedPayloadEntity, InboxItemEntity } from '@plaudern/persistence';
 import { SpeakerOccurrenceEntity } from '@plaudern/persistence';
-import { SelfProfileService } from '@plaudern/inbox';
+import { resolveSourceText, SelfProfileService } from '@plaudern/inbox';
 import type { TaskExtractionInput, TaskSpeaker } from './tasks.provider';
 
 /** Upper bound on the analyzed text so a long transcript can't blow the context window. */
@@ -80,7 +80,7 @@ export class TaskContextService {
       displayName: displayName(s.name, index),
     }));
 
-    const transcription = latestOfKind(extractions, 'transcription');
+    const source = resolveSourceText(item);
     return {
       kind: 'ready',
       input: {
@@ -88,7 +88,7 @@ export class TaskContextService {
         ownerName: owner.ownerName,
         ownerLabel: owner.ownerLabel,
         speakers,
-        language: transcription?.language ?? undefined,
+        language: source?.language,
         occurredAt: iso(item.occurredAt),
       },
     };
@@ -105,9 +105,9 @@ function analyzedText(item: InboxItemEntity, maxChars: number): string | null {
     if (text) return truncate(text, maxChars);
   }
 
-  const transcription = latestOfKind(extractions, 'transcription');
-  if (transcription?.status === 'succeeded' && transcription.content?.trim()) {
-    return truncate(transcription.content.trim(), maxChars);
+  const source = resolveSourceText(item);
+  if (source) {
+    return truncate(source.text.trim(), maxChars);
   }
 
   return null;

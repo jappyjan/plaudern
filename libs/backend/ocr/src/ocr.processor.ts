@@ -2,7 +2,6 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { runWithAiAudit } from '@plaudern/audit';
 import { InboxService } from '@plaudern/inbox';
 import { StorageService } from '@plaudern/storage';
-import { TranscriptionService } from '@plaudern/transcription';
 import type { OcrExtractionPayload } from '@plaudern/contracts';
 import { OCR_PROVIDER, type OcrProvider, type OcrResult } from './ocr.provider';
 import type { OcrJob } from './ocr.job';
@@ -29,10 +28,7 @@ interface RecognizedDocument {
  * vision provider as a base64 data URL, and write the recognized text onto the
  * append-only `ocr` extraction row's `content`. A failure (including a model
  * that can't do vision) is caught and recorded on the row — it never breaks the
- * pipeline. The downstream `docmeta` extractor consumes this text; the
- * recognized text is also bridged into a passthrough `transcription` row so the
- * rest of the DAG (summary, topics, entities, …) runs on documents just like on
- * typed notes.
+ * pipeline. Downstream text extractors consume the completed OCR row directly.
  *
  * PDFs are rasterized to one image per page and OCR'd page-by-page (JJ-82): each
  * page is its own vision call (each wrapped in `runWithAiAudit`), and the
@@ -47,7 +43,6 @@ export class OcrProcessor {
   constructor(
     private readonly inbox: InboxService,
     private readonly storage: StorageService,
-    private readonly transcription: TranscriptionService,
     @Inject(OCR_PROVIDER) private readonly provider: OcrProvider,
     private readonly rasterizer: PdfRasterizer,
   ) {}
@@ -77,16 +72,6 @@ export class OcrProcessor {
           `(${payload.model}${recognized.pageCount ? `, ${recognized.pageCount} pages` : ''}` +
           `${recognized.truncated ? ', truncated' : ''})`,
       );
-
-      // Bridge the recognized text into the extraction DAG as a passthrough
-      // transcription so summary/topics/entities/… cascade for documents. Skip
-      // blank scans — an empty transcription would spawn an empty summary run.
-      if (recognized.text.trim().length > 0) {
-        await this.transcription.recordExtractedText(job.inboxItemId, {
-          content: recognized.text,
-          language: recognized.language,
-        });
-      }
     } catch (err) {
       const message = (err as Error).message;
       this.logger.error(`OCR failed for ${job.inboxItemId}: ${message}`);

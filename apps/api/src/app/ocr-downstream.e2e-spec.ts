@@ -1,6 +1,5 @@
 import 'reflect-metadata';
 
-// Hardware-free, infra-free verification (Path A). Must run before modules load.
 process.env.DATABASE_DRIVER = 'sqlite';
 process.env.DATABASE_URL = ':memory:';
 process.env.STORAGE_DRIVER = 'memory';
@@ -17,47 +16,62 @@ import { InMemoryStorageService, StorageService } from '@plaudern/storage';
 import { EmbeddingChunkEntity, EntityMentionEntity } from '@plaudern/persistence';
 import { EMBEDDING_PROVIDER } from '@plaudern/embeddings';
 import { ENTITY_EXTRACTION_PROVIDER } from '@plaudern/entities';
-import type { InboxItemDto } from '@plaudern/contracts';
+import { OCR_PROVIDER, OcrService, type OcrProvider } from '@plaudern/ocr';
+import { SUMMARIZATION_PROVIDER } from '@plaudern/summarization';
+import {
+  TOPIC_CLASSIFICATION_PROVIDER,
+  type TopicClassificationProvider,
+} from '@plaudern/topics';
 import { createE2eApp } from '../testing/e2e-app';
-import { FakeEmbeddingProvider, FakeEntityProvider } from '../testing/fake-providers';
+import {
+  FakeEmbeddingProvider,
+  FakeEntityProvider,
+  FakeSummarizationProvider,
+} from '../testing/fake-providers';
 import { seedAiCapability } from '../testing/seed-ai-config';
 
-/**
- * JJ-83: a scanned document that only ever produced an `ocr` extraction — no
- * transcription of its own — must become entity-linked, embedded and
- * keyword-searchable exactly like transcribed audio. We drive the OCR result in
- * directly (as the OCR processor's completed row would look, but WITHOUT the
- * passthrough transcription) so the item is genuinely transcription-free, then
- * let the DAG cascade: sentinel classifies the OCR text → the external-LLM
- * entities/embedding extractors run on it.
- */
-describe('OCR text feeds entities/embeddings/search (e2e, Path A)', () => {
+describe('OCR is the single document source-text generation (e2e, Path A)', () => {
   let app: INestApplication;
   let storage: InMemoryStorageService;
   let inbox: InboxService;
+  let ocr: OcrService;
   let chunks: Repository<EmbeddingChunkEntity>;
   let mentions: Repository<EntityMentionEntity>;
 
   const OCR_TEXT =
     'Rechnung von ACME GmbH. Ansprechpartner Wolfgang. Betrag 42 EUR. Faellig 2026-08-01.';
+  const recognize = jest.fn(async () => ({ text: OCR_TEXT, language: 'de' }));
+  const summarize = jest.spyOn(new FakeSummarizationProvider(), 'summarize');
+  const classify = jest.fn(async () => ({ assignments: [], model: 'fake-topic' }));
 
   beforeAll(async () => {
     app = await createE2eApp((builder) =>
       builder
+        .overrideProvider(OCR_PROVIDER)
+        .useValue({ id: 'fake-ocr', recognize } satisfies OcrProvider)
+        .overrideProvider(SUMMARIZATION_PROVIDER)
+        .useValue({ id: 'fake-summarization', summarize })
         .overrideProvider(EMBEDDING_PROVIDER)
         .useValue(new FakeEmbeddingProvider())
         .overrideProvider(ENTITY_EXTRACTION_PROVIDER)
-        .useValue(new FakeEntityProvider()),
+        .useValue(new FakeEntityProvider())
+        .overrideProvider(TOPIC_CLASSIFICATION_PROVIDER)
+        .useValue({ id: 'fake-topic', classify } satisfies TopicClassificationProvider),
     );
 
-    // Enable the two downstream capabilities; leave OCR + summarization OFF so
-    // the item's ONLY extraction is the one we write by hand (no real OCR run,
-    // no passthrough transcription, no summary settle to wait on).
-    await seedAiCapability(app, 'entity_extraction');
-    await seedAiCapability(app, 'embeddings');
+    for (const capability of [
+      'ocr',
+      'summarization',
+      'entity_extraction',
+      'embeddings',
+      'topics',
+    ] as const) {
+      await seedAiCapability(app, capability);
+    }
 
     storage = app.get(StorageService) as InMemoryStorageService;
     inbox = app.get(InboxService);
+    ocr = app.get(OcrService);
     chunks = app.get(getRepositoryToken(EmbeddingChunkEntity));
     mentions = app.get(getRepositoryToken(EntityMentionEntity));
   });
@@ -85,133 +99,111 @@ describe('OCR text feeds entities/embeddings/search (e2e, Path A)', () => {
     return init.body.inboxItemId;
   }
 
-  /** Write a succeeded OCR row exactly as the OCR processor would, minus the
-   * passthrough transcription bridge — this is the "OCR-only" item. */
-  async function recordOcr(itemId: string, text: string): Promise<void> {
-    const ext = await inbox.addExtraction(itemId, 'ocr', 'test-ocr', 1);
-    await inbox.completeExtraction(ext.id, {
-      status: 'succeeded',
-      content: text,
-      language: 'de',
-    });
-  }
-
-  async function waitFor<T>(fn: () => Promise<T | null>, label: string): Promise<T> {
+  async function waitForRows(itemId: string, kinds: string[]): Promise<void> {
     for (let attempt = 0; attempt < 150; attempt++) {
-      const value = await fn();
-      if (value !== null) return value;
-      await new Promise((r) => setTimeout(r, 20));
+      const item = await inbox.getItemById(itemId);
+      if (
+        item &&
+        kinds.every((kind) =>
+          item.extractions.some((row) => row.kind === kind && row.status === 'succeeded'),
+        )
+      ) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    throw new Error(`${label} did not settle in time`);
+    throw new Error(`extractions [${kinds.join(', ')}] did not settle in time`);
   }
 
-  it('produces entities from OCR text on a transcription-free document', async () => {
-    const itemId = await ingestImage('e2e-ocr-entities');
-    await recordOcr(itemId, OCR_TEXT);
+  it('runs each downstream consumer once from the real OCR completion without transcription', async () => {
+    const itemId = await ingestImage('e2e-real-ocr');
+    await waitForRows(itemId, ['ocr', 'sentinel', 'summary', 'entities', 'embedding', 'topics']);
 
-    const rows = await waitFor(
-      async () => {
-        const found = await mentions.find({ where: { inboxItemId: itemId } });
-        return found.length > 0 ? found : null;
-      },
-      'entities',
-    );
-
-    // The fake pulls capitalized tokens (ACME, GmbH, Wolfgang, …) out of the OCR
-    // text — proof the entity extractor consumed the OCR content, not a transcript.
-    expect(rows.length).toBeGreaterThan(0);
-    const surfaceForms = rows.map((r) => r.surfaceForm);
-    expect(surfaceForms).toContain('ACME');
-
-    // The item never grew a transcription row — it is genuinely OCR-only.
     const item = (await inbox.getItemById(itemId))!;
-    expect(item.extractions.some((e) => e.kind === 'transcription')).toBe(false);
-    expect(item.extractions.some((e) => e.kind === 'entities' && e.status === 'succeeded')).toBe(
-      true,
-    );
-  });
-
-  it('produces embeddings from OCR text (timeless chunks, no transcript segments)', async () => {
-    const itemId = await ingestImage('e2e-ocr-embeddings');
-    await recordOcr(itemId, OCR_TEXT);
-
-    const rows = await waitFor(
-      async () => {
-        const found = await chunks.find({ where: { inboxItemId: itemId } });
-        return found.length > 0 ? found : null;
-      },
-      'embedding chunks',
-    );
-
-    expect(rows.length).toBeGreaterThan(0);
-    for (const row of rows) {
-      expect(row.source).toBe('transcript');
-      expect(row.startSeconds).toBeNull();
-      expect(row.endSeconds).toBeNull();
-      expect(row.text).toContain('ACME');
+    expect(item.extractions.filter((row) => row.kind === 'transcription')).toHaveLength(0);
+    for (const kind of ['ocr', 'sentinel', 'summary', 'entities', 'embedding', 'topics'] as const) {
+      expect(item.extractions.filter((row) => row.kind === kind)).toHaveLength(1);
     }
-  });
+    expect(recognize).toHaveBeenCalledTimes(1);
+    expect(summarize).toHaveBeenCalledTimes(1);
+    expect(summarize.mock.calls[0][1]).toMatchObject({
+      transcript: OCR_TEXT,
+      language: 'de',
+      sourceKind: 'note',
+      speakers: [],
+    });
+    // An empty taxonomy short-circuits before the provider, but the topics
+    // extraction still succeeds once for this source generation.
 
-  it('returns the OCR-only document from hybrid search', async () => {
-    const itemId = await ingestImage('e2e-ocr-search');
-    await recordOcr(itemId, OCR_TEXT);
-    // Wait until at least the embedding chunks exist so both search legs have data.
-    await waitFor(
-      async () => {
-        const found = await chunks.count({ where: { inboxItemId: itemId } });
-        return found > 0 ? found : null;
-      },
-      'embedding chunks (search)',
-    );
+    const entityRows = await mentions.find({ where: { inboxItemId: itemId } });
+    expect(entityRows.map((row) => row.surfaceForm)).toContain('ACME');
+    const embeddingRows = await chunks.find({ where: { inboxItemId: itemId } });
+    expect(embeddingRows.some((row) => row.text.includes('ACME'))).toBe(true);
+    expect(embeddingRows.every((row) => row.startSeconds === null)).toBe(true);
 
-    const res = await request(app.getHttpServer())
+    const search = await request(app.getHttpServer())
       .post('/api/v1/search')
       .send({ query: 'ACME' })
       .expect(201);
-
-    const ids = (res.body.results as Array<{ itemId: string }>).map((r) => r.itemId);
-    expect(ids).toContain(itemId);
+    expect(search.body.results.map((row: { itemId: string }) => row.itemId)).toContain(itemId);
   });
 
-  it('leaves an audio item behaving exactly as before (entities + timestamped embeddings)', async () => {
-    // A normal audio item still flows through the transcription path unchanged.
-    const audio = Buffer.from('fake-audio-e2e-ocr-control');
-    const init = await request(app.getHttpServer())
-      .post('/api/v1/ingest/init')
-      .send({
-        sourceType: 'audio',
-        contentType: 'audio/mpeg',
-        byteSize: audio.byteLength,
-        occurredAt: '2026-07-01T09:30:00.000Z',
-        idempotencyKey: 'e2e-ocr-audio-control',
-      })
-      .expect(201);
-    await storage.putObject(init.body.storageKey, audio, 'audio/mpeg');
-    await request(app.getHttpServer())
-      .post(`/api/v1/ingest/${init.body.inboxItemId}/commit`)
-      .expect(201);
-    const itemId = init.body.inboxItemId as string;
+  it('creates one new downstream attempt for an OCR retry generation', async () => {
+    const itemId = await ingestImage('e2e-ocr-retry');
+    await waitForRows(itemId, ['ocr', 'sentinel', 'summary', 'entities', 'embedding', 'topics']);
 
-    const rows = await waitFor(
-      async () => {
-        const found = await chunks.find({ where: { inboxItemId: itemId } });
-        return found.length > 0 ? found : null;
-      },
-      'audio embedding chunks',
-    );
+    await ocr.retry('00000000-0000-0000-0000-000000000001', itemId);
+    for (let attempt = 0; attempt < 150; attempt++) {
+      const item = (await inbox.getItemById(itemId))!;
+      if (
+        ['ocr', 'sentinel', 'summary', 'entities', 'embedding', 'topics'].every(
+          (kind) => item.extractions.filter((row) => row.kind === kind).length === 2,
+        )
+      ) {
+        for (const kind of ['ocr', 'sentinel', 'summary', 'entities', 'embedding', 'topics']) {
+          const generations = item.extractions
+            .filter((row) => row.kind === kind)
+            .map((row) => row.generation)
+            .sort((a, b) => a - b);
+          expect(generations[1]).toBeGreaterThan(generations[0]);
+        }
+        const allGenerations = item.extractions.map((row) => row.generation);
+        expect(new Set(allGenerations).size).toBe(allGenerations.length);
+        expect(item.extractionGeneration).toBe(allGenerations.length);
+        expect(item.extractions.filter((row) => row.kind === 'transcription')).toHaveLength(0);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error('OCR retry generation did not produce exactly one downstream attempt');
+  });
 
-    // Audio keeps its transcription and timestamped transcript chunks.
+  it('does not enqueue text consumers for blank OCR', async () => {
+    recognize.mockResolvedValueOnce({ text: '  \n', language: 'de' });
+    const itemId = await ingestImage('e2e-blank-ocr');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
     const item = (await inbox.getItemById(itemId))!;
-    expect(item.extractions.some((e) => e.kind === 'transcription' && e.status === 'succeeded')).toBe(
-      true,
-    );
-    const transcriptRows = rows.filter((r) => r.source === 'transcript');
-    expect(transcriptRows.length).toBeGreaterThan(0);
-    expect(transcriptRows.some((r) => r.startSeconds !== null)).toBe(true);
+    expect(item.extractions.filter((row) => row.kind === 'ocr')).toHaveLength(1);
+    expect(item.extractions.filter((row) => row.kind === 'transcription')).toHaveLength(0);
+    for (const kind of ['sentinel', 'summary', 'entities', 'embedding', 'topics']) {
+      expect(item.extractions.filter((row) => row.kind === kind)).toHaveLength(0);
+    }
+  });
 
-    const detail = await request(app.getHttpServer())
-      .get(`/api/v1/inbox/${itemId}`)
-      .expect(200);
-    expect((detail.body as InboxItemDto).extractions.some((e) => e.kind === 'entities')).toBe(true);
+  it('blocks a blank OCR replacement without reusing or duplicating the previous generation', async () => {
+    const itemId = await ingestImage('e2e-blank-ocr-replacement');
+    await waitForRows(itemId, ['ocr', 'sentinel', 'summary', 'entities', 'embedding', 'topics']);
+
+    recognize.mockResolvedValueOnce({ text: '  \n', language: 'de' });
+    await ocr.retry('00000000-0000-0000-0000-000000000001', itemId);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const item = (await inbox.getItemById(itemId))!;
+    expect(item.extractions.filter((row) => row.kind === 'ocr')).toHaveLength(2);
+    expect(item.extractions.filter((row) => row.kind === 'transcription')).toHaveLength(0);
+    for (const kind of ['sentinel', 'summary', 'entities', 'embedding', 'topics']) {
+      expect(item.extractions.filter((row) => row.kind === kind)).toHaveLength(1);
+    }
   });
 });

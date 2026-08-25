@@ -28,7 +28,7 @@ import {
   type TopicItemDto,
 } from '@plaudern/contracts';
 import type { ExtractedPayloadEntity, InboxItemEntity } from '@plaudern/persistence';
-import { InboxService } from '@plaudern/inbox';
+import { InboxService, resolveSourceText } from '@plaudern/inbox';
 import { SearchService } from '@plaudern/search';
 import { IngestionService } from '@plaudern/ingestion';
 import { SensitivityRoutingService } from '@plaudern/sensitivity';
@@ -179,7 +179,7 @@ export class McpToolsService {
         redacted: true,
       };
     }
-    const transcription = latestSucceeded(item, 'transcription');
+    const source = resolveSourceText(item);
     const summary = parseSummary(latestSucceeded(item, 'summary'));
     return {
       itemId: item.id,
@@ -187,7 +187,7 @@ export class McpToolsService {
       occurredAt: toIso(item.occurredAt),
       ingestedAt: toIso(item.ingestedAt),
       title: titleOf(item, summary),
-      transcript: transcription?.content ?? null,
+      transcript: source?.text ?? null,
       summary: summary
         ? { title: summary.title, layout: summary.layout, markdown: summary.markdown }
         : null,
@@ -221,7 +221,7 @@ export class McpToolsService {
             occurredAt: toIso(item.occurredAt),
             ingestedAt: toIso(item.ingestedAt),
             title: titleOf(item, summary),
-            hasTranscript: Boolean(latestSucceeded(item, 'transcription')?.content),
+            hasTranscript: resolveSourceText(item) !== null,
             hasSummary: Boolean(summary),
           };
         }),

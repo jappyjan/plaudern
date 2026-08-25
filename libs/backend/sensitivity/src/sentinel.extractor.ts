@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Extractor, ExtractorDependency } from '@plaudern/inbox';
+import { sourceTextDependencies, type Extractor, type ExtractorDependency } from '@plaudern/inbox';
 import type { InboxItemEntity } from '@plaudern/persistence';
 import { SentinelService, SENTINEL_EXTRACTOR_VERSION } from './sentinel.service';
 
@@ -9,23 +9,15 @@ import { SentinelService, SENTINEL_EXTRACTOR_VERSION } from './sentinel.service'
  * guard in the pipeline gates those on the resulting tier. It is ALWAYS enabled —
  * the deterministic detectors need no key — so every item gets a tier.
  *
- * Depends on BOTH transcription and OCR as `settled`: audio/typed-note items are
- * classified from their transcription, while scanned image/PDF items (JJ-85) are
- * classified from the OCR-derived text — the sentinel context reads whichever is
- * present. `settled` (not `succeeded`) is used so the sentinel triggers off OCR
- * for documents that carry no transcription of their own, including a blank scan
- * (OCR succeeds with empty text) which must still get a `normal` tier rather than
- * leave `docmeta` held forever. Whichever dependency does not apply to the item
- * is simply skipped by the readiness gate.
+ * Uses the same payload-aware source-text dependency as every text consumer:
+ * transcription for audio/typed text and OCR for documents. Blank OCR is not a
+ * usable generation and does not trigger classification.
  */
 @Injectable()
 export class SentinelExtractor implements Extractor {
   readonly kind = 'sentinel' as const;
   readonly version = SENTINEL_EXTRACTOR_VERSION;
-  readonly dependsOn: ExtractorDependency[] = [
-    { kind: 'transcription', requires: 'settled' },
-    { kind: 'ocr', requires: 'settled' },
-  ];
+  readonly dependsOn: ExtractorDependency[] = sourceTextDependencies();
 
   constructor(private readonly sentinel: SentinelService) {}
 

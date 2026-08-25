@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { InboxService } from '@plaudern/inbox';
+import { hasSucceededSourceExtraction, InboxService } from '@plaudern/inbox';
 import type {
   CorrectionNoteDto,
   CorrectionNoteMutationResponse,
@@ -93,8 +93,7 @@ export class CorrectionNotesService {
     try {
       if (!(await this.summarization.isEnabled(item.userId))) return false;
       const extractions = item.extractions ?? [];
-      const transcription = latestOfKind(extractions, 'transcription');
-      if (transcription?.status !== 'succeeded') return false;
+      if (!hasSucceededSourceExtraction(item)) return false;
       const summary = latestOfKind(extractions, 'summary');
       if (summary && ACTIVE_STATUSES.includes(summary.status)) return false;
       await this.summarization.enqueueSummary(item.id);

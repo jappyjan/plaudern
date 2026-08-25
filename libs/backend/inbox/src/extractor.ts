@@ -13,10 +13,10 @@ import type { InboxItemEntity } from '@plaudern/persistence';
  *   apply, proceed without it (a summary survives a failed diarization — it
  *   just loses speaker attribution).
  *
- * `group` turns a set of dependencies into an OR: dependencies sharing a group
- * key are satisfied when ANY member succeeds (used for the "source text" group
- * `{transcription, ocr}` — an item is extractable from a transcript OR from
- * OCR text, JJ-83). Ungrouped dependencies keep their plain AND semantics.
+ * `group` turns a set of dependencies into an OR. The reserved source-text
+ * group additionally applies the payload-aware source policy so documents use
+ * OCR while other sources use transcription. Ungrouped dependencies keep their
+ * plain AND semantics.
  */
 export interface ExtractorDependency {
   kind: ExtractionKind;

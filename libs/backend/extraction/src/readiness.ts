@@ -1,5 +1,10 @@
 import type { ExtractionKind, ExtractionStatus } from '@plaudern/contracts';
-import type { Extractor, ExtractorDependency } from '@plaudern/inbox';
+import {
+  resolveSourceText,
+  SOURCE_TEXT_GROUP,
+  type Extractor,
+  type ExtractorDependency,
+} from '@plaudern/inbox';
 import type { ExtractedPayloadEntity, InboxItemEntity } from '@plaudern/persistence';
 import type { ExtractorGraph } from './extractor-graph';
 
@@ -9,11 +14,11 @@ export type Readiness =
   | {
       ready: true;
       /**
-       * Timestamp of the newest dependency attempt this run would consume —
-       * the "generation". A kind whose latest row is at/after this generation
+       * Monotonic order of the newest dependency attempt this run would consume.
+       * A kind whose latest row is at/after this generation
        * (and succeeded or in flight) is already up to date.
        */
-      generationTs: number;
+      generation: number;
     }
   | { ready: false; reason: string };
 
@@ -28,10 +33,8 @@ export type Readiness =
  * - a `settled` dependency is waited for while in flight but tolerated when
  *   failed or not applicable;
  * - any dependency still `queued`/`processing` means wait;
- * - dependencies sharing a `group` are OR'd: the group is ready once any member
- *   satisfies its `requires`, waits while a member is still on its way, and can
- *   never run only if no member can ever satisfy it (JJ-83's transcription-OR-ocr
- *   "source text" group).
+ * - dependencies sharing a `group` are OR'd; the reserved source-text group is
+ *   resolved through the payload-aware policy shared by its consumers.
  *
  * Pure function so it is unit-testable and shared by the event-driven
  * pipeline and backfill runs.
@@ -42,7 +45,7 @@ export async function evaluateReadiness(
   graph: ExtractorGraph,
 ): Promise<Readiness> {
   const extractions = item.extractions ?? [];
-  let generationTs = 0;
+  let generation = 0;
 
   // Plain (AND) dependencies keep their exact prior semantics; grouped (OR)
   // dependencies are collected and evaluated together below.
@@ -56,19 +59,19 @@ export async function evaluateReadiness(
     }
     const outcome = await evaluatePlainDep(dep, item, graph, extractions);
     if (!outcome.ready) return outcome;
-    generationTs = Math.max(generationTs, outcome.generationTs);
+    generation = Math.max(generation, outcome.generation);
   }
 
   for (const [key, members] of groups) {
     const outcome = await evaluateGroup(key, members, item, graph, extractions);
     if (!outcome.ready) return outcome;
-    generationTs = Math.max(generationTs, outcome.generationTs);
+    generation = Math.max(generation, outcome.generation);
   }
 
-  return { ready: true, generationTs };
+  return { ready: true, generation };
 }
 
-type DepOutcome = { ready: true; generationTs: number } | { ready: false; reason: string };
+type DepOutcome = { ready: true; generation: number } | { ready: false; reason: string };
 
 /** One ungrouped dependency — the historical AND evaluation, unchanged. */
 async function evaluatePlainDep(
@@ -87,7 +90,7 @@ async function evaluatePlainDep(
     if (dep.requires === 'succeeded') {
       return { ready: false, reason: `required dependency '${dep.kind}' does not apply` };
     }
-    return { ready: true, generationTs: 0 }; // settled dependency that does not apply
+    return { ready: true, generation: 0 }; // settled dependency that does not apply
   }
   if (ACTIVE_STATUSES.includes(latest.status)) {
     return { ready: false, reason: `'${dep.kind}' is still in flight` };
@@ -95,14 +98,14 @@ async function evaluatePlainDep(
   if (dep.requires === 'succeeded' && latest.status !== 'succeeded') {
     return { ready: false, reason: `required dependency '${dep.kind}' did not succeed` };
   }
-  return { ready: true, generationTs: ts(latest.createdAt) };
+  return { ready: true, generation: latest.generation ?? 0 };
 }
 
 /**
  * An OR-group: ready once ANY member satisfies its `requires`. A member with no
  * row yet that still applies (or an in-flight member) keeps the group waiting;
  * only when no member can ever satisfy it does the group block the extractor
- * for good. The generation is the newest satisfying member's timestamp so the
+ * for good. The generation is the newest satisfying member's append order so the
  * dedup gate still fires exactly once per input generation.
  */
 async function evaluateGroup(
@@ -112,7 +115,12 @@ async function evaluateGroup(
   graph: ExtractorGraph,
   extractions: ExtractedPayloadEntity[],
 ): Promise<DepOutcome> {
-  let satisfiedTs = 0;
+  if (groupKey === SOURCE_TEXT_GROUP) {
+    const source = resolveSourceText(item);
+    if (source) return { ready: true, generation: source.extraction.generation ?? 0 };
+  }
+
+  let satisfiedGeneration = 0;
   let anySatisfied = false;
   let anyPending = false;
 
@@ -126,14 +134,16 @@ async function evaluateGroup(
       anyPending = true;
       continue;
     }
-    const satisfies = dep.requires === 'succeeded' ? latest.status === 'succeeded' : true;
+    const satisfies =
+      groupKey !== SOURCE_TEXT_GROUP &&
+      (dep.requires === 'succeeded' ? latest.status === 'succeeded' : true);
     if (satisfies) {
       anySatisfied = true;
-      satisfiedTs = Math.max(satisfiedTs, ts(latest.createdAt));
+      satisfiedGeneration = Math.max(satisfiedGeneration, latest.generation ?? 0);
     }
   }
 
-  if (anySatisfied) return { ready: true, generationTs: satisfiedTs };
+  if (anySatisfied) return { ready: true, generation: satisfiedGeneration };
   const kinds = members.map((m) => `'${m.kind}'`).join(', ');
   if (anyPending) return { ready: false, reason: `waiting for one of [${kinds}] (${groupKey})` };
   return { ready: false, reason: `no dependency in [${kinds}] can satisfy '${groupKey}'` };
@@ -161,11 +171,11 @@ async function dependencyApplies(
 export function isGenerationCovered(
   extractions: ExtractedPayloadEntity[],
   kind: ExtractionKind,
-  generationTs: number,
+  generation: number,
 ): boolean {
   const latest = latestOfKind(extractions, kind);
   if (!latest) return false;
-  if (ts(latest.createdAt) < generationTs) return false;
+  if ((latest.generation ?? 0) < generation) return false;
   return latest.status === 'succeeded' || ACTIVE_STATUSES.includes(latest.status);
 }
 
@@ -180,9 +190,9 @@ export function latestOfKind(
   return extractions
     .filter((e) => e.kind === kind)
     .slice()
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
-}
-
-export function ts(value: Date | string): number {
-  return new Date(value).getTime();
+    .sort((a, b) => {
+      const generationOrder = (b.generation ?? 0) - (a.generation ?? 0);
+      if (generationOrder !== 0) return generationOrder;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    })[0];
 }
