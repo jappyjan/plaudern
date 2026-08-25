@@ -1,3 +1,5 @@
+import { AUTH_DISABLED_USER_ID } from '@plaudern/contracts';
+
 /**
  * Sentinel owner of all rows created while the instance ran without
  * authentication (the app used to be single-user and unauthenticated). This
@@ -6,7 +8,7 @@
  * real id (see AuthService.adoptPreAuthData). It remains the acting user when
  * AUTH_DISABLED=true restores the old single-user mode (and in tests).
  */
-export const DEFAULT_USER_ID = '00000000-0000-0000-0000-000000000001';
+export const DEFAULT_USER_ID = AUTH_DISABLED_USER_ID;
 
 /**
  * Every table that scopes rows to an owner via a plain `"userId"` column (no

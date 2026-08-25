@@ -17,6 +17,8 @@ import type { ExtractionStatus } from '@plaudern/contracts';
  *
  * Exactly ONE row per user (the `userId` unique index): the row's `status`
  * cycles queued -> processing -> succeeded/failed and is the double-click guard.
+ * `generationId` changes on every admission and is the durable ownership token
+ * carried by the job and guarded by every worker write.
  * A fresh generate is admitted only by a race-safe conditional flip out of a
  * terminal state (`UPDATE ... WHERE userId=? AND status IN ('succeeded','failed')`),
  * so two concurrent triggers coalesce onto one in-flight run instead of
@@ -30,6 +32,9 @@ export class TopicProposalRunEntity {
 
   @Column({ type: 'uuid' })
   userId!: string;
+
+  @Column({ type: 'uuid' })
+  generationId!: string;
 
   /** Generation lifecycle, reusing the extraction status vocabulary. */
   @Column({ type: 'varchar', default: 'queued' })

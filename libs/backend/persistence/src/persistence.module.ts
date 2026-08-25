@@ -115,7 +115,8 @@ import { DeadMansSwitchArmingSuspension1720000000052 } from './migrations/172000
 import { CreateCorrectionNotes1720000000053 } from './migrations/1720000000053-CreateCorrectionNotes';
 import { AddDocumentDateOverride1720000000054 } from './migrations/1720000000054-AddDocumentDateOverride';
 import { DropJournalDocuments1720000000055 } from './migrations/1720000000055-DropJournalDocuments';
-import { RetryDeadMansSwitchDelivery1720000000056 } from './migrations/1720000000056-RetryDeadMansSwitchDelivery';
+import { OwnTopicProposalRuns1720000000056 } from './migrations/1720000000056-OwnTopicProposalRuns';
+import { RetryDeadMansSwitchDelivery1720000000057 } from './migrations/1720000000057-RetryDeadMansSwitchDelivery';
 
 export const ALL_ENTITIES = [
   InboxItemEntity,
@@ -235,7 +236,8 @@ export const ALL_MIGRATIONS = [
   CreateCorrectionNotes1720000000053,
   AddDocumentDateOverride1720000000054,
   DropJournalDocuments1720000000055,
-  RetryDeadMansSwitchDelivery1720000000056,
+  OwnTopicProposalRuns1720000000056,
+  RetryDeadMansSwitchDelivery1720000000057,
 ];
 
 /**
