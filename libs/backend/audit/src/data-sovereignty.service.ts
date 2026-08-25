@@ -41,6 +41,7 @@ import {
   TopicProposalEntity,
   type InboxItemEntity,
 } from '@plaudern/persistence';
+import { findDeadMansSwitchForUpdate } from './dead-mans-switch-lifecycle';
 
 /**
  * Data-sovereignty controls (JJ-42): export-everything, panic-delete, and the
@@ -193,15 +194,86 @@ export class DataSovereigntyService {
     userId: string,
     req: UpdateDeadMansSwitchRequest,
   ): Promise<DeadMansSwitchDto> {
-    const repo = this.dataSource.getRepository(DeadMansSwitchEntity);
-    let row = await repo.findOne({ where: { userId } });
-    if (!row) {
-      row = repo.create({ userId, lastCheckInAt: null });
-    }
-    row.enabled = req.enabled;
-    row.contactEmail = req.contactEmail;
-    row.checkInIntervalDays = req.checkInIntervalDays;
-    return toDeadMansSwitchDto(await repo.save(row));
+    return this.dataSource.transaction(async (em) => {
+      const switches = em.getRepository(DeadMansSwitchEntity);
+      const releases = em.getRepository(DeadMansSwitchReleaseEntity);
+      let row = await findDeadMansSwitchForUpdate(
+        em,
+        userId,
+        this.dataSource.options.type === 'postgres',
+      );
+      if (!row) row = switches.create({ userId, lastCheckInAt: null });
+      const contactChanged = row.contactEmail !== req.contactEmail;
+      row.enabled = req.enabled;
+      row.contactEmail = req.contactEmail;
+      row.checkInIntervalDays = req.checkInIntervalDays;
+      row = await switches.save(row);
+
+      if (contactChanged) {
+        // An in-flight send to the old address may still complete, but clearing
+        // its reservation guarantees that credential can never become active.
+        if (req.contactEmail) {
+          await releases
+            .createQueryBuilder()
+            .update()
+            .set({
+              contactEmail: req.contactEmail,
+              tokenHash: null,
+              tokenEncrypted: null,
+            })
+            .where('userId = :userId AND status = :status', { userId, status: 'pending' })
+            .execute();
+        } else {
+          const cancelled = await releases
+            .createQueryBuilder()
+            .update()
+            .set({
+              status: 'cancelled',
+              tokenHash: null,
+              tokenEncrypted: null,
+              closedAt: new Date().toISOString(),
+            })
+            .where('userId = :userId AND status = :status', { userId, status: 'pending' })
+            .execute();
+          if ((cancelled.affected ?? 0) > 0) {
+            row.armingSuspendedForCheckInAt = row.lastCheckInAt;
+            row = await switches.save(row);
+          }
+        }
+      }
+
+      if (!req.enabled) {
+        const closedAt = new Date().toISOString();
+        const cancelled = await releases
+          .createQueryBuilder()
+          .update()
+          .set({
+            status: 'cancelled',
+            tokenHash: null,
+            tokenEncrypted: null,
+            closedAt,
+          })
+          .where('userId = :userId AND status = :status', { userId, status: 'pending' })
+          .execute();
+        const revoked = await releases
+          .createQueryBuilder()
+          .update()
+          .set({
+            status: 'revoked',
+            tokenHash: null,
+            tokenEncrypted: null,
+            closedAt,
+          })
+          .where('userId = :userId AND status = :status', { userId, status: 'active' })
+          .execute();
+        if ((cancelled.affected ?? 0) + (revoked.affected ?? 0) > 0) {
+          row.armingSuspendedForCheckInAt = row.lastCheckInAt;
+          row = await switches.save(row);
+        }
+      }
+
+      return toDeadMansSwitchDto(row);
+    });
   }
 
   /**
@@ -212,12 +284,32 @@ export class DataSovereigntyService {
    * arms normally again.
    */
   async checkInDeadMansSwitch(userId: string): Promise<DeadMansSwitchDto> {
-    const repo = this.dataSource.getRepository(DeadMansSwitchEntity);
-    let row = await repo.findOne({ where: { userId } });
-    if (!row) row = repo.create({ userId });
-    row.lastCheckInAt = new Date().toISOString();
-    row.armingSuspendedForCheckInAt = null;
-    return toDeadMansSwitchDto(await repo.save(row));
+    return this.dataSource.transaction(async (em) => {
+      const switches = em.getRepository(DeadMansSwitchEntity);
+      let row = await findDeadMansSwitchForUpdate(
+        em,
+        userId,
+        this.dataSource.options.type === 'postgres',
+      );
+      if (!row) row = switches.create({ userId });
+      const checkedInAt = new Date().toISOString();
+      row.lastCheckInAt = checkedInAt;
+      row.armingSuspendedForCheckInAt = null;
+      row = await switches.save(row);
+      await em
+        .getRepository(DeadMansSwitchReleaseEntity)
+        .createQueryBuilder()
+        .update()
+        .set({
+          status: 'cancelled',
+          tokenHash: null,
+          tokenEncrypted: null,
+          closedAt: checkedInAt,
+        })
+        .where('userId = :userId AND status = :status', { userId, status: 'pending' })
+        .execute();
+      return toDeadMansSwitchDto(row);
+    });
   }
 
   /** Page through every (non-merged) item for the user with its relations. */

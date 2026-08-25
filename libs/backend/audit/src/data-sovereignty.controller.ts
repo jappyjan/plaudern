@@ -69,14 +69,7 @@ export class DataSovereigntyController {
     return this.sovereignty.getDeadMansSwitch(user.id);
   }
 
-  /**
-   * F4/F7 (JJ-80 review follow-ups), composed here for the same reason
-   * check-in's cancel is composed here: neither service injects the other's
-   * owner. F4 — refreshes any still-`pending` release's contact snapshot so a
-   * grace-window grant always goes to the CURRENT contact. F7 — disabling the
-   * switch fully stands it down: cancels any pending release and revokes any
-   * already-active grant, rather than merely pausing new firings.
-   */
+  /** Update switch intent and its release invariants as one audit-module operation. */
   @Put('dead-mans-switch')
   async updateDeadMansSwitch(
     @CurrentUser() user: AuthenticatedUser,
@@ -86,25 +79,13 @@ export class DataSovereigntyController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues[0]?.message ?? 'invalid request');
     }
-    const dto = await this.sovereignty.updateDeadMansSwitch(user.id, parsed.data);
-    await this.releases.syncPendingContactSnapshot(user.id, parsed.data.contactEmail);
-    if (!parsed.data.enabled) {
-      await this.releases.disarmForDisable(user.id);
-    }
-    return dto;
+    return this.sovereignty.updateDeadMansSwitch(user.id, parsed.data);
   }
 
-  /**
-   * Record that the owner is present. This also CANCELS any grace-window release
-   * (JJ-80): a re-check-in before the grant fires must stop it. Composed here
-   * rather than inside the service so neither service injects the other — the
-   * check-in write and the release cancel stay one-directional and cycle-free.
-   */
+  /** Record presence and cancel any grace-window release atomically. */
   @Post('dead-mans-switch/check-in')
   async checkIn(@CurrentUser() user: AuthenticatedUser): Promise<DeadMansSwitchDto> {
-    const dto = await this.sovereignty.checkInDeadMansSwitch(user.id);
-    await this.releases.cancelPendingReleases(user.id);
-    return dto;
+    return this.sovereignty.checkInDeadMansSwitch(user.id);
   }
 
   /** The owner's release history, so they can see and revoke granted access. */

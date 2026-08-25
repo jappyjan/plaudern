@@ -2,13 +2,15 @@ import 'reflect-metadata';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import type { AccountExport } from '@plaudern/contracts';
+import type { InboxService } from '@plaudern/inbox';
 import type { NotificationsService } from '@plaudern/notifications';
 import {
   ALL_ENTITIES,
   DeadMansSwitchEntity,
   DeadMansSwitchReleaseEntity,
 } from '@plaudern/persistence';
-import type { DataSovereigntyService } from './data-sovereignty.service';
+import type { StorageService } from '@plaudern/storage';
+import { DataSovereigntyService } from './data-sovereignty.service';
 import { DeadMansSwitchReleaseService } from './dead-mans-switch-release.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -19,11 +21,12 @@ const CONTACT = 'trusted@example.com';
 /** A fake export so `resolveEmergencyAccess` has something to return. */
 const FAKE_EXPORT = { schemaVersion: 1, userId: USER, itemCount: 0, items: [] } as unknown as AccountExport;
 
-function makeConfig(graceDays: string): ConfigService {
+function makeConfig(graceDays: string, encryptionSecret = 'test-secret'): ConfigService {
   return {
     get: (key: string, def?: string) => {
       if (key === 'DEAD_MANS_SWITCH_GRACE_DAYS') return graceDays;
       if (key === 'PUBLIC_APP_URL') return 'https://app.test';
+      if (key === 'APP_ENCRYPTION_SECRET') return encryptionSecret;
       return def;
     },
   } as unknown as ConfigService;
@@ -57,12 +60,23 @@ describe('DeadMansSwitchReleaseService', () => {
     );
   }
 
-  function makeService(graceDays = '0'): DeadMansSwitchReleaseService {
+  function makeService(
+    graceDays = '0',
+    encryptionSecret = 'test-secret',
+  ): DeadMansSwitchReleaseService {
     return new DeadMansSwitchReleaseService(
       dataSource,
-      makeConfig(graceDays),
+      makeConfig(graceDays, encryptionSecret),
       notifications as unknown as NotificationsService,
       sovereignty as unknown as DataSovereigntyService,
+    );
+  }
+
+  function makeLifecycleService(): DataSovereigntyService {
+    return new DataSovereigntyService(
+      {} as InboxService,
+      {} as StorageService,
+      dataSource,
     );
   }
 
@@ -113,6 +127,136 @@ describe('DeadMansSwitchReleaseService', () => {
     expect(await dataSource.getRepository(DeadMansSwitchReleaseEntity).count()).toBe(1);
   });
 
+  it('retries the same credential when contact notification throws before activation', async () => {
+    await seedSwitch({});
+    const service = makeService('0');
+    notifications.notifyEmailAddress.mockRejectedValueOnce(new Error('smtp unavailable'));
+
+    await expect(service.sweepUser(USER, NOW)).rejects.toThrow('smtp unavailable');
+    let release = (await dataSource.getRepository(DeadMansSwitchReleaseEntity).find())[0];
+    expect(release.status).toBe('pending');
+    expect(release.tokenHash).toBeTruthy();
+    expect(release.tokenEncrypted).toBeTruthy();
+    const firstToken = tokenFromEmail(notifications.notifyEmailAddress);
+    expect(await service.resolveEmergencyAccess(firstToken)).toBeNull();
+
+    expect(await service.sweepUser(USER, new Date(NOW.getTime() + 1_000))).toBe(1);
+    expect(notifications.notifyEmailAddress).toHaveBeenCalledTimes(2);
+    const secondUrl = notifications.notifyEmailAddress.mock.calls[1][1].url as string;
+    expect(secondUrl.endsWith(`/${firstToken}`)).toBe(true);
+    release = (await dataSource.getRepository(DeadMansSwitchReleaseEntity).find())[0];
+    expect(release.status).toBe('active');
+    expect(release.tokenEncrypted).toBeNull();
+    expect(await service.resolveEmergencyAccess(firstToken)).toBe(FAKE_EXPORT);
+  });
+
+  it('keeps a rejected delivery pending and retries without minting another credential', async () => {
+    await seedSwitch({});
+    const service = makeService('0');
+    notifications.notifyEmailAddress.mockResolvedValueOnce({
+      sent: false,
+      detail: 'temporary failure',
+    });
+
+    expect(await service.sweepUser(USER, NOW)).toBe(0);
+    const firstToken = tokenFromEmail(notifications.notifyEmailAddress);
+    const pending = (await dataSource.getRepository(DeadMansSwitchReleaseEntity).find())[0];
+    expect(pending.status).toBe('pending');
+    expect(pending.tokenEncrypted).toBeTruthy();
+
+    expect(await service.sweepUser(USER, new Date(NOW.getTime() + 1_000))).toBe(1);
+    const secondUrl = notifications.notifyEmailAddress.mock.calls[1][1].url as string;
+    expect(secondUrl.endsWith(`/${firstToken}`)).toBe(true);
+    expect(await dataSource.getRepository(DeadMansSwitchReleaseEntity).count()).toBe(1);
+  });
+
+  it('does not reserve a credential without an encryption secret', async () => {
+    await seedSwitch({});
+    const service = makeService('0', '');
+
+    await expect(service.sweepUser(USER, NOW)).rejects.toThrow(
+      'APP_ENCRYPTION_SECRET is not configured',
+    );
+    const release = (await dataSource.getRepository(DeadMansSwitchReleaseEntity).find())[0];
+    expect(release.status).toBe('pending');
+    expect(release.tokenHash).toBeNull();
+    expect(release.tokenEncrypted).toBeNull();
+    expect(notifications.notifyEmailAddress).not.toHaveBeenCalled();
+  });
+
+  it.each(['check-in', 'disable'] as const)(
+    'does not activate a credential when a concurrent %s lands during delivery',
+    async (operation) => {
+      await seedSwitch({});
+      const service = makeService('0');
+      let finishDelivery!: () => void;
+      let deliveryStarted!: () => void;
+      const started = new Promise<void>((resolve) => (deliveryStarted = resolve));
+      notifications.notifyEmailAddress.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishDelivery = () => resolve({ sent: true, detail: CONTACT });
+            deliveryStarted();
+          }),
+      );
+
+      const sweep = service.sweepUser(USER, NOW);
+      await started;
+      const token = tokenFromEmail(notifications.notifyEmailAddress);
+      if (operation === 'check-in') {
+        await makeLifecycleService().checkInDeadMansSwitch(USER);
+      } else {
+        await makeLifecycleService().updateDeadMansSwitch(USER, {
+          enabled: false,
+          contactEmail: CONTACT,
+          checkInIntervalDays: 90,
+        });
+      }
+      finishDelivery();
+
+      expect(await sweep).toBe(0);
+      const release = (await dataSource.getRepository(DeadMansSwitchReleaseEntity).find())[0];
+      expect(release.status).toBe('cancelled');
+      expect(release.tokenHash).toBeNull();
+      expect(release.tokenEncrypted).toBeNull();
+      expect(await service.resolveEmergencyAccess(token)).toBeNull();
+    },
+  );
+
+  it('invalidates an in-flight credential when the pending contact changes', async () => {
+    await seedSwitch({});
+    const service = makeService('0');
+    let finishDelivery!: () => void;
+    let deliveryStarted!: () => void;
+    const started = new Promise<void>((resolve) => (deliveryStarted = resolve));
+    notifications.notifyEmailAddress.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishDelivery = () => resolve({ sent: true, detail: CONTACT });
+          deliveryStarted();
+        }),
+    );
+
+    const sweep = service.sweepUser(USER, NOW);
+    await started;
+    const oldToken = tokenFromEmail(notifications.notifyEmailAddress);
+    const newContact = 'replacement@example.com';
+    await makeLifecycleService().updateDeadMansSwitch(USER, {
+      enabled: true,
+      contactEmail: newContact,
+      checkInIntervalDays: 90,
+    });
+    finishDelivery();
+    expect(await sweep).toBe(0);
+    expect(await service.resolveEmergencyAccess(oldToken)).toBeNull();
+
+    expect(await service.sweepUser(USER, new Date(NOW.getTime() + 1_000))).toBe(1);
+    expect(notifications.notifyEmailAddress.mock.calls[1][0]).toBe(newContact);
+    const newUrl = notifications.notifyEmailAddress.mock.calls[1][1].url as string;
+    expect(newUrl.endsWith(`/${oldToken}`)).toBe(false);
+    expect(await dataSource.getRepository(DeadMansSwitchReleaseEntity).count()).toBe(1);
+  });
+
   it('does not fire when the check-in has not lapsed (re-check-in before triggersAt)', async () => {
     await seedSwitch({ lastCheckInAt: NOW.toISOString() }); // just checked in.
     const service = makeService('0');
@@ -136,12 +280,7 @@ describe('DeadMansSwitchReleaseService', () => {
     let releases = await dataSource.getRepository(DeadMansSwitchReleaseEntity).find();
     expect(releases[0].status).toBe('pending');
 
-    // Owner re-checks in (controller resets lastCheckInAt + cancels pending).
-    await dataSource
-      .getRepository(DeadMansSwitchEntity)
-      .update({ userId: USER }, { lastCheckInAt: NOW.toISOString() });
-    const cancelled = await service.cancelPendingReleases(USER, NOW);
-    expect(cancelled).toBe(1);
+    await makeLifecycleService().checkInDeadMansSwitch(USER);
 
     // A later sweep (still within the would-be window) does NOT grant.
     const grantedAfter = await service.sweepUser(USER, new Date(NOW.getTime() + 20 * DAY_MS));
@@ -269,26 +408,27 @@ describe('DeadMansSwitchReleaseService', () => {
     expect(pending.status).toBe('pending');
 
     const NEW_CONTACT = 'new-trusted@example.com';
-    await service.syncPendingContactSnapshot(USER, NEW_CONTACT);
+    await makeLifecycleService().updateDeadMansSwitch(USER, {
+      enabled: true,
+      contactEmail: NEW_CONTACT,
+      checkInIntervalDays: 90,
+    });
     const refreshed = await releaseRepo.findOne({ where: { id: pending.id } });
     expect(refreshed!.contactEmail).toBe(NEW_CONTACT);
 
-    // A null contact (e.g. clearing the field) must not stomp the snapshot —
-    // the release's contactEmail column is non-nullable.
-    await service.syncPendingContactSnapshot(USER, null);
-    const stillSet = await releaseRepo.findOne({ where: { id: pending.id } });
-    expect(stillSet!.contactEmail).toBe(NEW_CONTACT);
-
     // Once the grant goes active, further contact edits do not retarget it —
     // the credential was already emailed to the fire-time contact.
-    const grantService = makeService('0');
     await releaseRepo.update({ id: pending.id }, { status: 'active' });
-    await grantService.syncPendingContactSnapshot(USER, 'yet-another@example.com');
+    await makeLifecycleService().updateDeadMansSwitch(USER, {
+      enabled: true,
+      contactEmail: 'yet-another@example.com',
+      checkInIntervalDays: 90,
+    });
     const activeRow = await releaseRepo.findOne({ where: { id: pending.id } });
     expect(activeRow!.contactEmail).toBe(NEW_CONTACT);
   });
 
-  it('F7: disarmForDisable cancels a pending release', async () => {
+  it('F7: disabling cancels a pending release', async () => {
     await seedSwitch({});
     const service = makeService('10'); // pending-only.
     await service.sweepUser(USER, NOW);
@@ -296,7 +436,11 @@ describe('DeadMansSwitchReleaseService', () => {
     const pending = (await releaseRepo.find())[0];
     expect(pending.status).toBe('pending');
 
-    await service.disarmForDisable(USER, new Date(NOW.getTime() + DAY_MS));
+    await makeLifecycleService().updateDeadMansSwitch(USER, {
+      enabled: false,
+      contactEmail: CONTACT,
+      checkInIntervalDays: 90,
+    });
 
     const after = await releaseRepo.findOne({ where: { id: pending.id } });
     expect(after!.status).toBe('cancelled');
@@ -309,6 +453,11 @@ describe('DeadMansSwitchReleaseService', () => {
     const sw = await switches.findOne({ where: { userId: USER } });
     expect(sw!.armingSuspendedForCheckInAt).toBe(sw!.lastCheckInAt);
 
+    await makeLifecycleService().updateDeadMansSwitch(USER, {
+      enabled: true,
+      contactEmail: CONTACT,
+      checkInIntervalDays: 90,
+    });
     // Re-enable + sweep on the same stale lapse: no new release, no warning.
     notifications.notify.mockClear();
     expect(await service.sweepUser(USER, new Date(NOW.getTime() + 2 * DAY_MS))).toBe(0);
@@ -318,10 +467,8 @@ describe('DeadMansSwitchReleaseService', () => {
     // A fresh check-in lifts the suppression; the next lapse arms again
     // (grace=10d in this test → arm only, no grant yet).
     const checkInAt = new Date(NOW.getTime() + 3 * DAY_MS);
-    await switches.update(
-      { userId: USER },
-      { lastCheckInAt: checkInAt.toISOString(), armingSuspendedForCheckInAt: null },
-    );
+    await makeLifecycleService().checkInDeadMansSwitch(USER);
+    await switches.update({ userId: USER }, { lastCheckInAt: checkInAt.toISOString() });
     expect(
       await service.sweepUser(USER, new Date(checkInAt.getTime() + 91 * DAY_MS)),
     ).toBe(0);
@@ -329,7 +476,7 @@ describe('DeadMansSwitchReleaseService', () => {
     expect(notifications.notify).toHaveBeenCalledTimes(1); // owner warned for the NEW lapse.
   });
 
-  it('F7: disarmForDisable does not clobber a release a concurrent sweep just promoted to active', async () => {
+  it('F7: disabling does not clobber a release a concurrent sweep just promoted to active', async () => {
     await seedSwitch({});
     const service = makeService('10');
     await service.sweepUser(USER, NOW);
@@ -347,7 +494,11 @@ describe('DeadMansSwitchReleaseService', () => {
       { status: 'active', tokenHash: 'deadbeef', grantedAt: NOW.toISOString() },
     );
 
-    await service.disarmForDisable(USER, new Date(NOW.getTime() + DAY_MS));
+    await makeLifecycleService().updateDeadMansSwitch(USER, {
+      enabled: false,
+      contactEmail: CONTACT,
+      checkInIntervalDays: 90,
+    });
 
     const after = await releaseRepo.findOne({ where: { id: release.id } });
     expect(after!.status).toBe('revoked'); // NOT 'cancelled'.
@@ -358,7 +509,7 @@ describe('DeadMansSwitchReleaseService', () => {
     expect(sw!.armingSuspendedForCheckInAt).toBe(sw!.lastCheckInAt);
   });
 
-  it('F7: disarmForDisable revokes an active grant and suppresses re-arming', async () => {
+  it('F7: disabling revokes an active grant and suppresses re-arming', async () => {
     await seedSwitch({});
     const service = makeService('0'); // arm + grant in one sweep.
     await service.sweepUser(USER, NOW);
@@ -367,7 +518,11 @@ describe('DeadMansSwitchReleaseService', () => {
     const active = (await releaseRepo.find())[0];
     expect(active.status).toBe('active');
 
-    await service.disarmForDisable(USER, new Date(NOW.getTime() + DAY_MS));
+    await makeLifecycleService().updateDeadMansSwitch(USER, {
+      enabled: false,
+      contactEmail: CONTACT,
+      checkInIntervalDays: 90,
+    });
 
     const after = await releaseRepo.findOne({ where: { id: active.id } });
     expect(after!.status).toBe('revoked');
