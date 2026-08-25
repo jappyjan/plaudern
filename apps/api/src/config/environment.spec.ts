@@ -1,7 +1,9 @@
 import { validateEnvironment } from './environment';
 
 describe('validateEnvironment', () => {
-  const strongSecret = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=';
+  const strongSecret = Buffer.from('plaudern explicit test-only encryption key material').toString(
+    'base64',
+  );
 
   it.each([
     undefined,
