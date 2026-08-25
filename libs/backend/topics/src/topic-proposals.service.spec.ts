@@ -558,6 +558,38 @@ describe('TopicProposalsService (JJ-64/JJ-69)', () => {
     expect(await dataSource.getRepository(TopicProposalRunEntity).count()).toBe(1);
   });
 
+  it('claims a durable legacy job only while the migrated row still owns that generation', async () => {
+    await seedCluster([1, 0], 4);
+    const runs = dataSource.getRepository(TopicProposalRunEntity);
+    const legacyRun = await runs.save({
+      userId: USER,
+      generationId: OLD_GENERATION,
+      status: 'queued',
+      error: null,
+      proposalsCreated: 0,
+    });
+    await runs.update({ id: legacyRun.id }, { generationId: legacyRun.id });
+
+    await buildProcessor().process({ userId: USER });
+
+    expect(await runs.findOneByOrFail({ userId: USER })).toMatchObject({
+      generationId: legacyRun.id,
+      status: 'succeeded',
+      proposalsCreated: 1,
+    });
+
+    await runs.update(
+      { userId: USER },
+      { generationId: OLD_GENERATION, status: 'queued', proposalsCreated: 0 },
+    );
+    await buildProcessor().process({ userId: USER });
+    expect(await runs.findOneByOrFail({ userId: USER })).toMatchObject({
+      generationId: OLD_GENERATION,
+      status: 'queued',
+      proposalsCreated: 0,
+    });
+  });
+
   it('takes over a STALE stranded run (worker died mid-run) instead of locking the user out', async () => {
     await seedCluster([1, 0], 4);
     const runs = dataSource.getRepository(TopicProposalRunEntity);

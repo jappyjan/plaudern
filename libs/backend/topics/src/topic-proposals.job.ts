@@ -7,7 +7,8 @@ import type { JobQueue } from '@plaudern/queue';
  */
 export interface TopicProposalGenerationJob {
   userId: string;
-  generationId: string;
+  /** Optional only for durable jobs enqueued before generation ownership shipped. */
+  generationId?: string;
 }
 
 export const TOPIC_PROPOSAL_GENERATION_QUEUE = Symbol('TOPIC_PROPOSAL_GENERATION_QUEUE');

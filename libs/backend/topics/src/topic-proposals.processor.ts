@@ -110,7 +110,19 @@ export class TopicProposalGenerationProcessor {
    * one worker that flips the row proceeds (a redelivered/duplicate job no-ops).
    */
   async process(job: TopicProposalGenerationJob): Promise<void> {
-    const { userId, generationId } = job;
+    const { userId } = job;
+    // Migration 0056 initializes generationId from the stable row id. This lets
+    // already-durable pre-deployment jobs claim only that migrated generation;
+    // once takeover renews generationId, a delayed legacy job cannot claim it.
+    const generationId =
+      job.generationId ??
+      (
+        await this.runs.findOne({
+          where: { userId },
+          select: { id: true },
+        })
+      )?.id;
+    if (!generationId) return;
     const claimed = await this.runs
       .createQueryBuilder()
       .update()
