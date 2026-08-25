@@ -97,9 +97,9 @@ export class CalendarEventsService {
    * matching the inbox list — the merged item covers their time range.
    */
   async recordingsInRange(userId: string, from: string, to: string): Promise<RecordingSummaryDto[]> {
-    // Both occurredAt and documentDate are stored as ISO-8601 UTC strings, so a
+    // Both occurredAt and document dates are stored as ISO-8601 UTC strings, so a
     // COALESCE + lexicographic BETWEEN orders and filters them correctly.
-    const effectiveDate = 'COALESCE(doc.documentDate, item.occurredAt)';
+    const effectiveDate = 'COALESCE(doc.documentDateOverride, doc.documentDate, item.occurredAt)';
     const items = await this.items
       .createQueryBuilder('item')
       .leftJoinAndSelect('item.source', 'source')
@@ -240,7 +240,8 @@ export class CalendarEventsService {
       id: item.id,
       sourceType: item.sourceType,
       occurredAt: item.occurredAt,
-      documentDate: item.documentMetadata?.documentDate ?? null,
+      documentDate:
+        item.documentMetadata?.documentDateOverride ?? item.documentMetadata?.documentDate ?? null,
       title: recordingTitle(item),
       durationMs: recordingDurationMs(item.metadata),
       originalFilename: item.source?.originalFilename ?? null,

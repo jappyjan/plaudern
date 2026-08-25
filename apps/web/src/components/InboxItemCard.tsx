@@ -3,7 +3,7 @@ import { Button, Chip } from '@heroui/react';
 import { isTextBearing, summaryPayloadSchema, type InboxItemDto } from '@plaudern/contracts';
 import { useNavigate } from 'react-router-dom';
 import { deleteInboxItem } from '../lib/api';
-import { formatDateTime, formatDuration, itemDate } from '../lib/format';
+import { formatDuration, formatItemDate } from '../lib/format';
 import { usePlaceName } from '../hooks/usePlaceName';
 import { LocationIcon, MicIcon, SourceIcon, TrashIcon } from './icons';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
@@ -166,7 +166,7 @@ export function InboxItemCard({
         title={itemTitle(item)}
         subtitle={
           <>
-            <span className="whitespace-nowrap">{formatDateTime(itemDate(item))}</span>
+            <span className="whitespace-nowrap">{formatItemDate(item)}</span>
             {duration !== null && (
               <span className="tabular-nums">{formatDuration(duration)}</span>
             )}

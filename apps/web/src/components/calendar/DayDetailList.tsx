@@ -1,6 +1,6 @@
 import { Chip } from '@heroui/react';
 import type { CalendarEventDto, RecordingSummaryDto } from '@plaudern/contracts';
-import { formatDate, formatTime, formatTimeRange, itemDate } from '../../lib/format';
+import { formatDocumentDate, formatTime, formatTimeRange, itemDate } from '../../lib/format';
 import { MicIcon, SourceIcon } from '../icons';
 import { DocumentRow } from '../DocumentRow';
 
@@ -107,7 +107,7 @@ export function DayDetailList({ dayLabel, events, recordings, onEventClick }: Da
             subtitle={
               <>
                 {entry.recording.documentDate
-                  ? `Dated ${formatDate(entry.recording.documentDate)}`
+                  ? `Dated ${formatDocumentDate(entry.recording.documentDate)}`
                   : `Recording · ${formatTime(entry.recording.occurredAt)}`}
                 {entry.recording.durationMs !== null
                   ? ` · ${Math.round(entry.recording.durationMs / 60000)} min`

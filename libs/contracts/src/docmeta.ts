@@ -132,6 +132,8 @@ export const documentSchema = z.object({
    * present it is preferred over the item's capture time as the displayed date.
    */
   documentDate: z.string().datetime().nullable(),
+  /** A user-selected replacement for the extracted document date, or null. */
+  documentDateOverride: z.string().datetime().nullable(),
   /** Resolved absolute ISO date when parseable, else the raw phrase, or null. */
   expiryDate: z.string().nullable(),
   /** Resolved absolute ISO date when parseable, else the raw phrase, or null. */
@@ -144,6 +146,14 @@ export const documentSchema = z.object({
   updatedAt: z.string().datetime(),
 });
 export type DocumentDto = z.infer<typeof documentSchema>;
+
+/** Sets or clears the user-owned date shown for a document. */
+export const updateDocumentDateOverrideRequestSchema = z.object({
+  documentDateOverride: z.string().date().nullable(),
+});
+export type UpdateDocumentDateOverrideRequest = z.infer<
+  typeof updateDocumentDateOverrideRequestSchema
+>;
 
 /**
  * Read model for an item's docmeta tab: the latest extraction's status plus the

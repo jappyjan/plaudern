@@ -68,7 +68,7 @@ import {
   TrashIcon,
   UnlinkIcon,
 } from '../components/icons';
-import { formatBytes, formatDate, formatDateTime, formatTimeRange, itemDate } from '../lib/format';
+import { formatBytes, formatDate, formatDateTime, formatItemDate, formatTimeRange } from '../lib/format';
 import type { GeoLocation } from '../lib/geolocation';
 
 // SSE delivers updates instantly; polling is only a fallback for proxies
@@ -457,6 +457,7 @@ export function ItemDetailPage() {
           itemId={id}
           contentType={item.source?.contentType}
           sourceUrl={sourceUrl}
+          onDateUpdated={refetch}
         />
       )}
 
@@ -683,7 +684,7 @@ export function ItemDetailPage() {
         <CardBody className="gap-2 text-sm">
           <DetailRow
             label={audio ? 'Recorded' : item.documentDate ? 'Document date' : 'Created'}
-            value={formatDateTime(itemDate(item))}
+            value={formatItemDate(item)}
           />
           <DetailRow label="Added to inbox" value={formatDateTime(item.ingestedAt)} />
           {mergedFromCount > 0 && (
