@@ -296,9 +296,15 @@ curl -s localhost:3000/api/v1/inbox
 
 Backend env: `apps/api/.env.example` (DB, S3/MinIO, Redis, hosted-API keys).
 `APP_ENCRYPTION_SECRET` is always required and must be valid base64 encoding at
-least 32 bytes. Generate it with `openssl rand -base64 32`, store it in a secret
-manager, do not log it, and back it up separately from the database. Losing the
-key makes encrypted credentials unrecoverable.
+least 32 bytes. Generate it with `openssl rand -base64 32`; do not create one
+from a phrase or reuse a generic generated password. Runtime validation can
+verify encoding, length, and reject known weak values, but cannot prove how much
+entropy an arbitrary value has or how it was generated. Store the generated key
+in a secret manager, do not log it, and back it up separately from the database.
+Losing the key makes encrypted credentials unrecoverable. For Coolify, add
+`APP_ENCRYPTION_SECRET` as an explicit environment variable with that generated
+value; the generic `SERVICE_PASSWORD_*` mechanism does not guarantee the required
+base64 format.
 
 ### Rotate the encryption secret
 
