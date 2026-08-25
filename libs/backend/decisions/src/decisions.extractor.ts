@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AiConfigService } from '@plaudern/ai-config';
-import type { Extractor, ExtractorDependency } from '@plaudern/inbox';
+import { sourceTextDependencies, type Extractor, type ExtractorDependency } from '@plaudern/inbox';
 import type { InboxItemEntity } from '@plaudern/persistence';
 import { DecisionsService, DECISIONS_EXTRACTOR_VERSION } from './decisions.service';
 
@@ -17,7 +17,7 @@ export class DecisionsExtractor implements Extractor {
   readonly kind = 'decisions' as const;
   readonly version = DECISIONS_EXTRACTOR_VERSION;
   readonly dependsOn: ExtractorDependency[] = [
-    { kind: 'transcription', requires: 'succeeded' },
+    ...sourceTextDependencies(),
     { kind: 'diarization', requires: 'settled' },
     { kind: 'summary', requires: 'settled' },
   ];

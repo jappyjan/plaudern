@@ -7,7 +7,7 @@ import {
   InboxItemEntity,
   SpeakerOccurrenceEntity,
 } from '@plaudern/persistence';
-import { SelfProfileService } from '@plaudern/inbox';
+import { resolveSourceText, SelfProfileService } from '@plaudern/inbox';
 import type { CommitmentExtractionInput, CommitmentSpeaker } from './commitments.provider';
 
 /**
@@ -51,12 +51,11 @@ export class CommitmentContextService {
     item: InboxItemEntity,
     maxChars: number = DEFAULT_MAX_CHARS,
   ): Promise<CommitmentContextResult | null> {
-    const transcription = latestOfKind(item.extractions ?? [], 'transcription');
+    const source = resolveSourceText(item);
     const diarization = latestOfKind(item.extractions ?? [], 'diarization');
 
-    if (transcription?.status !== 'succeeded' || !transcription.content) {
-      return null;
-    }
+    if (!source) return null;
+    const transcription = source.kind === 'transcription' ? source.extraction : null;
 
     // Direction (owed_by_me vs owed_to_me) is meaningless without knowing who
     // "me" is. No self profile → don't guess.
@@ -91,9 +90,9 @@ export class CommitmentContextService {
 
     const speakerLabels = new Set(roster.map((s) => s.label));
     const transcript = buildTranscriptText(
-      transcription.content,
-      transcription.segments ?? null,
-      diarization?.status === 'succeeded' ? diarization.segments ?? null : null,
+      source.text,
+      transcription?.segments ?? null,
+      transcription && diarization?.status === 'succeeded' ? diarization.segments ?? null : null,
       speakerLabels,
       redactedLabels,
     );
@@ -110,7 +109,7 @@ export class CommitmentContextService {
         speakers,
         ownerLabel: owner.ownerLabel,
         ownerName: owner.ownerName,
-        language: transcription.language ?? undefined,
+        language: source.language,
         occurredAt: iso(item.occurredAt),
       },
     };

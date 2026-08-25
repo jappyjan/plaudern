@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { AiConfigService } from '@plaudern/ai-config';
 import { hasDocumentPayload } from '@plaudern/contracts';
-import type { Extractor, ExtractorDependency } from '@plaudern/inbox';
+import { sourceTextDependencies, type Extractor, type ExtractorDependency } from '@plaudern/inbox';
 import type { InboxItemEntity } from '@plaudern/persistence';
 import { DOCMETA_EXTRACTOR_VERSION, DocMetaService } from './docmeta.service';
 
@@ -16,7 +16,7 @@ import { DOCMETA_EXTRACTOR_VERSION, DocMetaService } from './docmeta.service';
 export class DocMetaExtractor implements Extractor {
   readonly kind = 'docmeta' as const;
   readonly version = DOCMETA_EXTRACTOR_VERSION;
-  readonly dependsOn: ExtractorDependency[] = [{ kind: 'ocr', requires: 'succeeded' }];
+  readonly dependsOn: ExtractorDependency[] = sourceTextDependencies();
 
   constructor(
     private readonly docmeta: DocMetaService,

@@ -103,6 +103,17 @@ describe('DataSovereigntyService', () => {
             },
             extractions: [
               {
+                id: 'e0',
+                kind: 'transcription',
+                version: 1,
+                provider: 'speech:test',
+                status: 'succeeded',
+                content: 'source words',
+                language: 'en',
+                createdAt: new Date('2026-01-02T00:00:00.000Z'),
+                completedAt: new Date('2026-01-02T00:00:30.000Z'),
+              },
+              {
                 id: 'e1',
                 kind: 'summary',
                 version: 1,
@@ -129,10 +140,12 @@ describe('DataSovereigntyService', () => {
     expect(dump.userId).toBe('me');
     expect(dump.itemCount).toBe(1);
     expect(dump.items[0].source?.downloadUrl).toBe('https://storage/audio/1?sig=x');
-    expect(dump.items[0].extractions[0].kind).toBe('summary');
+    expect(dump.items[0].extractions[0].kind).toBe('transcription');
     expect(dump.markdown).toContain('# Plaudern export');
     expect(dump.markdown).toContain('My Meeting');
     expect(dump.markdown).toContain('- did things');
+    expect(dump.markdown).toContain('### Transcript');
+    expect(dump.markdown).toContain('source words');
   });
 
   it('dead-man’s-switch check-in stamps lastCheckInAt and reports triggersAt', async () => {

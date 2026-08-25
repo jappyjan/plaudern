@@ -6,6 +6,7 @@ import {
   type ExtractionSegment,
   type SummarySpeakerDto,
 } from '@plaudern/contracts';
+import { resolveSourceText } from '@plaudern/inbox';
 import {
   CorrectionNoteEntity,
   ExtractedPayloadEntity,
@@ -20,7 +21,7 @@ function displayName(name: string | null, index: number): string {
 }
 
 export interface SummaryContext {
-  /** null when there is no succeeded transcription to summarize. */
+  /** null when there is no nonblank succeeded source text to summarize. */
   input: SummarizationInput | null;
   /** Roster for resolving `@[LABEL]` mentions in the stored markdown. */
   speakers: SummarySpeakerDto[];
@@ -28,8 +29,8 @@ export interface SummaryContext {
 
 /**
  * Assembles what the summarizer (and the summary read model) needs from an
- * item's append-only extractions: the latest transcription, merged with the
- * latest diarization into a speaker-attributed transcript, plus the speaker
+ * item's append-only extractions: the current source text, with transcription
+ * merged with the latest diarization for speaker attribution, plus the speaker
  * roster. Kept independent of @plaudern/speaker-id (reading occurrences
  * directly) so the summarization step does not depend on that module.
  */
@@ -43,12 +44,13 @@ export class SummaryContextService {
   ) {}
 
   async build(item: InboxItemEntity): Promise<SummaryContext> {
-    const transcription = latestOfKind(item.extractions ?? [], 'transcription');
+    const source = resolveSourceText(item);
     const diarization = latestOfKind(item.extractions ?? [], 'diarization');
 
-    if (transcription?.status !== 'succeeded' || !transcription.content) {
+    if (!source) {
       return { input: null, speakers: [] };
     }
+    const transcription = source.kind === 'transcription' ? source.extraction : null;
 
     const roster: SummarySpeakerDto[] = [];
     // Labels of speakers redacted for consent — their diarized segments must be
@@ -78,9 +80,9 @@ export class SummaryContextService {
 
     const speakerByLabel = new Map(roster.map((s) => [s.label, s]));
     const transcript = buildTranscriptText(
-      transcription.content,
-      transcription.segments ?? null,
-      diarization?.status === 'succeeded' ? diarization.segments ?? null : null,
+      source.text,
+      transcription?.segments ?? null,
+      transcription && diarization?.status === 'succeeded' ? diarization.segments ?? null : null,
       speakerByLabel,
       redactedLabels,
     );
@@ -104,14 +106,16 @@ export class SummaryContextService {
       input: {
         transcript,
         speakers,
-        language: transcription.language ?? undefined,
+        language: source.language,
         occurredAt: iso(item.occurredAt),
-        durationSeconds: maxSegmentEnd(transcription.segments ?? null),
+        durationSeconds: maxSegmentEnd(transcription?.segments ?? null),
         // Passthrough rows carry typed/clipped text, not speech — steer the
         // prompt off the row's provenance, not the source type (an mp3 can
         // arrive as a generic 'file' upload and still be a real recording).
         sourceKind:
-          transcription.provider === TEXT_PASSTHROUGH_PROVIDER_ID ? 'note' : 'recording',
+          source.kind === 'ocr' || transcription?.provider === TEXT_PASSTHROUGH_PROVIDER_ID
+            ? 'note'
+            : 'recording',
         correctionNotes: correctionNotes.length > 0 ? correctionNotes : undefined,
       },
       speakers: roster,

@@ -1,5 +1,10 @@
 import type { ExtractionKind, ExtractionStatus } from '@plaudern/contracts';
-import type { Extractor, ExtractorDependency } from '@plaudern/inbox';
+import {
+  resolveSourceText,
+  SOURCE_TEXT_GROUP,
+  type Extractor,
+  type ExtractorDependency,
+} from '@plaudern/inbox';
 import type { ExtractedPayloadEntity, InboxItemEntity } from '@plaudern/persistence';
 import type { ExtractorGraph } from './extractor-graph';
 
@@ -28,10 +33,8 @@ export type Readiness =
  * - a `settled` dependency is waited for while in flight but tolerated when
  *   failed or not applicable;
  * - any dependency still `queued`/`processing` means wait;
- * - dependencies sharing a `group` are OR'd: the group is ready once any member
- *   satisfies its `requires`, waits while a member is still on its way, and can
- *   never run only if no member can ever satisfy it (JJ-83's transcription-OR-ocr
- *   "source text" group).
+ * - dependencies sharing a `group` are OR'd; the reserved source-text group is
+ *   resolved through the payload-aware policy shared by its consumers.
  *
  * Pure function so it is unit-testable and shared by the event-driven
  * pipeline and backfill runs.
@@ -112,6 +115,11 @@ async function evaluateGroup(
   graph: ExtractorGraph,
   extractions: ExtractedPayloadEntity[],
 ): Promise<DepOutcome> {
+  if (groupKey === SOURCE_TEXT_GROUP) {
+    const source = resolveSourceText(item);
+    if (source) return { ready: true, generationTs: ts(source.extraction.createdAt) };
+  }
+
   let satisfiedTs = 0;
   let anySatisfied = false;
   let anyPending = false;
@@ -126,7 +134,9 @@ async function evaluateGroup(
       anyPending = true;
       continue;
     }
-    const satisfies = dep.requires === 'succeeded' ? latest.status === 'succeeded' : true;
+    const satisfies =
+      groupKey !== SOURCE_TEXT_GROUP &&
+      (dep.requires === 'succeeded' ? latest.status === 'succeeded' : true);
     if (satisfies) {
       anySatisfied = true;
       satisfiedTs = Math.max(satisfiedTs, ts(latest.createdAt));

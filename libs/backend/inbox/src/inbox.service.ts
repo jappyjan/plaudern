@@ -170,6 +170,9 @@ export class InboxService {
       version,
       provider,
       status: 'queued',
+      // SQLite's CreateDateColumn default is second-precision. Persist the
+      // application timestamp so rapid retries remain distinct generations.
+      createdAt: new Date(),
     });
     const saved = await this.extractions.save(row);
     const ownerId = await this.ownerOf(inboxItemId);

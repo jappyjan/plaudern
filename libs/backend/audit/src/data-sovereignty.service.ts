@@ -8,7 +8,7 @@ import type {
   PanicDeleteResponse,
   UpdateDeadMansSwitchRequest,
 } from '@plaudern/contracts';
-import { InboxService } from '@plaudern/inbox';
+import { InboxService, resolveSourceText } from '@plaudern/inbox';
 import { StorageService } from '@plaudern/storage';
 import {
   AiProviderCallEntity,
@@ -109,7 +109,7 @@ export class DataSovereigntyService {
       userId,
       itemCount: exportItems.length,
       items: exportItems,
-      markdown: renderMarkdown(userId, exportItems),
+      markdown: renderMarkdown(userId, items),
     };
   }
 
@@ -269,7 +269,7 @@ function toDeadMansSwitchDto(row: DeadMansSwitchEntity | null): DeadMansSwitchDt
 }
 
 /** Best-effort human-readable rendering of the whole archive as one document. */
-function renderMarkdown(userId: string, items: AccountExportItem[]): string {
+function renderMarkdown(userId: string, items: InboxItemEntity[]): string {
   const lines: string[] = [
     '# Plaudern export',
     '',
@@ -285,11 +285,9 @@ function renderMarkdown(userId: string, items: AccountExportItem[]): string {
     const summaryMarkdown = extractSummaryMarkdown(summary?.content);
     if (summaryMarkdown) lines.push('### Summary', '', summaryMarkdown, '');
 
-    const transcript = item.extractions.find(
-      (e) => e.kind === 'transcription' && e.status === 'succeeded' && e.content,
-    );
-    if (transcript?.content) {
-      lines.push('### Transcript', '', '```', transcript.content, '```', '');
+    const source = resolveSourceText(item);
+    if (source) {
+      lines.push('### Transcript', '', '```', source.text, '```', '');
     }
   }
   return lines.join('\n');

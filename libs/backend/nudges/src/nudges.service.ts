@@ -8,7 +8,7 @@ import type {
   NudgeListResponse,
   NudgeReason,
 } from '@plaudern/contracts';
-import { InboxService, SelfProfileService } from '@plaudern/inbox';
+import { InboxService, resolveSourceText, SelfProfileService } from '@plaudern/inbox';
 import { NotificationsService } from '@plaudern/notifications';
 import {
   CommitmentEntity,
@@ -263,12 +263,12 @@ function toNudgeDto(e: EligibleNudge, state: NudgeStateEntity | null): NudgeDto 
   };
 }
 
-/** Lowercased transcription + summary text of an item, for resolution matching. */
+/** Lowercased source + summary text of an item, for resolution matching. */
 function itemText(item: InboxItemEntity): string {
   const extractions = item.extractions ?? [];
   const parts: string[] = [];
-  const transcription = latestSucceeded(extractions, 'transcription');
-  if (transcription?.content) parts.push(transcription.content);
+  const source = resolveSourceText(item);
+  if (source) parts.push(source.text);
   const summary = latestSucceeded(extractions, 'summary');
   const summaryText = summaryPlainText(summary?.content);
   if (summaryText) parts.push(summaryText);

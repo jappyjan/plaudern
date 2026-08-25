@@ -25,7 +25,12 @@ function row(
   status: ExtractedPayloadEntity['status'],
   createdAt: string,
 ): ExtractedPayloadEntity {
-  return { kind, status, createdAt: new Date(createdAt) } as ExtractedPayloadEntity;
+  return {
+    kind,
+    status,
+    createdAt: new Date(createdAt),
+    content: status === 'succeeded' ? 'source text' : null,
+  } as ExtractedPayloadEntity;
 }
 
 function item(extractions: ExtractedPayloadEntity[]): InboxItemEntity {
@@ -317,11 +322,21 @@ describe('evaluateReadiness with a source-text OR-group (JJ-83)', () => {
       ]),
       bothGraph,
     );
-    // The newest satisfying member drives the generation (dedup key); either
-    // source succeeding is enough to run.
+    // Readiness uses the same transcription-first fallback as the resolver.
     expect(readiness).toEqual({
       ready: true,
-      generationTs: new Date('2026-07-01T10:05:00Z').getTime(),
+      generationTs: new Date('2026-07-01T10:00:00Z').getTime(),
     });
+  });
+
+  it('does not become ready for blank OCR', async () => {
+    const blank = row('ocr', 'succeeded', '2026-07-01T10:00:00Z');
+    blank.content = '  \n';
+    const readiness = await evaluateReadiness(
+      docLike.get('entities')!,
+      item([blank]),
+      docLike,
+    );
+    expect(readiness.ready).toBe(false);
   });
 });

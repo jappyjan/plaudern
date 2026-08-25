@@ -1,6 +1,5 @@
 import type { InboxService } from '@plaudern/inbox';
 import type { StorageService } from '@plaudern/storage';
-import type { TranscriptionService } from '@plaudern/transcription';
 import { OcrProcessor } from './ocr.processor';
 import type { OcrInput, OcrProvider } from './ocr.provider';
 import type { OcrJob } from './ocr.job';
@@ -81,50 +80,32 @@ function pdfRasterizer(result: RasterizedPdf): PdfRasterizer {
 }
 
 describe('OcrProcessor', () => {
-  it('bridges recognized text into a passthrough transcription so the DAG cascades', async () => {
-    const { service: inbox } = fakeInbox();
-    const record = jest.fn(async () => 'transcription-1');
-    const transcription = { recordExtractedText: record } as unknown as TranscriptionService;
+  it('completes one OCR extraction with the recognized source text', async () => {
+    const { service: inbox, completed } = fakeInbox();
 
     const processor = new OcrProcessor(
       inbox,
       fakeStorage(),
-      transcription,
       fakeProvider({ text: 'Patient: Jan Jaap\nDiagnose: Rückenschmerzen', language: 'de' }),
       imageRasterizer(),
     );
 
     await processor.process(JOB);
 
-    expect(record).toHaveBeenCalledTimes(1);
-    expect(record).toHaveBeenCalledWith('item-1', {
-      content: 'Patient: Jan Jaap\nDiagnose: Rückenschmerzen',
-      language: 'de',
-    });
-  });
-
-  it('does not spawn a transcription for a blank scan (empty recognized text)', async () => {
-    const { service: inbox } = fakeInbox();
-    const record = jest.fn(async () => 'transcription-1');
-    const transcription = { recordExtractedText: record } as unknown as TranscriptionService;
-
-    const processor = new OcrProcessor(
-      inbox,
-      fakeStorage(),
-      transcription,
-      fakeProvider({ text: '   \n  ' }),
-      imageRasterizer(),
-    );
-
-    await processor.process(JOB);
-
-    expect(record).not.toHaveBeenCalled();
+    expect(completed).toEqual([
+      {
+        id: 'ext-1',
+        result: {
+          status: 'succeeded',
+          content: 'Patient: Jan Jaap\nDiagnose: Rückenschmerzen',
+          language: 'de',
+        },
+      },
+    ]);
   });
 
   it('OCRs a PDF page-by-page and concatenates the text behind [page N] markers', async () => {
     const { service: inbox, completed } = fakeInbox();
-    const record = jest.fn(async () => 'transcription-1');
-    const transcription = { recordExtractedText: record } as unknown as TranscriptionService;
 
     // One vision call per page; return text derived from the per-page filename
     // hint so we can prove each page was sent separately.
@@ -138,7 +119,6 @@ describe('OcrProcessor', () => {
     const processor = new OcrProcessor(
       inbox,
       fakeStorage(),
-      transcription,
       provider,
       pdfRasterizer({
         pages: [Buffer.from('png-1'), Buffer.from('png-2')],
@@ -153,20 +133,13 @@ describe('OcrProcessor', () => {
     expect(recognize).toHaveBeenCalledTimes(2);
     const expected = '[page 1]\nfirst page text\n\n[page 2]\nsecond page text';
     expect(completed[0].result).toMatchObject({ status: 'succeeded', content: expected, language: 'en' });
-    // The page markers survive into the bridged transcription (downstream input).
-    expect(record).toHaveBeenCalledWith('item-1', { content: expected, language: 'en' });
   });
 
   it('records truncation inline when a PDF exceeds the page cap (never fails)', async () => {
     const { service: inbox, completed } = fakeInbox();
-    const transcription = {
-      recordExtractedText: jest.fn(async () => 't'),
-    } as unknown as TranscriptionService;
-
     const processor = new OcrProcessor(
       inbox,
       fakeStorage(),
-      transcription,
       fakeProvider({ text: 'page body', language: 'en' }),
       pdfRasterizer({
         pages: [Buffer.from('png-1'), Buffer.from('png-2')],
@@ -186,15 +159,11 @@ describe('OcrProcessor', () => {
 
   it('keeps a skip marker (and correct numbering) for a page the rasterizer refused', async () => {
     const { service: inbox, completed } = fakeInbox();
-    const transcription = {
-      recordExtractedText: jest.fn(async () => 't'),
-    } as unknown as TranscriptionService;
     const recognize = jest.fn(async () => ({ text: 'page body', language: 'en' }));
 
     const processor = new OcrProcessor(
       inbox,
       fakeStorage(),
-      transcription,
       { id: 'test:ocr', recognize },
       // Page 2 was refused pre-render (oversized MediaBox) → null entry.
       pdfRasterizer({
@@ -219,9 +188,6 @@ describe('OcrProcessor', () => {
 
   it('fails gracefully (no rasterize, no vision call) for an over-sized PDF blob', async () => {
     const { service: inbox, completed } = fakeInbox();
-    const transcription = {
-      recordExtractedText: jest.fn(async () => 't'),
-    } as unknown as TranscriptionService;
     const recognize = jest.fn(async () => ({ text: 'unreachable' }));
     const rasterize = jest.fn();
     const rasterizer = { isPdf: () => true, rasterize } as unknown as PdfRasterizer;
@@ -229,7 +195,6 @@ describe('OcrProcessor', () => {
     const processor = new OcrProcessor(
       inbox,
       fakeStorage(Buffer.alloc(13 * 1024 * 1024)), // > 12MB PDF cap
-      transcription,
       { id: 'test:ocr', recognize },
       rasterizer,
     );
