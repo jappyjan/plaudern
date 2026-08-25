@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
@@ -148,10 +149,11 @@ export class TopicProposalsService {
    */
   private async startRun(userId: string): Promise<void> {
     const staleCutoff = new Date(Date.now() - this.runStaleMinutes * 60 * 1000);
+    const generationId = randomUUID();
     const flipped = await this.runs
       .createQueryBuilder()
       .update()
-      .set({ status: 'queued', error: null, proposalsCreated: 0 })
+      .set({ generationId, status: 'queued', error: null, proposalsCreated: 0 })
       .where(
         'userId = :userId AND (status IN (:...terminal) OR (status IN (:...inFlight) AND updatedAt < :staleCutoff))',
         {
@@ -163,7 +165,7 @@ export class TopicProposalsService {
       )
       .execute();
     if (flipped.affected === 1) {
-      await this.queue.enqueue({ userId });
+      await this.queue.enqueue({ userId, generationId });
       return;
     }
 
@@ -172,14 +174,20 @@ export class TopicProposalsService {
     if (existing) return; // fresh queued/processing — coalesce onto the in-flight run.
 
     try {
-      await this.runs.insert({ userId, status: 'queued', error: null, proposalsCreated: 0 });
+      await this.runs.insert({
+        userId,
+        generationId,
+        status: 'queued',
+        error: null,
+        proposalsCreated: 0,
+      });
     } catch (err) {
       // Lost the unique-userId race with a concurrent first trigger; that run
       // will cover this request too, so coalesce.
       if (isUniqueViolation(err)) return;
       throw err;
     }
-    await this.queue.enqueue({ userId });
+    await this.queue.enqueue({ userId, generationId });
   }
 
   /**

@@ -67,10 +67,14 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Install Playwright browser
+        run: pnpm --filter @plaudern/web exec playwright install --with-deps chromium
       - name: Typecheck web
         run: pnpm nx run web:typecheck
       - name: Build web
         run: pnpm nx build web
+      - name: Browser regression tests
+        run: pnpm nx run web:test-e2e
 
   evals:
     name: AI extraction quality evals (JJ-1)

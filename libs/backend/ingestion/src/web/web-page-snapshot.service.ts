@@ -8,7 +8,7 @@ import { extractReadableContent, type ReadableContent } from './readability';
  */
 export type FetchLike = (
   url: string,
-  init?: { signal?: AbortSignal; redirect?: 'follow'; headers?: Record<string, string> },
+  init?: { signal?: AbortSignal; headers?: Record<string, string> },
 ) => Promise<{
   ok: boolean;
   status: number;
@@ -41,7 +41,6 @@ export class WebPageSnapshotService {
     try {
       const res = await this.fetchImpl(url, {
         signal: controller.signal,
-        redirect: 'follow',
         headers: {
           accept: 'text/html,application/xhtml+xml;q=0.9,text/plain;q=0.8,*/*;q=0.1',
           'user-agent': 'Plaudern/1.0 (+web-clipper; readable snapshot)',

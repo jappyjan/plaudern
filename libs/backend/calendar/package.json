@@ -8,6 +8,7 @@
   "dependencies": {
     "@plaudern/auth": "workspace:*",
     "@plaudern/contracts": "workspace:*",
+    "@plaudern/outbound-http": "workspace:*",
     "@plaudern/persistence": "workspace:*",
     "node-ical": "0.20.1"
   },
