@@ -13,7 +13,15 @@ export class AddExtractionGeneration1720000000057 implements MigrationInterface 
       await queryRunner.query(
         `ALTER TABLE "extracted_payloads" ADD COLUMN IF NOT EXISTS "generation" integer NOT NULL DEFAULT 0`,
       );
+      await queryRunner.query(`
+        CREATE INDEX CONCURRENTLY IF NOT EXISTS "IDX_extracted_payloads_generation_backfill"
+        ON "extracted_payloads" ("inboxItemId")
+        WHERE "generation" = 0
+      `);
       await this.backfillPostgres(queryRunner);
+      await queryRunner.query(
+        `DROP INDEX CONCURRENTLY IF EXISTS "IDX_extracted_payloads_generation_backfill"`,
+      );
       return;
     }
 
@@ -62,6 +70,10 @@ export class AddExtractionGeneration1720000000057 implements MigrationInterface 
       const itemIds = items.map(({ inboxItemId }) => inboxItemId);
       await queryRunner.startTransaction();
       try {
+        await queryRunner.query(
+          `SELECT "id" FROM "inbox_items" WHERE "id" = ANY($1::uuid[]) FOR UPDATE`,
+          [itemIds],
+        );
         await queryRunner.query(
           `
             WITH "ranked" AS (
