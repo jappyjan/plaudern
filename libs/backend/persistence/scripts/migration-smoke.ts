@@ -49,6 +49,7 @@ const DATABASE_URL =
  * fails the smoke.
  */
 const IRREVERSIBLE = new Set<string>(['DropAuthTables1720000000001']);
+const EXTRACTION_GENERATION_MIGRATION = 'AddExtractionGeneration1720000000057';
 
 function assert(condition: boolean, message: string): void {
   if (!condition) throw new Error(message);
@@ -74,38 +75,118 @@ async function lastAppliedName(ds: DataSource): Promise<string | null> {
   return rows[0]?.name ?? null;
 }
 
+function createDataSource(migrations = ALL_MIGRATIONS): DataSource {
+  return new DataSource({
+    type: 'postgres',
+    url: DATABASE_URL,
+    entities: ALL_ENTITIES,
+    migrations,
+    synchronize: false,
+    migrationsRun: false,
+  });
+}
+
+async function seedLegacyExtractions(ds: DataSource): Promise<void> {
+  await ds.query(`
+    INSERT INTO "inbox_items"
+      ("id", "userId", "sourceType", "occurredAt", "idempotencyKey")
+    VALUES
+      ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000001', 'image', '2026-08-25T10:00:00Z', 'migration-item-a'),
+      ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-000000000001', 'audio', '2026-08-25T10:00:00Z', 'migration-item-b')
+  `);
+  await ds.query(`
+    INSERT INTO "extracted_payloads"
+      ("id", "inboxItemId", "kind", "provider", "status", "createdAt")
+    VALUES
+      ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a1', 'ocr', 'legacy', 'succeeded', '2026-08-25 10:00:00'),
+      ('00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000000a1', 'summary', 'legacy', 'succeeded', '2026-08-25 10:00:01'),
+      ('00000000-0000-0000-0000-0000000000a3', '00000000-0000-0000-0000-0000000000a1', 'entities', 'legacy', 'succeeded', '2026-08-25 10:00:01'),
+      ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000b1', 'transcription', 'legacy', 'succeeded', '2026-08-25 10:00:00')
+  `);
+}
+
+async function assertExtractionGenerationBackfill(ds: DataSource): Promise<void> {
+  const payloads: Array<{ id: string; generation: number }> = await ds.query(`
+    SELECT "id", "generation"
+    FROM "extracted_payloads"
+    WHERE "provider" = 'legacy'
+    ORDER BY "id"
+  `);
+  assert(
+    JSON.stringify(payloads.map(({ generation }) => generation)) === JSON.stringify([1, 2, 3, 1]),
+    `unexpected extraction generation backfill: ${JSON.stringify(payloads)}`,
+  );
+  const items: Array<{ id: string; extractionGeneration: number }> = await ds.query(`
+    SELECT "id", "extractionGeneration"
+    FROM "inbox_items"
+    WHERE "idempotencyKey" LIKE 'migration-item-%'
+    ORDER BY "id"
+  `);
+  assert(
+    JSON.stringify(items.map(({ extractionGeneration }) => extractionGeneration)) ===
+      JSON.stringify([3, 1]),
+    `unexpected item generation counters: ${JSON.stringify(items)}`,
+  );
+
+  let duplicateRejected = false;
+  try {
+    await ds.query(`
+      INSERT INTO "extracted_payloads"
+        ("inboxItemId", "kind", "provider", "status", "generation")
+      VALUES
+        ('00000000-0000-0000-0000-0000000000a1', 'topics', 'duplicate', 'queued', 3)
+    `);
+  } catch {
+    duplicateRejected = true;
+  }
+  assert(duplicateRejected, 'duplicate positive extraction generation was accepted');
+}
+
 async function main(): Promise<void> {
   const total = ALL_MIGRATIONS.length;
   const expectedNames = ALL_MIGRATIONS.map((m) => m.name).sort();
   console.log(`[smoke] ${total} migrations to exercise against ${redact(DATABASE_URL)}`);
 
-  const ds = new DataSource({
-    type: 'postgres',
-    url: DATABASE_URL,
-    entities: ALL_ENTITIES,
-    migrations: ALL_MIGRATIONS,
-    // Drive the chain by hand — never let TypeORM synchronize from entities.
-    synchronize: false,
-    migrationsRun: false,
-  });
+  const generationIndex = ALL_MIGRATIONS.findIndex(
+    (migration) => migration.name === EXTRACTION_GENERATION_MIGRATION,
+  );
+  assert(generationIndex > 0, `${EXTRACTION_GENERATION_MIGRATION} is not registered`);
+
+  // Exercise the new migration against a populated schema, not only an empty
+  // database. This catches unsafe backfills that synchronize-based tests miss.
+  const prefix = createDataSource(ALL_MIGRATIONS.slice(0, generationIndex));
+  await prefix.initialize();
+  try {
+    const applied = await prefix.runMigrations({ transaction: 'each' });
+    assert(applied.length === generationIndex, 'failed to apply the pre-generation migration chain');
+    await seedLegacyExtractions(prefix);
+  } finally {
+    await prefix.destroy();
+  }
+
+  const ds = createDataSource();
   await ds.initialize();
 
   try {
     // 1. UP — apply the entire chain.
     const applied = await ds.runMigrations({ transaction: 'each' });
     assert(
-      applied.length === total,
-      `expected ${total} migrations to apply, got ${applied.length}`,
+      applied.length === total - generationIndex,
+      `expected ${total - generationIndex} remaining migrations to apply, got ${applied.length}`,
     );
     const recorded = await migrationsTableCount(ds);
     assert(recorded === total, `expected ${total} rows in migrations table, got ${recorded}`);
-    const appliedNames = applied.map((m) => m.name).sort();
+    const appliedNames = ALL_MIGRATIONS.slice(0, generationIndex)
+      .map((m) => m.name)
+      .concat(applied.map((m) => m.name))
+      .sort();
     assert(
       JSON.stringify(appliedNames) === JSON.stringify(expectedNames),
       'applied migration names do not match ALL_MIGRATIONS',
     );
     // A representative table must now exist.
     assert(await tableExists(ds, 'inbox_items'), 'inbox_items table missing after up');
+    await assertExtractionGenerationBackfill(ds);
     console.log(`[smoke] up: applied all ${total} migrations ✓`);
 
     // 2. DOWN — reverse every migration, newest first, down to the documented
