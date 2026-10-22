@@ -32,7 +32,10 @@ export async function startInfra(): Promise<Infra> {
       .withPassword('plaudern')
       .start(),
     new RedisContainer('redis:7-alpine').start(),
-    new GenericContainer('minio/minio:latest')
+    // Source-built MinIO + mc from the Coolify maintainer; the upstream image was retired.
+    new GenericContainer(
+      'coollabsio/minio:RELEASE.2025-10-15T17-29-55Z@sha256:69b55a1c1c5dc285ce04db96689f5b2102317fc77a50680a1874ca6efd1c87f9',
+    )
       .withEnvironment({ MINIO_ROOT_USER: MINIO_USER, MINIO_ROOT_PASSWORD: MINIO_PASSWORD })
       .withCommand(['server', '/data'])
       .withExposedPorts(9000)
