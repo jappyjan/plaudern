@@ -199,7 +199,7 @@ services:
       retries: 20
 
   minio:
-    image: minio/minio:latest
+    image: coollabsio/minio:RELEASE.2025-10-15T17-29-55Z@sha256:69b55a1c1c5dc285ce04db96689f5b2102317fc77a50680a1874ca6efd1c87f9
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -216,7 +216,8 @@ services:
       - miniodata:/data
 
   minio-init:
-    image: minio/mc:latest
+    # The same pinned image includes mc; minio/mc is no longer published.
+    image: coollabsio/minio:RELEASE.2025-10-15T17-29-55Z@sha256:69b55a1c1c5dc285ce04db96689f5b2102317fc77a50680a1874ca6efd1c87f9
     # Explicit: Coolify injects `unless-stopped` on services without a restart
     # policy, which makes this one-shot container restart forever and the
     # api's service_completed_successfully condition hang the whole deploy.
