@@ -3,7 +3,7 @@
 # workspace, then a static nginx that also proxies /api to the api service.
 
 # ---------- builder ----------
-FROM node:22-bookworm-slim AS builder
+FROM node:22.23.4-bookworm-slim AS builder
 RUN corepack enable
 WORKDIR /repo
 
@@ -13,6 +13,8 @@ RUN pnpm nx build web
 
 # ---------- runtime ----------
 FROM nginx:alpine AS runtime
+# CVE-2026-111497: the base image may lag the Alpine security package.
+RUN apk add --no-cache 'brotli-libs>=1.2.1-r0'
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /repo/apps/web/dist /usr/share/nginx/html
 EXPOSE 80
